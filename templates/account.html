@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My Account — Eventyay</title>
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', path='favicon.ico') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', path='css/admin.css') }}" />
+  </head>
+  <body>
+    <header class="portal-home-header">
+      <a class="brand" href="/">Eventyay</a>
+      <nav class="header-nav">
+        <a href="/account">My Account</a>
+        <a href="/logout">Logout</a>
+      </nav>
+    </header>
+
+    <main class="admin-main">
+      <div class="account-card">
+        <h1>My Account</h1>
+        <table class="data-table">
+          <tbody>
+            <tr>
+              <th>Email</th>
+              <td>{{ user.email }}</td>
+            </tr>
+            <tr>
+              <th>Display Name</th>
+              <td>{{ user.display_name }}</td>
+            </tr>
+            <tr>
+              <th>Role</th>
+              <td><span class="badge badge-role">{{ user.role }}</span></td>
+            </tr>
+            <tr>
+              <th>Joined</th>
+              <td>{{ user.created_at.strftime('%Y-%m-%d %H:%M UTC') if user.created_at else '—' }}</td>
+            </tr>
+            <tr>
+              <th>Status</th>
+              <td>
+                {% if user.is_active %}
+                <span class="status-live">● Active</span>
+                {% else %}
+                <span class="status-offline">○ Deactivated</span>
+                {% endif %}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="account-info">
+          <h3>Your Permissions</h3>
+          {% if user.role == 'listener' %}
+          <p>As a <strong>listener</strong>, you can join any event and listen to live interpretation streams.</p>
+          <p class="muted">An admin can assign you additional roles (interpreter, coordinator) for specific events.</p>
+          {% elif user.role == 'interpreter' %}
+          <p>As an <strong>interpreter</strong>, you can join booth sessions, go live, and provide real-time interpretation.</p>
+          {% elif user.role == 'coordinator' %}
+          <p>As a <strong>coordinator</strong>, you can manage interpreter assignments and coordinate handoffs within booths.</p>
+          {% elif user.role == 'event_admin' %}
+          <p>As an <strong>event admin</strong>, you can manage booths, rooms, and invite tokens for your events.</p>
+          {% elif user.role == 'super_admin' %}
+          <p>As a <strong>super admin</strong>, you have full access to all administrative functions.</p>
+          {% endif %}
+        </div>
+      </div>
+    </main>
+
+    <footer class="admin-footer">
+      <span>Eventyay Interpretation Portal — Powered by FastAPI + MediaMTX</span>
+    </footer>
+  </body>
+</html>

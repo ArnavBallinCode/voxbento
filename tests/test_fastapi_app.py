@@ -28,10 +28,10 @@ def test_healthz_ok():
     assert 'aiortc_available' not in body
 
 
-def test_home_redirects_to_demo_booth():
-    res = client.get('/', follow_redirects=False)
-    assert res.status_code in (301, 302, 307, 308)
-    assert 'demo-booth' in res.headers['location']
+def test_home_renders_home_page():
+    res = client.get('/')
+    assert res.status_code == 200
+    assert b'Eventyay' in res.content
 
 
 def test_interpreter_booth_page_renders():

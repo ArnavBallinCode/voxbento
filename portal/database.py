@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import joinedload
 
-from portal.models import Base, DBBooth, Event, InviteToken, Room, generate_token, utc_now
+from portal.models import Base, DBBooth, Event, InviteToken, Room, User, generate_token, utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -293,3 +293,71 @@ async def list_tokens_for_booth(session: AsyncSession, booth_id: int) -> list[In
         .order_by(InviteToken.created_at),
     )
     return list(result.scalars().all())
+
+
+# ---------------------------------------------------------------------------
+# User CRUD
+# ---------------------------------------------------------------------------
+
+
+async def create_user(
+    session: AsyncSession,
+    *,
+    email: str,
+    display_name: str,
+    password_hash: str,
+    role: str = 'listener',
+) -> User:
+    user = User(
+        email=email.strip().lower(),
+        display_name=display_name,
+        password_hash=password_hash,
+        role=role,
+    )
+    session.add(user)
+    await session.flush()
+    return user
+
+
+async def get_user_by_email(session: AsyncSession, email: str) -> User | None:
+    result = await session.execute(
+        select(User).where(User.email == email.strip().lower()),
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_user_by_id(session: AsyncSession, user_id: int) -> User | None:
+    result = await session.execute(select(User).where(User.id == user_id))
+    return result.scalar_one_or_none()
+
+
+async def list_users(session: AsyncSession) -> list[User]:
+    result = await session.execute(select(User).order_by(User.created_at))
+    return list(result.scalars().all())
+
+
+async def update_user_role(session: AsyncSession, user_id: int, role: str) -> User | None:
+    user = await get_user_by_id(session, user_id)
+    if user is None:
+        return None
+    user.role = role
+    await session.flush()
+    return user
+
+
+async def update_user_active(session: AsyncSession, user_id: int, *, is_active: bool) -> User | None:
+    user = await get_user_by_id(session, user_id)
+    if user is None:
+        return None
+    user.is_active = is_active
+    await session.flush()
+    return user
+
+
+async def delete_user(session: AsyncSession, user_id: int) -> bool:
+    user = await get_user_by_id(session, user_id)
+    if user is None:
+        return False
+    await session.delete(user)
+    await session.flush()
+    return True

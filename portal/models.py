@@ -1,10 +1,11 @@
 """SQLAlchemy declarative models for persistent portal entities.
 
-Four tables:
+Five tables:
 - ``events`` — top-level event container (slug is unique key)
 - ``rooms`` — rooms within an event (mapped to Eventyay rooms)
 - ``booths`` — interpretation booths (one per language per room)
 - ``invite_tokens`` — single-use invite tokens for booth access
+- ``users`` — registered user accounts with role-based access
 
 Design decisions
 ~~~~~~~~~~~~~~~~
@@ -23,7 +24,7 @@ from __future__ import annotations
 import secrets
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Index, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, validates
 
 from portal.booth_identity import make_mediamtx_path, validate_event_slug, validate_language_code
@@ -182,3 +183,43 @@ class InviteToken(Base):
 
     def __repr__(self) -> str:
         return f'<InviteToken token={self.token[:8]}… role={self.role!r}>'
+
+
+# ---------------------------------------------------------------------------
+# User
+# ---------------------------------------------------------------------------
+
+
+class User(Base):
+    """Registered user account.
+
+    Users sign up with email + password and get ``listener`` role by default.
+    Admins can promote users to ``interpreter``, ``coordinator``,
+    ``event_admin``, or ``super_admin`` from the admin panel.
+    """
+
+    __tablename__ = 'users'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(String(200))
+    password_hash: Mapped[str] = mapped_column(String(200))
+    role: Mapped[str] = mapped_column(String(20), default='listener')
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    @validates('role')
+    def _validate_role(self, _key: str, value: str) -> str:
+        if value not in ALL_ROLES:
+            raise ValueError(f"Invalid role '{value}'. Must be one of: {', '.join(sorted(ALL_ROLES))}")
+        return value
+
+    @validates('email')
+    def _validate_email(self, _key: str, value: str) -> str:
+        value = value.strip().lower()
+        if '@' not in value or '.' not in value.split('@')[-1]:
+            raise ValueError('Invalid email address.')
+        return value
+
+    def __repr__(self) -> str:
+        return f'<User id={self.id} email={self.email!r} role={self.role!r}>'

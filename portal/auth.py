@@ -3,13 +3,28 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import bcrypt
 import jwt
-from fastapi import HTTPException, WebSocket, status
+from fastapi import Cookie, HTTPException, Request, WebSocket, status
+from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from portal.config import settings
 
 security = HTTPBearer(auto_error=False)
+
+
+# ---------------------------------------------------------------------------
+# Password hashing
+# ---------------------------------------------------------------------------
+
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    return bcrypt.checkpw(password.encode(), password_hash.encode())
 
 
 def create_token() -> str:
@@ -75,3 +90,77 @@ async def verify_ws_token(websocket: WebSocket) -> None:
     except jwt.InvalidTokenError as exc:
         await websocket.close(code=4001)
         raise ValueError(f'Invalid WebSocket token: {exc}')
+
+
+async def require_admin(request: Request) -> None:
+    """FastAPI dependency that guards admin routes.
+
+    Checks for a valid ``admin_token`` cookie containing a JWT with
+    ``admin=True`` claim.  Returns None on success; raises HTTP 403 or
+    redirects to the login page on failure.
+    """
+    cookie = request.cookies.get('admin_token', '')
+    if not cookie:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Admin access required.')
+    try:
+        payload = decode_token(cookie)
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Invalid admin token.')
+    if not payload.get('admin'):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Admin access required.')
+
+
+def create_admin_token() -> str:
+    """Create a JWT with admin=True claim for admin panel access."""
+    now = datetime.now(timezone.utc)
+    payload = {
+        'admin': True,
+        'iat': now,
+        'exp': now + timedelta(seconds=settings.jwt_expiry_seconds),
+    }
+    return jwt.encode(payload, settings.effective_jwt_secret, algorithm='HS256')
+
+
+# ---------------------------------------------------------------------------
+# User auth
+# ---------------------------------------------------------------------------
+
+
+def create_user_token(*, user_id: int, email: str, role: str) -> str:
+    """Create a JWT for a registered user session."""
+    now = datetime.now(timezone.utc)
+    payload = {
+        'sub': str(user_id),
+        'email': email,
+        'role': role,
+        'user': True,
+        'iat': now,
+        'exp': now + timedelta(seconds=settings.jwt_expiry_seconds),
+    }
+    return jwt.encode(payload, settings.effective_jwt_secret, algorithm='HS256')
+
+
+async def get_current_user(request: Request) -> dict | None:
+    """Extract current user from user_token cookie. Returns None if not logged in."""
+    cookie = request.cookies.get('user_token', '')
+    if not cookie:
+        return None
+    try:
+        payload = decode_token(cookie)
+    except jwt.InvalidTokenError:
+        return None
+    if not payload.get('user'):
+        return None
+    return payload
+
+
+async def require_user(request: Request) -> dict:
+    """FastAPI dependency that requires a logged-in user.
+
+    Returns the JWT payload dict with user_id, email, role.
+    Raises HTTP 403 if not logged in.
+    """
+    user = await get_current_user(request)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Login required.')
+    return user
