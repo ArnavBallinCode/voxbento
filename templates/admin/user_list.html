@@ -21,7 +21,7 @@
       <th>ID</th>
       <th>Email</th>
       <th>Display Name</th>
-      <th>Role</th>
+      <th>Admin</th>
       <th>Status</th>
       <th>Joined</th>
       <th>Actions</th>
@@ -34,15 +34,11 @@
       <td>{{ user.email }}</td>
       <td>{{ user.display_name }}</td>
       <td>
-        <form method="post" action="/admin/users/{{ user.id }}/role" class="inline-form">
-          <select name="role" class="role-select" onchange="this.form.submit()">
-            <option value="listener" {{ 'selected' if user.role == 'listener' }}>listener</option>
-            <option value="interpreter" {{ 'selected' if user.role == 'interpreter' }}>interpreter</option>
-            <option value="coordinator" {{ 'selected' if user.role == 'coordinator' }}>coordinator</option>
-            <option value="event_admin" {{ 'selected' if user.role == 'event_admin' }}>event_admin</option>
-            <option value="super_admin" {{ 'selected' if user.role == 'super_admin' }}>super_admin</option>
-          </select>
-        </form>
+        {% if user.is_admin %}
+        <span class="badge badge-role badge-event_admin">Admin</span>
+        {% else %}
+        <span class="muted">—</span>
+        {% endif %}
       </td>
       <td>
         {% if user.is_active %}
@@ -74,17 +70,17 @@
 {% endif %}
 
 <div class="admin-help-section">
-  <h3>How User Roles Work</h3>
+  <h3>How Roles Work</h3>
+  <p>Roles are assigned <strong>per event</strong>, not globally. To manage a user's role for a specific event, go to that event's detail page and click <strong>Members</strong>.</p>
   <table class="data-table compact">
     <thead>
-      <tr><th>Role</th><th>Permissions</th></tr>
+      <tr><th>Role</th><th>Scope</th><th>Permissions</th></tr>
     </thead>
     <tbody>
-      <tr><td><strong>listener</strong></td><td>Default role. Can listen to interpretation streams and participate in booth chat.</td></tr>
-      <tr><td><strong>interpreter</strong></td><td>Can go live and provide real-time interpretation in assigned booths.</td></tr>
-      <tr><td><strong>coordinator</strong></td><td>Can assign active interpreters and manage handoffs within booths.</td></tr>
-      <tr><td><strong>event_admin</strong></td><td>Can manage booths, rooms, and generate invite tokens for events.</td></tr>
-      <tr><td><strong>super_admin</strong></td><td>Full access to all administrative functions.</td></tr>
+      <tr><td><strong>listener</strong></td><td>Event</td><td>Listen to interpretation streams and participate in booth chat.</td></tr>
+      <tr><td><strong>interpreter</strong></td><td>Event</td><td>Go live and provide real-time interpretation in assigned booths.</td></tr>
+      <tr><td><strong>coordinator</strong></td><td>Event</td><td>Assign active interpreters and manage handoffs within booths.</td></tr>
+      <tr><td><strong>event_admin</strong></td><td>Event</td><td>Manage booths, rooms, and generate invite tokens for the event.</td></tr>
     </tbody>
   </table>
 </div>

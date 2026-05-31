@@ -52,11 +52,11 @@ docker compose up --build
 Open http://localhost:8000. That is it.
 
 **Admin panel:** Go to http://localhost:8000/admin/login and enter your `ADMIN_PASSWORD`.
-From there you can create events, rooms, booths, and manage users.
+From there you can create events, rooms, booths, manage users, and assign per-event roles.
 
 **User registration:** Anyone can register at http://localhost:8000/register.
-New accounts get `listener` access by default. Admins can promote users to interpreter,
-coordinator, or event_admin from `/admin/users/`.
+New accounts are non-admin by default. Admins assign event-scoped roles
+(listener, interpreter, coordinator, event_admin) from each event's **Members** page.
 
 | Service | Port | Purpose |
 |---------|------|---------|

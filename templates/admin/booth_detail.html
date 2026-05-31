@@ -142,17 +142,46 @@
   <div class="section-header">
     <h2>Invite Tokens ({{ tokens|length }})</h2>
   </div>
+
+  <!-- Token Generation Form -->
+  <div class="token-form-card">
+    <h3>Generate New Token</h3>
+    <form method="post" action="/admin/events/{{ event.id }}/rooms/{{ room.id }}/booths/{{ booth.id }}/tokens/" class="token-form">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="role">Role</label>
+          <select name="role" id="role" required>
+            <option value="listener">listener</option>
+            <option value="interpreter" selected>interpreter</option>
+            <option value="coordinator">coordinator</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="label">Label</label>
+          <input type="text" name="label" id="label" placeholder="e.g. Alice — Spanish interpreter" />
+        </div>
+        <div class="form-group">
+          <label for="expires_hours">Expires in (hours)</label>
+          <input type="number" name="expires_hours" id="expires_hours" placeholder="Empty = never" min="1" />
+        </div>
+        <div class="form-group form-group-btn">
+          <button type="submit" class="btn btn-primary">Generate Token</button>
+        </div>
+      </div>
+    </form>
+  </div>
+
   {% if tokens %}
   <table class="data-table">
     <thead>
       <tr>
         <th>Label</th>
         <th>Role</th>
-        <th>Token</th>
         <th>Invite Link</th>
         <th>Status</th>
         <th>Expires</th>
         <th>Created</th>
+        <th>Actions</th>
       </tr>
     </thead>
     <tbody>
@@ -160,12 +189,11 @@
       <tr class="{{ 'row-used' if tok.is_used else ('row-expired' if tok.is_expired else '') }}">
         <td>{{ tok.label or '—' }}</td>
         <td><span class="badge badge-role badge-{{ tok.role }}">{{ tok.role }}</span></td>
-        <td><code class="token-preview">{{ tok.token[:12] }}…</code></td>
         <td>
           {% if not tok.is_used and not tok.is_expired %}
           <span class="copyable-field">
             <code id="tok-{{ tok.token[:8] }}">/join/{{ tok.token }}</code>
-            <button type="button" class="btn btn-sm btn-copy" onclick="copyToClipboard('tok-{{ tok.token[:8] }}')">Copy</button>
+            <button type="button" class="btn btn-sm btn-copy" data-copy-target="tok-{{ tok.token[:8] }}">Copy Link</button>
           </span>
           {% else %}
           <span class="muted">—</span>
@@ -173,7 +201,7 @@
         </td>
         <td>
           {% if tok.is_used %}
-          <span class="badge badge-used">Used</span>
+          <span class="badge badge-used">Revoked / Used</span>
           {% elif tok.is_expired %}
           <span class="badge badge-expired">Expired</span>
           {% else %}
@@ -182,13 +210,25 @@
         </td>
         <td>{{ tok.expires_at.strftime('%Y-%m-%d %H:%M') if tok.expires_at else 'Never' }}</td>
         <td>{{ tok.created_at.strftime('%Y-%m-%d %H:%M') if tok.created_at else '—' }}</td>
+        <td>
+          {% if not tok.is_used and not tok.is_expired %}
+          <form method="post"
+                action="/admin/events/{{ event.id }}/rooms/{{ room.id }}/booths/{{ booth.id }}/tokens/{{ tok.token }}/revoke"
+                class="inline-form"
+                onsubmit="return confirm('Revoke this token? It cannot be used to join after revocation.')">
+            <button type="submit" class="btn btn-sm btn-danger">Revoke</button>
+          </form>
+          {% else %}
+          <span class="muted">—</span>
+          {% endif %}
+        </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
   {% else %}
   <div class="empty-state">
-    <p>No invite tokens for this booth. Token management will be available in Step 5.</p>
+    <p>No invite tokens for this booth yet. Use the form above to generate one.</p>
   </div>
   {% endif %}
 </div>
@@ -203,20 +243,5 @@
   </form>
 </div>
 
-<script>
-function copyToClipboard(elementId) {
-  const el = document.getElementById(elementId);
-  if (!el) return;
-  const text = el.textContent.trim();
-  const fullUrl = window.location.origin + text;
-  navigator.clipboard.writeText(text.startsWith('/') ? fullUrl : text).then(() => {
-    const btn = el.nextElementSibling;
-    if (btn) {
-      const orig = btn.textContent;
-      btn.textContent = 'Copied!';
-      setTimeout(() => { btn.textContent = orig; }, 1500);
-    }
-  });
-}
-</script>
+<script type="module" src="{{ url_for('static', path='js/admin.js') }}"></script>
 {% endblock %}

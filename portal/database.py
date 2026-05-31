@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import joinedload
 
-from portal.models import Base, DBBooth, Event, InviteToken, Room, User, generate_token, utc_now
+from portal.models import Base, DBBooth, Event, EventMembership, InviteToken, Room, User, generate_token, utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -306,13 +306,11 @@ async def create_user(
     email: str,
     display_name: str,
     password_hash: str,
-    role: str = 'listener',
 ) -> User:
     user = User(
         email=email.strip().lower(),
         display_name=display_name,
         password_hash=password_hash,
-        role=role,
     )
     session.add(user)
     await session.flush()
@@ -336,15 +334,6 @@ async def list_users(session: AsyncSession) -> list[User]:
     return list(result.scalars().all())
 
 
-async def update_user_role(session: AsyncSession, user_id: int, role: str) -> User | None:
-    user = await get_user_by_id(session, user_id)
-    if user is None:
-        return None
-    user.role = role
-    await session.flush()
-    return user
-
-
 async def update_user_active(session: AsyncSession, user_id: int, *, is_active: bool) -> User | None:
     user = await get_user_by_id(session, user_id)
     if user is None:
@@ -361,3 +350,79 @@ async def delete_user(session: AsyncSession, user_id: int) -> bool:
     await session.delete(user)
     await session.flush()
     return True
+
+
+# ---------------------------------------------------------------------------
+# EventMembership CRUD
+# ---------------------------------------------------------------------------
+
+
+async def set_event_membership(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    event_id: int,
+    role: str,
+) -> EventMembership:
+    """Create or update a user's role for an event."""
+    result = await session.execute(
+        select(EventMembership).where(
+            EventMembership.user_id == user_id,
+            EventMembership.event_id == event_id,
+        ),
+    )
+    membership = result.scalar_one_or_none()
+    if membership:
+        membership.role = role
+    else:
+        membership = EventMembership(user_id=user_id, event_id=event_id, role=role)
+        session.add(membership)
+    await session.flush()
+    return membership
+
+
+async def remove_event_membership(session: AsyncSession, membership_id: int) -> bool:
+    result = await session.execute(
+        select(EventMembership).where(EventMembership.id == membership_id),
+    )
+    membership = result.scalar_one_or_none()
+    if membership is None:
+        return False
+    await session.delete(membership)
+    await session.flush()
+    return True
+
+
+async def list_memberships_for_event(session: AsyncSession, event_id: int) -> list[EventMembership]:
+    result = await session.execute(
+        select(EventMembership)
+        .options(joinedload(EventMembership.user))
+        .where(EventMembership.event_id == event_id)
+        .order_by(EventMembership.created_at),
+    )
+    return list(result.scalars().all())
+
+
+async def list_memberships_for_user(session: AsyncSession, user_id: int) -> list[EventMembership]:
+    result = await session.execute(
+        select(EventMembership)
+        .options(joinedload(EventMembership.event))
+        .where(EventMembership.user_id == user_id)
+        .order_by(EventMembership.created_at),
+    )
+    return list(result.scalars().all())
+
+
+# ---------------------------------------------------------------------------
+# Token revocation
+# ---------------------------------------------------------------------------
+
+
+async def revoke_invite_token(session: AsyncSession, token_str: str) -> InviteToken | None:
+    """Revoke an invite token by setting used_at (prevents future use)."""
+    tok = await get_invite_token(session, token_str)
+    if tok is None:
+        return None
+    tok.used_at = utc_now()
+    await session.flush()
+    return tok

@@ -729,7 +729,7 @@ async def register_submit(request: Request):
                     session, email=email, display_name=display_name,
                     password_hash=pw_hash,
                 )
-                token = create_user_token(user_id=user.id, email=user.email, role=user.role)
+                token = create_user_token(user_id=user.id, email=user.email, is_admin=user.is_admin)
                 response = RedirectResponse(url='/account', status_code=status.HTTP_303_SEE_OTHER)
                 response.set_cookie(
                     key='user_token', value=token,
@@ -776,7 +776,7 @@ async def user_login_submit(request: Request):
             status_code=status.HTTP_403_FORBIDDEN,
         )
 
-    token = create_user_token(user_id=user.id, email=user.email, role=user.role)
+    token = create_user_token(user_id=user.id, email=user.email, is_admin=user.is_admin)
     response = RedirectResponse(url='/account', status_code=status.HTTP_303_SEE_OTHER)
     response.set_cookie(
         key='user_token', value=token,
@@ -794,7 +794,7 @@ async def user_logout(request: Request):
 
 @app.get('/account')
 async def account_page(request: Request):
-    from portal.database import get_session, get_user_by_id
+    from portal.database import get_session, get_user_by_id, list_memberships_for_user
 
     current_user = await get_current_user(request)
     if current_user is None:
@@ -802,13 +802,13 @@ async def account_page(request: Request):
 
     async with get_session() as session:
         user = await get_user_by_id(session, int(current_user['sub']))
+        if user is None:
+            response = RedirectResponse(url='/login', status_code=status.HTTP_303_SEE_OTHER)
+            response.delete_cookie('user_token')
+            return response
+        memberships = await list_memberships_for_user(session, user.id)
 
-    if user is None:
-        response = RedirectResponse(url='/login', status_code=status.HTTP_303_SEE_OTHER)
-        response.delete_cookie('user_token')
-        return response
-
-    return templates.TemplateResponse(request, 'account.html', {'user': user})
+    return templates.TemplateResponse(request, 'account.html', {'user': user, 'memberships': memberships})
 
 
 # ── Admin panel routes ────────────────────────────────────────────────────────
@@ -1156,18 +1156,6 @@ async def admin_user_list(request: Request):
     return templates.TemplateResponse(request, 'admin/user_list.html', {'users': users})
 
 
-@app.post('/admin/users/{user_id}/role', dependencies=[Depends(require_admin)])
-async def admin_update_user_role(request: Request, user_id: int):
-    from portal.database import get_session, update_user_role
-
-    form = await request.form()
-    role = form.get('role', '').strip()
-    if role:
-        async with get_session() as session:
-            await update_user_role(session, user_id, role)
-    return RedirectResponse(url='/admin/users/', status_code=status.HTTP_303_SEE_OTHER)
-
-
 @app.post('/admin/users/{user_id}/toggle-active', dependencies=[Depends(require_admin)])
 async def admin_toggle_user_active(request: Request, user_id: int):
     from portal.database import get_session, get_user_by_id, update_user_active
@@ -1186,6 +1174,121 @@ async def admin_delete_user(request: Request, user_id: int):
     async with get_session() as session:
         await delete_user(session, user_id)
     return RedirectResponse(url='/admin/users/', status_code=status.HTTP_303_SEE_OTHER)
+
+
+# ── Admin event membership routes ────────────────────────────────────────────
+
+
+@app.get('/admin/events/{event_id}/members/', dependencies=[Depends(require_admin)])
+async def admin_event_members(request: Request, event_id: int):
+    from portal.database import get_session, get_event_by_id, list_memberships_for_event, list_users
+
+    async with get_session() as session:
+        event = await get_event_by_id(session, event_id)
+        if event is None:
+            raise HTTPException(status_code=404, detail='Event not found.')
+        memberships = await list_memberships_for_event(session, event_id)
+        users = await list_users(session)
+
+    # Build lookup: user_id → membership (role, id)
+    membership_map = {m.user_id: m for m in memberships}
+
+    return templates.TemplateResponse(request, 'admin/event_members.html', {
+        'event': event,
+        'memberships': memberships,
+        'membership_map': membership_map,
+        'users': users,
+    })
+
+
+@app.post('/admin/events/{event_id}/members/', dependencies=[Depends(require_admin)])
+async def admin_add_event_member(request: Request, event_id: int):
+    from portal.database import get_session, list_memberships_for_event, remove_event_membership, set_event_membership
+
+    form = await request.form()
+    user_id = form.get('user_id', '')
+    role = form.get('role', '').strip()
+    if user_id:
+        uid = int(user_id)
+        async with get_session() as session:
+            if role:
+                await set_event_membership(session, user_id=uid, event_id=event_id, role=role)
+            else:
+                # "— none —" selected: remove any existing membership
+                memberships = await list_memberships_for_event(session, event_id)
+                for m in memberships:
+                    if m.user_id == uid:
+                        await remove_event_membership(session, m.id)
+                        break
+    return RedirectResponse(
+        url=f'/admin/events/{event_id}/members/',
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@app.post('/admin/events/{event_id}/members/{membership_id}/delete', dependencies=[Depends(require_admin)])
+async def admin_remove_event_member(request: Request, event_id: int, membership_id: int):
+    from portal.database import get_session, remove_event_membership
+
+    async with get_session() as session:
+        await remove_event_membership(session, membership_id)
+    return RedirectResponse(
+        url=f'/admin/events/{event_id}/members/',
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+# ── Admin token management routes ────────────────────────────────────────────
+
+
+@app.post(
+    '/admin/events/{event_id}/rooms/{room_id}/booths/{booth_id}/tokens/',
+    dependencies=[Depends(require_admin)],
+)
+async def admin_create_token(request: Request, event_id: int, room_id: int, booth_id: int):
+    from portal.database import create_invite_token, get_session
+
+    form = await request.form()
+    role = form.get('role', '').strip()
+    label = form.get('label', '').strip()
+    expires_hours = form.get('expires_hours', '').strip()
+
+    expires_at = None
+    if expires_hours:
+        from datetime import timedelta
+        from portal.models import utc_now
+        try:
+            expires_at = utc_now() + timedelta(hours=int(expires_hours))
+        except ValueError:
+            pass
+
+    if role:
+        async with get_session() as session:
+            await create_invite_token(
+                session, booth_id=booth_id, role=role, label=label,
+                expires_at=expires_at,
+            )
+
+    return RedirectResponse(
+        url=f'/admin/events/{event_id}/rooms/{room_id}/booths/{booth_id}/',
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@app.post(
+    '/admin/events/{event_id}/rooms/{room_id}/booths/{booth_id}/tokens/{token_id}/revoke',
+    dependencies=[Depends(require_admin)],
+)
+async def admin_revoke_token(request: Request, event_id: int, room_id: int, booth_id: int, token_id: str):
+    from portal.database import get_session, revoke_invite_token
+
+    async with get_session() as session:
+        await revoke_invite_token(session, token_id)
+
+    return RedirectResponse(
+        url=f'/admin/events/{event_id}/rooms/{room_id}/booths/{booth_id}/',
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
 
 
 # ── WebSocket endpoint ────────────────────────────────────────────────────────

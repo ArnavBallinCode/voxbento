@@ -59,7 +59,24 @@ Each booth detail page shows:
 - **Live Status** — whether an interpreter is currently broadcasting
 - **Active Interpreter** — who is currently live
 - **Participant Roster** — all connected users with roles
-- **Invite Tokens** — manage booth access tokens
+- **Invite Tokens** — generate, copy, and revoke booth access tokens
+
+### Token Management (on Booth Detail Page)
+
+1. Open a booth detail page
+2. In the **Invite Tokens** section, fill in:
+   - **Role** — listener, interpreter, or coordinator
+   - **Label** — a human-readable label (e.g. "Alice — Spanish interpreter")
+   - **Expires in (hours)** — optional; leave empty for tokens that never expire
+3. Click **Generate Token**
+4. The new token appears in the table below with a **Copy Link** button
+5. Share the invite link with the intended participant
+
+#### Revoking a token
+
+- Click **Revoke** next to any active token
+- Revoked tokens are marked and cannot be used to join the booth
+- This action cannot be undone
 
 ---
 
@@ -69,55 +86,56 @@ Each booth detail page shows:
 
 1. Visit http://localhost:8000/register
 2. Fill in email, display name, password (min 8 characters)
-3. Account is created with **listener** role
+3. Account is created (non-admin, active)
 4. Redirected to account page
 
-### What listeners can do
+### What new users can do
 
 - Browse events on the home page
-- Listen to live interpretation streams via WebRTC (WHEP)
 - View their account info at `/account`
+- See which events they have roles for
 
-### What listeners cannot do
+### What new users cannot do
 
 - Access the admin panel
-- Go live as an interpreter
+- Go live as an interpreter (until assigned an interpreter role for an event)
 - Manage booths or events
-- Self-assign higher roles
 
 ---
 
 ## Role Management
 
-### Available roles (ordered by privilege)
+### Event-scoped roles
 
-| Role | Permissions |
-|------|-------------|
-| `listener` | View booths, listen to streams, send chat messages |
-| `interpreter` | All listener permissions + go live (publish audio via WHIP) |
-| `coordinator` | All listener permissions + assign active interpreter, manage handoffs |
-| `event_admin` | All coordinator permissions + manage booths and generate invite tokens |
-| `super_admin` | Full access to everything |
+Roles are assigned **per event**, not globally. A user can be an `interpreter` for one event and a `listener` for another.
 
-### Promoting a user
+| Role | Scope | Permissions |
+|------|-------|-------------|
+| `listener` | Event | View booths, listen to streams, send chat messages |
+| `interpreter` | Event | All listener permissions + go live (publish audio via WHIP) |
+| `coordinator` | Event | All listener permissions + assign active interpreter, manage handoffs |
+| `event_admin` | Event | All coordinator permissions + manage booths and generate invite tokens |
 
-1. Log in to admin panel → go to **Users** (`/admin/users/`)
-2. Find the user in the table
-3. Use the **Role** dropdown to select the new role → auto-saves
-4. The user's permissions update on their next page load
+### Assigning event roles
 
-### Deactivating a user
+1. Log in to admin panel → open an **Event** detail page
+2. Click **Manage Members**
+3. Select a registered user from the dropdown
+4. Choose a role → click **Assign Role**
+5. If the user already has a role for this event, it is updated
 
-1. Go to `/admin/users/`
-2. Click **Deactivate** next to the user
-3. The user can no longer log in
-4. Click **Activate** to re-enable
+### Removing an event role
 
-### Deleting a user
+1. Go to the event's **Members** page
+2. Click **Remove** next to the membership
 
-1. Go to `/admin/users/`
-2. Click **Delete** → confirm in the dialog
-3. This is permanent and cannot be undone
+### User admin flags
+
+The **Users** page (`/admin/users/`) shows all registered users with:
+- **Admin** badge — whether the user has site-wide admin access
+- **Status** — active or deactivated
+- **Deactivate/Activate** — toggle login access
+- **Delete** — permanently remove the account
 
 ---
 
@@ -126,8 +144,8 @@ Each booth detail page shows:
 ### Before the event
 
 1. **Admin** creates event, rooms, and booths in the admin panel
-2. **Admin** promotes registered users to `interpreter` or `coordinator` roles
-3. **Admin** optionally generates invite tokens for booth access
+2. **Admin** assigns per-event roles from the event's **Members** page (e.g. interpreter, coordinator)
+3. **Admin** generates invite tokens on each booth detail page and shares links
 4. **Admin** shares interpreter page URLs with interpreters
 
 ### During the event

@@ -30,10 +30,6 @@
               <td>{{ user.display_name }}</td>
             </tr>
             <tr>
-              <th>Role</th>
-              <td><span class="badge badge-role">{{ user.role }}</span></td>
-            </tr>
-            <tr>
               <th>Joined</th>
               <td>{{ user.created_at.strftime('%Y-%m-%d %H:%M UTC') if user.created_at else '—' }}</td>
             </tr>
@@ -51,18 +47,24 @@
         </table>
 
         <div class="account-info">
-          <h3>Your Permissions</h3>
-          {% if user.role == 'listener' %}
-          <p>As a <strong>listener</strong>, you can join any event and listen to live interpretation streams.</p>
-          <p class="muted">An admin can assign you additional roles (interpreter, coordinator) for specific events.</p>
-          {% elif user.role == 'interpreter' %}
-          <p>As an <strong>interpreter</strong>, you can join booth sessions, go live, and provide real-time interpretation.</p>
-          {% elif user.role == 'coordinator' %}
-          <p>As a <strong>coordinator</strong>, you can manage interpreter assignments and coordinate handoffs within booths.</p>
-          {% elif user.role == 'event_admin' %}
-          <p>As an <strong>event admin</strong>, you can manage booths, rooms, and invite tokens for your events.</p>
-          {% elif user.role == 'super_admin' %}
-          <p>As a <strong>super admin</strong>, you have full access to all administrative functions.</p>
+          <h3>Your Event Roles</h3>
+          {% if memberships %}
+          <table class="data-table compact">
+            <thead>
+              <tr><th>Event</th><th>Role</th><th>Since</th></tr>
+            </thead>
+            <tbody>
+              {% for m in memberships %}
+              <tr>
+                <td>{{ m.event.display_name if m.event else '—' }}</td>
+                <td><span class="badge badge-role badge-{{ m.role }}">{{ m.role }}</span></td>
+                <td>{{ m.created_at.strftime('%Y-%m-%d') if m.created_at else '—' }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <p class="muted">You have not been assigned a role for any event yet. An admin can assign roles on a per-event basis.</p>
           {% endif %}
         </div>
       </div>

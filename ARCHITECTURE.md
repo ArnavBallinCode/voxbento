@@ -144,9 +144,9 @@ Existing free-form booth IDs (e.g. `hall-a-fr`) that happen to end with a valid 
 - `portal/roles.py`
   - Permission enum, role-permission mapping, standalone permission helpers (mirrors Eventyay `core/permissions.py`)
 - `portal/models.py`
-  - SQLAlchemy 2.0 declarative models: Event, Room, DBBooth, InviteToken, User
+  - SQLAlchemy 2.0 declarative models: Event, Room, DBBooth, InviteToken, User, EventMembership
 - `portal/database.py`
-  - async engine lifecycle, session factory, CRUD helpers for all models (including user management)
+  - async engine lifecycle, session factory, CRUD helpers for all models (including user management, event memberships, and token revocation)
 - `alembic/`
   - database migration framework (async-aware env.py, version-controlled migration scripts)
 - `templates/base.html`
@@ -172,9 +172,11 @@ Existing free-form booth IDs (e.g. `hall-a-fr`) that happen to end with a valid 
 - `templates/login.html`
   - user login form (email, password)
 - `templates/account.html`
-  - user account page showing role, status, permissions
+  - user account page showing event memberships and account status
 - `templates/admin/`
-  - admin panel templates: dashboard, event/room/booth CRUD, user management, login
+  - admin panel templates: dashboard, event/room/booth CRUD, user management, event members, login
+- `static/js/admin.js`
+  - admin panel client-side utilities (clipboard copy for invite links)
 - `mediamtx.yml`
   - MediaMTX configuration (WHIP ingest, WHEP playback, HLS fallback, Control API, overridePublisher for handoff)
 - `docker-compose.yml`
@@ -212,8 +214,10 @@ The persistent database stores configuration that must survive restarts (which e
 erDiagram
     Event ||--o{ Room : "has rooms"
     Event ||--o{ DBBooth : "has booths"
+    Event ||--o{ EventMembership : "has members"
     Room  ||--o{ DBBooth : "contains booths"
     DBBooth ||--o{ InviteToken : "has tokens"
+    User  ||--o{ EventMembership : "has memberships"
 
     Event {
         int id PK
@@ -251,8 +255,15 @@ erDiagram
         string email UK
         string display_name
         string password_hash
-        string role "default: listener"
+        bool is_admin "default: false"
         bool is_active "default: true"
+        datetime created_at
+    }
+    EventMembership {
+        int id PK
+        int user_id FK
+        int event_id FK
+        string role
         datetime created_at
     }
 ```

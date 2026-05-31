@@ -1,11 +1,12 @@
 """SQLAlchemy declarative models for persistent portal entities.
 
-Five tables:
+Six tables:
 - ``events`` — top-level event container (slug is unique key)
 - ``rooms`` — rooms within an event (mapped to Eventyay rooms)
 - ``booths`` — interpretation booths (one per language per room)
 - ``invite_tokens`` — single-use invite tokens for booth access
-- ``users`` — registered user accounts with role-based access
+- ``users`` — registered user accounts
+- ``event_memberships`` — per-event role assignments for users
 
 Design decisions
 ~~~~~~~~~~~~~~~~
@@ -193,9 +194,9 @@ class InviteToken(Base):
 class User(Base):
     """Registered user account.
 
-    Users sign up with email + password and get ``listener`` role by default.
-    Admins can promote users to ``interpreter``, ``coordinator``,
-    ``event_admin``, or ``super_admin`` from the admin panel.
+    Users sign up with email + password. They have no global booth role —
+    roles are assigned per-event via ``EventMembership``.  The only
+    system-level flag is ``is_admin`` which grants admin panel access.
     """
 
     __tablename__ = 'users'
@@ -204,15 +205,13 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
     display_name: Mapped[str] = mapped_column(String(200))
     password_hash: Mapped[str] = mapped_column(String(200))
-    role: Mapped[str] = mapped_column(String(20), default='listener')
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
-    @validates('role')
-    def _validate_role(self, _key: str, value: str) -> str:
-        if value not in ALL_ROLES:
-            raise ValueError(f"Invalid role '{value}'. Must be one of: {', '.join(sorted(ALL_ROLES))}")
-        return value
+    memberships: Mapped[list[EventMembership]] = relationship(
+        back_populates='user', cascade='all, delete-orphan',
+    )
 
     @validates('email')
     def _validate_email(self, _key: str, value: str) -> str:
@@ -222,4 +221,43 @@ class User(Base):
         return value
 
     def __repr__(self) -> str:
-        return f'<User id={self.id} email={self.email!r} role={self.role!r}>'
+        return f'<User id={self.id} email={self.email!r}>'
+
+
+# ---------------------------------------------------------------------------
+# EventMembership
+# ---------------------------------------------------------------------------
+
+# Roles valid for event memberships (no super_admin — that's system-level)
+EVENT_ROLES = frozenset({'listener', 'interpreter', 'coordinator', 'event_admin'})
+
+
+class EventMembership(Base):
+    """Per-event role assignment for a user.
+
+    A user can have different roles in different events. For example,
+    a user might be an interpreter for PyCon and a coordinator for FOSDEM.
+    """
+
+    __tablename__ = 'event_memberships'
+    __table_args__ = (
+        Index('ix_membership_user_event', 'user_id', 'event_id', unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'))
+    event_id: Mapped[int] = mapped_column(ForeignKey('events.id', ondelete='CASCADE'))
+    role: Mapped[str] = mapped_column(String(20))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    user: Mapped[User] = relationship(back_populates='memberships')
+    event: Mapped[Event] = relationship()
+
+    @validates('role')
+    def _validate_role(self, _key: str, value: str) -> str:
+        if value not in EVENT_ROLES:
+            raise ValueError(f"Invalid event role '{value}'. Must be one of: {', '.join(sorted(EVENT_ROLES))}")
+        return value
+
+    def __repr__(self) -> str:
+        return f'<EventMembership user={self.user_id} event={self.event_id} role={self.role!r}>'

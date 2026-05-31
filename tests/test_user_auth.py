@@ -128,7 +128,7 @@ class TestRegistration:
         assert b'already exists' in resp.content
 
     @pytest.mark.anyio
-    async def test_register_default_role_is_listener(self, setup_db):
+    async def test_register_creates_active_non_admin(self, setup_db):
         from portal.database import get_session, get_user_by_email
         async with _client() as c:
             await c.post('/register', data={
@@ -140,7 +140,8 @@ class TestRegistration:
         async with get_session() as s:
             user = await get_user_by_email(s, 'listener@example.com')
         assert user is not None
-        assert user.role == 'listener'
+        assert user.is_admin is False
+        assert user.is_active is True
 
 
 # ---------------------------------------------------------------------------
@@ -233,13 +234,12 @@ class TestAccountPage:
     @pytest.mark.anyio
     async def test_account_shows_user_info(self, setup_db):
         user = await _create_test_user(email='me@example.com', display_name='Me')
-        token = create_user_token(user_id=user.id, email=user.email, role=user.role)
+        token = create_user_token(user_id=user.id, email=user.email, is_admin=user.is_admin)
         async with _client() as c:
             resp = await c.get('/account', cookies={'user_token': token})
         assert resp.status_code == 200
         assert b'me@example.com' in resp.content
         assert b'Me' in resp.content
-        assert b'listener' in resp.content
 
 
 # ---------------------------------------------------------------------------
@@ -264,21 +264,23 @@ class TestAdminUserManagement:
         assert resp.status_code == 403
 
     @pytest.mark.anyio
-    async def test_change_user_role(self, setup_db, admin_cookie):
-        from portal.database import get_session, get_user_by_id
+    async def test_set_event_membership(self, setup_db, admin_cookie):
+        from portal.database import create_event, get_session, list_memberships_for_event
         user = await _create_test_user()
-        assert user.role == 'listener'
+        async with get_session() as s:
+            event = await create_event(s, display_name='Test Event', slug='test-event')
         async with _client() as c:
             resp = await c.post(
-                f'/admin/users/{user.id}/role',
-                data={'role': 'interpreter'},
+                f'/admin/events/{event.id}/members/',
+                data={'user_id': str(user.id), 'role': 'interpreter'},
                 cookies=admin_cookie,
                 follow_redirects=False,
             )
         assert resp.status_code == 303
         async with get_session() as s:
-            updated = await get_user_by_id(s, user.id)
-        assert updated.role == 'interpreter'
+            memberships = await list_memberships_for_event(s, event.id)
+        assert len(memberships) == 1
+        assert memberships[0].role == 'interpreter'
 
     @pytest.mark.anyio
     async def test_toggle_user_active(self, setup_db, admin_cookie):
@@ -329,7 +331,7 @@ class TestHomePageAuthLinks:
     @pytest.mark.anyio
     async def test_home_shows_account_when_logged_in(self, setup_db):
         user = await _create_test_user()
-        token = create_user_token(user_id=user.id, email=user.email, role=user.role)
+        token = create_user_token(user_id=user.id, email=user.email, is_admin=user.is_admin)
         async with _client() as c:
             resp = await c.get('/', cookies={'user_token': token})
         assert resp.status_code == 200

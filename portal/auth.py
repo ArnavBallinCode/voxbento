@@ -126,13 +126,13 @@ def create_admin_token() -> str:
 # ---------------------------------------------------------------------------
 
 
-def create_user_token(*, user_id: int, email: str, role: str) -> str:
+def create_user_token(*, user_id: int, email: str, is_admin: bool = False) -> str:
     """Create a JWT for a registered user session."""
     now = datetime.now(timezone.utc)
     payload = {
         'sub': str(user_id),
         'email': email,
-        'role': role,
+        'is_admin': is_admin,
         'user': True,
         'iat': now,
         'exp': now + timedelta(seconds=settings.jwt_expiry_seconds),
