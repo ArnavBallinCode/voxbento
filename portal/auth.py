@@ -5,8 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import bcrypt
 import jwt
-from fastapi import Cookie, HTTPException, Request, WebSocket, status
-from fastapi.responses import RedirectResponse
+from fastapi import HTTPException, Request, WebSocket, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from portal.config import settings

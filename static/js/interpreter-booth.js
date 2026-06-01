@@ -589,7 +589,6 @@ function joinBooth() {
     type: 'booth:join',
     display_name: displayName || 'Interpreter',
     role: requestedRole,
-    granted_role: state.grantedRole || null,
     language: state.language,
     channel_id: state.channelId,
     participant_id: state.participantId,

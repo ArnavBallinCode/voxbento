@@ -57,6 +57,8 @@ class Session:
     participant_id: str | None
     language: str
     channel_id: str
+    # Role derived from the bearer cookie at WS connection time — never from client data.
+    granted_role: str | None = None
 
 
 class ConnectionManager:
@@ -642,14 +644,12 @@ async def _handle_join(ws: WebSocket, session: Session, data: dict) -> None:
     channel_id = data.get('channel_id', f'{session.booth_id}-audio')
     participant_id = data.get('participant_id')
 
-    # Role enforcement: the client supplies what role they want, but we check
-    # their granted_role from the JWT (passed through the page data-attribute
-    # and echoed back here). If they try to claim a higher role, reject it.
-    granted_role = data.get('granted_role')
-    if granted_role is not None and not can_perform_role(granted_role, role):
+    # Role enforcement: use the server-derived granted_role stored on the session
+    # (populated from cookies at WS connect time). Never trust data['granted_role'].
+    if session.granted_role is not None and not can_perform_role(session.granted_role, role):
         await ws.send_text(json.dumps({
             'type': 'booth:error',
-            'message': f'Your assigned role ({granted_role}) does not permit joining as {role}.',
+            'message': f'Your assigned role ({session.granted_role}) does not permit joining as {role}.',
         }))
         return
 
@@ -1372,12 +1372,31 @@ async def ws_booth(websocket: WebSocket, booth_id: str) -> None:
     except ValueError:
         return
 
+    # Derive granted_role from cookies at connect time — never trust client data.
+    ws_cookies = websocket.cookies
+    ws_session_payload: dict | None = None
+    for cookie_name in ('session_token', 'user_token'):
+        raw = ws_cookies.get(cookie_name, '')
+        if not raw:
+            continue
+        try:
+            import jwt as _pyjwt
+            ws_session_payload = _pyjwt.decode(
+                raw, settings.effective_jwt_secret, algorithms=['HS256'],
+            )
+            break
+        except Exception:
+            continue
+
+    ws_granted_role = resolve_booth_role(ws_session_payload)
+
     await websocket.accept()
     session = Session(
         booth_id=booth_id,
         participant_id=None,
         language='English',
         channel_id=f'{booth_id}-audio',
+        granted_role=ws_granted_role,
     )
     manager.add(websocket, session)
 

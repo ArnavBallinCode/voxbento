@@ -412,7 +412,7 @@ uv run uvicorn fastapi_app:app --host 127.0.0.1 --port 8000 --reload
 
 ### User registration and role management
 
-1. Users register at `/register` — they get a **listener** account by default
-2. Admins go to `/admin/users/` to manage registered users
-3. Change a user's role via the dropdown (listener → interpreter → coordinator → event_admin → super_admin)
+1. Users register at `/register` — new accounts are non-admin with no event roles
+2. Admins manage site-wide access (the `is_admin` flag) and activation status at `/admin/users/`
+3. Per-event roles (`listener`, `interpreter`, `coordinator`, `event_admin`) are assigned from each event's **Members** page at `/admin/events/{id}/members/` — inline dropdowns let admins assign or remove roles per user
 4. Deactivate users to prevent login without deleting their account

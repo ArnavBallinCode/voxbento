@@ -500,19 +500,29 @@ sequenceDiagram
 - **Default role is `listener`** — no role selection at registration. Users cannot self-assign admin, interpreter, or coordinator roles.
 - **Password hashing uses bcrypt** (`bcrypt.hashpw` with auto-generated salt). Plaintext passwords are never stored.
 - **User sessions use JWT cookies** (`user_token`, HttpOnly, SameSite=lax) — same pattern as admin tokens.
-- **Admins manage roles** from `/admin/users/` — dropdown to change any user's role, toggle active/inactive, delete.
+- **Roles are per-event** — admins assign roles at `/admin/events/{id}/members/` via `EventMembership`. There is no global role field on the user.
+- **`is_admin` flag** on `User` grants access to the admin panel; it is toggled from `/admin/users/`.
 - **Deactivated accounts** cannot log in but are not deleted (preserving audit trail).
 
 ### Admin user management
 
-The admin panel at `/admin/users/` allows:
+The admin panel provides two layers of user management:
+
+**Site-wide** (`/admin/users/`):
 
 | Action | Route | Effect |
 |--------|-------|--------|
-| View all users | `GET /admin/users/` | Table with email, name, role, status, join date |
-| Change role | `POST /admin/users/{id}/role` | Promote/demote between listener, interpreter, coordinator, event_admin, super_admin |
+| View all users | `GET /admin/users/` | Table with email, name, admin status, join date |
 | Toggle active | `POST /admin/users/{id}/toggle-active` | Enable/disable login without deleting |
 | Delete user | `POST /admin/users/{id}/delete` | Permanent removal |
+
+**Per-event** (`/admin/events/{id}/members/`):
+
+| Action | Route | Effect |
+|--------|-------|--------|
+| View all users + memberships | `GET /admin/events/{id}/members/` | Table with inline role dropdown for every user |
+| Assign / change role | `POST /admin/events/{id}/members/` | Create or update `EventMembership` (roles: `listener`, `interpreter`, `coordinator`, `event_admin`) |
+| Remove membership | `POST /admin/events/{id}/members/{mid}/delete` | Delete `EventMembership` row |
 
 ## 14. Admin panel
 
