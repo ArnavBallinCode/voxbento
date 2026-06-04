@@ -43,7 +43,6 @@ const elements = {
   monitorStatus: document.getElementById('monitor-status'),
   activeIndicator: document.getElementById('active-indicator'),
   ingestStatus: document.getElementById('ingest-status'),
-  activeName: document.getElementById('active-name'),
   micState: document.getElementById('mic-state'),
   ingestReachable: document.getElementById('ingest-reachable'),
   errorBanner: document.getElementById('error-banner'),
@@ -95,7 +94,8 @@ const HLS_POLL_INTERVAL_MS = 1000
 const HLS_POLL_MAX_ATTEMPTS = 10
 
 boot().catch((error) => {
-  showError(`Failed to boot interpreter portal: ${error.message}`)
+  const msg = error instanceof Error ? error.message : String(error)
+  showError(`Failed to boot interpreter portal: ${msg}`)
 })
 
 async function boot() {
@@ -103,13 +103,16 @@ async function boot() {
   await fetchBoothState()
   await fetchIngestReachability()
   await populateMicDevices()
+
+  // Run preflights asynchronously before blocking on JWT/WS connection
+  runPreflightChecks().catch((error) => {
+    const msg = error instanceof Error ? error.message : String(error)
+    showError(`Preflight checks failed: ${msg}`)
+  })
   await acquireJwt()
   await connectWebSocket()
   bindEventHandlers()
   render()
-  runPreflightChecks().catch((error) => {
-    showError(`Preflight checks failed: ${error.message}`)
-  })
 }
 
 // ── JWT and WebSocket lifecycle ───────────────────────────────────────────────
@@ -1045,7 +1048,6 @@ function renderParticipants() {
     activeParticipant ? `${activeParticipant.display_name} is active` : 'No active interpreter',
     activeParticipant ? 'success' : 'warning',
   )
-  elements.activeName.textContent = activeParticipant ? activeParticipant.display_name : 'Unassigned'
   elements.participantList.innerHTML = ''
   for (const participant of state.participants) {
     const tile = document.createElement('article')

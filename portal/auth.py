@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
+
+logger = logging.getLogger(__name__)
 import jwt
 from fastapi import HTTPException, Request, WebSocket, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -207,24 +210,52 @@ def get_booth_session(request: Request) -> dict | None:
     return None
 
 
-def resolve_booth_role(payload: dict | None) -> str | None:
+async def resolve_booth_role(payload: dict | None, booth_id: str | None = None) -> str | None:
     """Extract the role claim from a booth session payload.
 
     - Invite tokens carry a ``role`` claim directly.
-    - User tokens carry ``is_admin``; without a booth-specific role the
-      caller must check EventMembership separately.  When is_admin=True we
-      treat them as event_admin.
-    Returns None if no role can be determined.
+    - User tokens without an explicit role will check the database for
+      BoothMembership and EventMembership.
+    - If no DB membership exists, is_admin users default to 'event_admin'.
     """
     if payload is None:
         return None
-    # Invite / participant token
+    # 1. Invite / participant token explicit role
     if 'role' in payload:
         return payload['role']
-    # Registered user — is_admin maps to event_admin for booth purposes
-    if payload.get('is_admin'):
-        return 'event_admin'
-    return None
+
+    granted_role = None
+
+    # 2. Database lookup for registered users
+    if payload.get('sub') and booth_id:
+        from portal.booth_identity import parse_booth_id
+        from portal.database import get_session, list_memberships_for_user, list_booth_memberships_for_user
+        try:
+            event_slug, lang_code = parse_booth_id(booth_id)
+            async with get_session() as db_session:
+                bms = await list_booth_memberships_for_user(db_session, int(payload['sub']))
+                for bm in bms:
+                    if bm.booth.event.slug == event_slug and bm.booth.language_code == lang_code:
+                        granted_role = bm.role
+                        break
+
+                if granted_role is None:
+                    memberships = await list_memberships_for_user(db_session, int(payload['sub']))
+                    for m in memberships:
+                        if m.event and m.event.slug == event_slug:
+                            granted_role = m.role
+                            break
+        except ValueError:
+            # booth_id is likely a legacy format (e.g., 'demo-booth') that cannot be parsed
+            pass
+        except Exception:
+            logger.exception("Failed to resolve booth role from database")
+
+    # 3. Global admin fallback
+    if granted_role is None and payload.get('is_admin'):
+        granted_role = 'event_admin'
+
+    return granted_role
 
 
 def can_perform_role(granted_role: str | None, requested_role: str) -> bool:
