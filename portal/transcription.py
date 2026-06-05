@@ -4,6 +4,8 @@ import numpy as np
 from faster_whisper import WhisperModel
 import io
 
+from portal.config import settings
+
 logger = logging.getLogger(__name__)
 
 # Lazy load model
@@ -12,8 +14,9 @@ _model = None
 def get_model():
     global _model
     if _model is None:
-        logger.info("Loading Whisper model (tiny, int8)...")
-        _model = WhisperModel("tiny", device="cpu", compute_type="int8")
+        model_size = settings.whisper_model_size
+        logger.info(f"Loading Whisper model ({model_size}, int8)...")
+        _model = WhisperModel(model_size, device="cpu", compute_type="int8")
         logger.info("Whisper model loaded.")
     return _model
 
