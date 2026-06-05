@@ -107,6 +107,7 @@ async function boot() {
   if (state.relayWhepUrl) {
     await populateRelayDevices()
   }
+  await populateBoothDevices()
 
   // Run preflights asynchronously before blocking on JWT/WS connection
   runPreflightChecks().catch((error) => {
@@ -690,6 +691,45 @@ async function populateRelayDevices() {
 
   if (previous && elements.relayDeviceSelect.querySelector(`option[value="${CSS.escape(previous)}"]`)) {
     elements.relayDeviceSelect.value = previous
+  }
+}
+
+async function populateBoothDevices() {
+  if (!navigator.mediaDevices || !elements.boothDeviceSelect) return
+  let devices = []
+  try {
+    devices = await navigator.mediaDevices.enumerateDevices()
+  } catch {
+    return
+  }
+  let audioOutputs = devices.filter((d) => d.kind === 'audiooutput')
+
+  const includeVirtual = elements.showVirtualBoothDevices && elements.showVirtualBoothDevices.checked
+  if (!includeVirtual) {
+    const virtualKeywords = ['zoom', 'teams', 'nomachine', 'blackhole', 'loopback', 'soundflower', 'obs', 'virtual', 'webex', 'eqmac', 'epoccam']
+    audioOutputs = audioOutputs.filter((d) => {
+      const lower = d.label.toLowerCase()
+      return !virtualKeywords.some((keyword) => lower.includes(keyword))
+    })
+  }
+
+  const previous = elements.boothDeviceSelect.value
+  elements.boothDeviceSelect.innerHTML = ''
+
+  const defaultOpt = document.createElement('option')
+  defaultOpt.value = ''
+  defaultOpt.textContent = 'Default output'
+  elements.boothDeviceSelect.appendChild(defaultOpt)
+
+  for (const device of audioOutputs) {
+    const opt = document.createElement('option')
+    opt.value = device.deviceId
+    opt.textContent = device.label || `Speaker ${elements.boothDeviceSelect.options.length}`
+    elements.boothDeviceSelect.appendChild(opt)
+  }
+
+  if (previous && elements.boothDeviceSelect.querySelector(`option[value="${CSS.escape(previous)}"]`)) {
+    elements.boothDeviceSelect.value = previous
   }
 }
 
