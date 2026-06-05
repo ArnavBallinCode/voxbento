@@ -753,7 +753,11 @@ let boothListening = false
 let boothDefaultText = ''
 
 function toggleBoothAudio() {
-  if (!state.whepUrl) return
+  const whepUrl = state.whepUrl || (state.whipBase && state.channelId ? `${state.whipBase}/${encodeURIComponent(state.channelId)}/whep` : '')
+  if (!whepUrl) {
+    console.warn('Cannot listen to booth: whepUrl is missing')
+    return
+  }
   
   if (!boothDefaultText && elements.listenBoothBtn) {
     boothDefaultText = elements.listenBoothBtn.textContent.trim()
@@ -767,7 +771,7 @@ function toggleBoothAudio() {
     }
     if (elements.boothStatus) elements.boothStatus.textContent = 'Connecting...'
     boothWhep.start({
-      whepUrl: state.whepUrl,
+      whepUrl: whepUrl,
       audioEl: elements.boothAudio,
       onState: (st) => {
         if (!elements.boothStatus) return
