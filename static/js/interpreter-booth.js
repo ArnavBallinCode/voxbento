@@ -27,6 +27,7 @@ const state = {
   defaultJitsiRoom: portal.dataset.defaultJitsi || '',
   jitsiDomain: portal.dataset.jitsiDomain || '',
   whipBase: portal.dataset.whipBase || '',
+  whepUrl: portal.dataset.whepUrl || '',
   relayWhepUrl: portal.dataset.relayWhepUrl || '',
   micDeviceId: localStorage.getItem('mic-device-id') || '',
   /** Role granted by the server (from JWT). Empty string = unknown / legacy. */
@@ -62,6 +63,14 @@ const elements = {
   showVirtualRelayDevices: document.getElementById('show-virtual-relay-devices'),
   relayVolume: document.getElementById('relay-volume'),
   relayStatus: document.getElementById('relay-status'),
+  
+  listenBoothBtn: document.getElementById('listen-booth-btn'),
+  boothAudio: document.getElementById('booth-audio'),
+  boothDeviceSelect: document.getElementById('booth-device-select'),
+  showVirtualBoothDevices: document.getElementById('show-virtual-booth-devices'),
+  boothVolume: document.getElementById('booth-volume'),
+  boothStatus: document.getElementById('booth-audio-status'),
+
   micDeviceSelect: document.getElementById('mic-device-select'),
   showVirtualDevices: document.getElementById('show-virtual-devices'),
   micMeter: document.getElementById('mic-meter'),
@@ -98,6 +107,7 @@ async function boot() {
   if (state.relayWhepUrl) {
     await populateRelayDevices()
   }
+  await populateBoothDevices()
 
   // Run preflights asynchronously before blocking on JWT/WS connection
   runPreflightChecks().catch((error) => {
@@ -280,6 +290,33 @@ function bindEventHandlers() {
         console.warn('setSinkId failed', e)
       }
     })
+  }
+
+  // Booth Audio Listeners
+  if (elements.boothDeviceSelect && elements.boothAudio) {
+    elements.boothDeviceSelect.addEventListener('change', async () => {
+      try {
+        if (typeof elements.boothAudio.setSinkId === 'function') {
+          await elements.boothAudio.setSinkId(elements.boothDeviceSelect.value)
+        }
+      } catch (e) {
+        console.warn('setSinkId failed for booth audio', e)
+      }
+    })
+  }
+
+  if (elements.showVirtualBoothDevices) {
+    elements.showVirtualBoothDevices.addEventListener('change', populateBoothDevices)
+  }
+
+  if (elements.boothVolume && elements.boothAudio) {
+    elements.boothVolume.addEventListener('input', () => {
+      elements.boothAudio.volume = parseFloat(elements.boothVolume.value)
+    })
+  }
+
+  if (elements.listenBoothBtn) {
+    elements.listenBoothBtn.addEventListener('click', toggleBoothAudio)
   }
 
   if (elements.showVirtualRelayDevices) {
@@ -657,6 +694,49 @@ async function populateRelayDevices() {
   }
 }
 
+async function populateBoothDevices() {
+  if (!navigator.mediaDevices || !elements.boothDeviceSelect) return
+  let devices = []
+  try {
+    devices = await navigator.mediaDevices.enumerateDevices()
+  } catch {
+    return
+  }
+  let audioOutputs = devices.filter((d) => d.kind === 'audiooutput')
+
+  const includeVirtual = elements.showVirtualBoothDevices && elements.showVirtualBoothDevices.checked
+  if (!includeVirtual) {
+    const virtualKeywords = ['zoom', 'teams', 'nomachine', 'blackhole', 'loopback', 'soundflower', 'obs', 'virtual', 'webex', 'eqmac', 'epoccam']
+    audioOutputs = audioOutputs.filter((d) => {
+      const lower = d.label.toLowerCase()
+      return !virtualKeywords.some((keyword) => lower.includes(keyword))
+    })
+  }
+
+  const previous = elements.boothDeviceSelect.value
+  elements.boothDeviceSelect.innerHTML = ''
+
+  const defaultOpt = document.createElement('option')
+  defaultOpt.value = ''
+  defaultOpt.textContent = 'Default output'
+  elements.boothDeviceSelect.appendChild(defaultOpt)
+
+  for (const device of audioOutputs) {
+    const opt = document.createElement('option')
+    opt.value = device.deviceId
+    opt.textContent = device.label || `Speaker ${elements.boothDeviceSelect.options.length}`
+    elements.boothDeviceSelect.appendChild(opt)
+  }
+
+  if (previous && elements.boothDeviceSelect.querySelector(`option[value="${CSS.escape(previous)}"]`)) {
+    elements.boothDeviceSelect.value = previous
+  }
+}
+
+// ── WHEP Clients ──────────────────────────────────────────────────────────────
+const relayWhep = window.createWhepClient ? window.createWhepClient() : window.WhepListener
+const boothWhep = window.createWhepClient ? window.createWhepClient() : window.WhepListener
+
 // ── Relay Listening ───────────────────────────────────────────────────────────
 
 let relayListening = false
@@ -676,7 +756,7 @@ function toggleRelayAudio() {
       elements.passRelay.textContent = 'Stop Listening to Relay'
     }
     if (elements.relayStatus) elements.relayStatus.textContent = 'Connecting...'
-    WhepListener.start({
+    relayWhep.start({
       whepUrl: state.relayWhepUrl,
       audioEl: elements.relayAudio,
       onState: (st) => {
@@ -703,7 +783,61 @@ function toggleRelayAudio() {
       elements.relayStatus.textContent = 'Not Listening'
       elements.relayStatus.className = 'status-badge'
     }
-    WhepListener.stop()
+    relayWhep.stop()
+  }
+}
+
+// ── Booth Audio Listening ─────────────────────────────────────────────────────
+
+let boothListening = false
+let boothDefaultText = ''
+
+function toggleBoothAudio() {
+  const whepUrl = state.whepUrl || (state.whipBase && state.channelId ? `${state.whipBase}/${encodeURIComponent(state.channelId)}/whep` : '')
+  if (!whepUrl) {
+    console.warn('Cannot listen to booth: whepUrl is missing')
+    return
+  }
+  
+  if (!boothDefaultText && elements.listenBoothBtn) {
+    boothDefaultText = elements.listenBoothBtn.textContent.trim()
+  }
+
+  boothListening = !boothListening
+  if (boothListening) {
+    if (elements.listenBoothBtn) {
+      elements.listenBoothBtn.classList.add('btn-primary')
+      elements.listenBoothBtn.textContent = 'Stop Listening to Booth'
+    }
+    if (elements.boothStatus) elements.boothStatus.textContent = 'Connecting...'
+    boothWhep.start({
+      whepUrl: whepUrl,
+      audioEl: elements.boothAudio,
+      onState: (st) => {
+        if (!elements.boothStatus) return
+        if (st.audioActive) {
+          elements.boothStatus.textContent = 'Listening'
+          elements.boothStatus.className = 'status-badge status-live'
+        } else if (st.peerConnection === 'failed') {
+          elements.boothStatus.textContent = 'Error'
+          elements.boothStatus.className = 'status-badge status-disconnected'
+        } else {
+          elements.boothStatus.textContent = 'Connecting...'
+          elements.boothStatus.className = 'status-badge status-warning'
+        }
+      },
+      onLog: (msg) => console.log('[Booth WHEP]', msg)
+    })
+  } else {
+    if (elements.listenBoothBtn) {
+      elements.listenBoothBtn.classList.remove('btn-primary')
+      elements.listenBoothBtn.textContent = boothDefaultText
+    }
+    if (elements.boothStatus) {
+      elements.boothStatus.textContent = 'Not Listening'
+      elements.boothStatus.className = 'status-badge'
+    }
+    boothWhep.stop()
   }
 }
 
@@ -1204,6 +1338,7 @@ function renderMicControls() {
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
 function setBadge(element, text, tone = '') {
+  if (!element) return
   element.textContent = text
   element.classList.remove('success', 'warning', 'danger')
   if (tone) element.classList.add(tone)
