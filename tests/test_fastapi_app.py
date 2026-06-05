@@ -17,6 +17,14 @@ from portal.auth import create_participant_token, create_user_token
 client = TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+async def setup_db():
+    from portal.database import configure, dispose, init_db
+    configure('sqlite+aiosqlite://')
+    await init_db()
+    yield
+    await dispose()
+
 def _interpreter_cookie(event_slug: str = 'test-event', language_code: str = 'en') -> dict:
     """Return a cookies dict with a valid interpreter session_token."""
     tok = create_participant_token(
