@@ -94,7 +94,7 @@ class DeepgramProvider(TranscriptionProvider):
             "Content-Type": "audio/raw; encoding=linear16; sample_rate=16000; channels=1"
         }
         
-        url = f"https://api.deepgram.com/v1/listen?model={model_variant}&language={language_code}"
+        url = f"https://api.deepgram.com/v1/listen?model={model_variant}&language={language_code}&encoding=linear16&sample_rate=16000&channels=1"
         
         async with httpx.AsyncClient() as client:
             try:
