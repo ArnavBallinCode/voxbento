@@ -19,6 +19,7 @@ dependencies = [
     "bcrypt>=5.0.0",
     "faster-whisper>=1.2.1",
     "numpy>=2.4.6",
+    "websockets>=16.0",
 ]
 
 [dependency-groups]

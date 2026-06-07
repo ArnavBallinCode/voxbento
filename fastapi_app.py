@@ -1136,6 +1136,32 @@ async def admin_event_detail(request: Request, event_id: int):
     })
 
 
+@app.post('/admin/events/{event_id}/api-settings', dependencies=[Depends(require_admin)])
+async def admin_event_api_settings(
+    request: Request,
+    event_id: int,
+    transcription_api_enabled: bool | None = Form(False),
+    openai_api_key: str | None = Form(None),
+    deepgram_api_key: str | None = Form(None),
+    nvidia_api_key: str | None = Form(None),
+):
+    from portal.database import get_session, get_event_by_id
+
+    async with get_session() as session:
+        event = await get_event_by_id(session, event_id)
+        if event is None:
+            raise HTTPException(status_code=404, detail='Event not found.')
+        
+        event.transcription_api_enabled = bool(transcription_api_enabled)
+        event.openai_api_key = openai_api_key if openai_api_key else None
+        event.deepgram_api_key = deepgram_api_key if deepgram_api_key else None
+        event.nvidia_api_key = nvidia_api_key if nvidia_api_key else None
+        
+        await session.commit()
+        
+    return safe_redirect(url=f'/admin/events/{event_id}/', status_code=status.HTTP_303_SEE_OTHER)
+
+
 @app.post('/admin/events/{event_id}/delete', dependencies=[Depends(require_admin)])
 async def admin_delete_event(request: Request, event_id: int):
     from portal.database import get_session, delete_event
@@ -1445,6 +1471,7 @@ async def admin_transcription_settings(
     room_id: int,
     booth_id: int,
     transcription_enabled: bool | None = Form(False),
+    transcription_provider: str = Form('local'),
     transcription_model: str = Form('tiny'),
 ):
     from portal.database import get_session, get_booth_by_id, get_event_by_id
@@ -1461,10 +1488,12 @@ async def admin_transcription_settings(
             raise HTTPException(status_code=404, detail='Event not found.')
             
         old_enabled = db_booth.transcription_enabled
+        old_provider = db_booth.transcription_provider
         old_model = db_booth.transcription_model
         
         # We need to manually update the columns and commit
         db_booth.transcription_enabled = bool(transcription_enabled)
+        db_booth.transcription_provider = transcription_provider
         db_booth.transcription_model = transcription_model
         await session.commit()
         
@@ -1478,12 +1507,12 @@ async def admin_transcription_settings(
             if not transcription_enabled:
                 await stop_transcription_worker(bid)
                 await broadcast_transcription(bid, "")
-            elif old_enabled != transcription_enabled or old_model != transcription_model:
+            elif old_enabled != transcription_enabled or old_provider != transcription_provider or old_model != transcription_model:
                 await stop_transcription_worker(bid)
                 await broadcast_transcription(bid, "")
                 import asyncio
                 await asyncio.sleep(0.1)
-                await start_transcription_worker(event.slug, db_booth.language_code, bid, broadcast_transcription, transcription_model)
+                await start_transcription_worker(event.slug, db_booth.language_code, bid, broadcast_transcription, transcription_provider, transcription_model)
     return safe_redirect(
         url=f'/admin/events/{event_id}/rooms/{room_id}/booths/{booth_id}/',
         status_code=status.HTTP_303_SEE_OTHER,
@@ -1807,9 +1836,10 @@ async def api_transcription_start(booth_id: str, request: Request):
     from portal.database import get_session
     from portal.models import DBBooth, Event
     from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
 
     async with get_session() as session:
-        stmt = select(DBBooth).join(Event).where(
+        stmt = select(DBBooth).join(Event).options(selectinload(DBBooth.event)).where(
             Event.slug == event_slug,
             DBBooth.language_code == language_code
         )
@@ -1818,10 +1848,19 @@ async def api_transcription_start(booth_id: str, request: Request):
         if not db_booth or not db_booth.transcription_enabled:
             return {"status": "disabled", "message": "Transcription is not enabled for this booth."}
             
+        provider = db_booth.transcription_provider
         model_size = db_booth.transcription_model
+        
+        api_key = None
+        if provider == 'openai':
+            api_key = db_booth.event.openai_api_key
+        elif provider == 'deepgram':
+            api_key = db_booth.event.deepgram_api_key
+        elif provider == 'nvidia':
+            api_key = db_booth.event.nvidia_api_key
 
-    await start_transcription_worker(event_slug, language_code, booth_id, broadcast_transcription, model_size)
-    return {"status": "started", "model": model_size}
+    await start_transcription_worker(event_slug, language_code, booth_id, broadcast_transcription, provider, model_size, api_key)
+    return {"status": "started", "provider": provider, "model": model_size}
 
 @app.post('/api/booth/{booth_id}/transcription/stop')
 async def api_transcription_stop(booth_id: str):

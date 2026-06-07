@@ -106,14 +106,30 @@
         </p>
       </div>
       <div class="form-group" style="flex: 1;">
-        <label for="transcription_model">Whisper Model Size</label>
+        <label for="transcription_provider">Transcription Provider</label>
+        <select id="transcription_provider" name="transcription_provider" class="input">
+          <option value="local" {% if booth.transcription_provider == 'local' %}selected{% endif %}>Local CPU (Faster-Whisper)</option>
+          {% if event.transcription_api_enabled %}
+          <option value="openai" {% if booth.transcription_provider == 'openai' %}selected{% endif %}>OpenAI</option>
+          <option value="deepgram" {% if booth.transcription_provider == 'deepgram' %}selected{% endif %}>Deepgram</option>
+          <option value="nvidia" {% if booth.transcription_provider == 'nvidia' %}selected{% endif %}>NVIDIA Parakeet</option>
+          {% else %}
+          <option disabled>External APIs disabled in Event settings</option>
+          {% endif %}
+        </select>
+      </div>
+      <div class="form-group" style="flex: 1;">
+        <label for="transcription_model">Model Variant</label>
         <select id="transcription_model" name="transcription_model" class="input">
-          <option value="tiny" {% if booth.transcription_model == 'tiny' %}selected{% endif %}>tiny (Fastest, low CPU)</option>
-          <option value="base" {% if booth.transcription_model == 'base' %}selected{% endif %}>base</option>
-          <option value="small" {% if booth.transcription_model == 'small' %}selected{% endif %}>small</option>
-          <option value="medium" {% if booth.transcription_model == 'medium' %}selected{% endif %}>medium</option>
-          <option value="large-v2" {% if booth.transcription_model == 'large-v2' %}selected{% endif %}>large-v2</option>
-          <option value="large-v3" {% if booth.transcription_model == 'large-v3' %}selected{% endif %}>large-v3 (Most accurate, high CPU/RAM)</option>
+          <option value="tiny" {% if booth.transcription_model == 'tiny' %}selected{% endif %}>Local: tiny (Fastest)</option>
+          <option value="base" {% if booth.transcription_model == 'base' %}selected{% endif %}>Local: base</option>
+          <option value="small" {% if booth.transcription_model == 'small' %}selected{% endif %}>Local: small</option>
+          <option value="medium" {% if booth.transcription_model == 'medium' %}selected{% endif %}>Local: medium</option>
+          <option value="large-v2" {% if booth.transcription_model == 'large-v2' %}selected{% endif %}>Local: large-v2</option>
+          <option value="large-v3" {% if booth.transcription_model == 'large-v3' %}selected{% endif %}>Local: large-v3 (Accurate/Slow)</option>
+          <option value="whisper-1" {% if booth.transcription_model == 'whisper-1' %}selected{% endif %}>OpenAI: whisper-1</option>
+          <option value="nova-2" {% if booth.transcription_model == 'nova-2' %}selected{% endif %}>Deepgram: nova-2</option>
+          <option value="parakeet-rnnt" {% if booth.transcription_model == 'parakeet-rnnt' %}selected{% endif %}>NVIDIA: parakeet-rnnt</option>
         </select>
       </div>
       <div class="form-group form-group-btn">
