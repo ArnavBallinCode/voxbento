@@ -147,8 +147,7 @@ class DeepgramProvider(TranscriptionProvider):
 
 class NVIDIAProvider(TranscriptionProvider):
     def __init__(self):
-        self._auth = None
-        self._asr_service = None
+        self._services = {}
 
     async def process_chunk(self, chunk: bytes, language_code: str, model_variant: str, config: ProviderConfig) -> str:
         api_key = config.get_key()
@@ -162,11 +161,11 @@ class NVIDIAProvider(TranscriptionProvider):
             # Map standard language code 'en' to 'en-US' since NVIDIA requires region
             riva_lang = "en-US" if language_code == "en" else language_code
             
-            if self._asr_service is None:
+            if api_key not in self._services:
                 from portal.config import settings
                 function_id = settings.nvidia_function_id
                 
-                self._auth = rc.Auth(
+                auth = rc.Auth(
                     use_ssl=True,
                     uri="grpc.nvcf.nvidia.com:443",
                     metadata_args=[
@@ -174,8 +173,10 @@ class NVIDIAProvider(TranscriptionProvider):
                         ["authorization", f"Bearer {api_key}"]
                     ]
                 )
-                self._asr_service = rc.ASRService(self._auth)
+                self._services[api_key] = rc.ASRService(auth)
                 
+            asr_service = self._services[api_key]
+            
             config_rc = rc.RecognitionConfig(
                 encoding=rc.AudioEncoding.LINEAR_PCM,
                 sample_rate_hertz=16000,
@@ -186,7 +187,7 @@ class NVIDIAProvider(TranscriptionProvider):
             )
             
             try:
-                response = self._asr_service.offline_recognize(chunk, config_rc)
+                response = asr_service.offline_recognize(chunk, config_rc)
                 text = ""
                 for result in response.results:
                     if result.alternatives:
