@@ -46,9 +46,23 @@ async def transcription_worker(event_slug: str, language_code: str, booth_id: st
     process = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL
+        stderr=asyncio.subprocess.PIPE
     )
-    active_processes[booth_id] = process
+    
+    async def log_stderr(stderr_stream, bid):
+        try:
+            while True:
+                line = await stderr_stream.readline()
+                if not line:
+                    break
+                logger.debug(f"[{bid}] ffmpeg: {line.decode().strip()}")
+        except Exception:
+            pass
+            
+    asyncio.create_task(log_stderr(process.stderr, booth_id))
+    
+    async with active_workers_lock:
+        active_processes[booth_id] = process
     
     try:
         await provider.run_stream(process, language_code, model_size, config, broadcast_callback, booth_id)
@@ -60,15 +74,16 @@ async def transcription_worker(event_slug: str, language_code: str, booth_id: st
     except Exception as e:
         logger.error(f"[{booth_id}] Transcription error: {e}")
     finally:
-        if process.returncode is None:
+        async with active_workers_lock:
+            proc_to_kill = active_processes.pop(booth_id, None)
+            active_workers.pop(booth_id, None)
+            
+        if proc_to_kill and proc_to_kill.returncode is None:
             try:
-                process.terminate()
-                await process.wait()
+                proc_to_kill.terminate()
+                await proc_to_kill.wait()
             except ProcessLookupError:
                 pass
-        active_processes.pop(booth_id, None)
-        async with active_workers_lock:
-            active_workers.pop(booth_id, None)
         logger.info(f"[{booth_id}] Transcription worker exited.")
 
 async def start_transcription_worker(event_slug: str, language_code: str, booth_id: str, broadcast_callback, provider: str, model_size: str, config: ProviderConfig):
@@ -89,7 +104,16 @@ async def start_transcription_worker(event_slug: str, language_code: str, booth_
         }
 
 async def stop_transcription_worker(booth_id: str):
-    worker_data = active_workers.get(booth_id)
+    async with active_workers_lock:
+        worker_data = active_workers.pop(booth_id, None)
+        process = active_processes.pop(booth_id, None)
+        
+    if process and process.returncode is None:
+        try:
+            process.terminate()
+        except ProcessLookupError:
+            pass
+            
     if worker_data:
         task = worker_data["task"]
         task.cancel()
@@ -99,10 +123,3 @@ async def stop_transcription_worker(booth_id: str):
             pass
         except Exception as e:
             logger.error(f"Task finished with exception: {e}")
-    
-    process = active_processes.get(booth_id)
-    if process and process.returncode is None:
-        try:
-            process.terminate()
-        except ProcessLookupError:
-            pass

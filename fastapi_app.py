@@ -1179,25 +1179,28 @@ async def admin_event_api_settings_post(
         
         event.transcription_api_enabled = bool(transcription_api_enabled)
         
-        if clear_openai_api_key:
-            event.encrypted_openai_api_key = None
-        elif openai_api_key and openai_api_key.strip():
-            event.encrypted_openai_api_key = encrypt_val(openai_api_key.strip())
-            
-        if clear_deepgram_api_key:
-            event.encrypted_deepgram_api_key = None
-        elif deepgram_api_key and deepgram_api_key.strip():
-            event.encrypted_deepgram_api_key = encrypt_val(deepgram_api_key.strip())
-            
-        if clear_nvidia_api_key:
-            event.encrypted_nvidia_api_key = None
-        elif nvidia_api_key and nvidia_api_key.strip():
-            event.encrypted_nvidia_api_key = encrypt_val(nvidia_api_key.strip())
-            
-        if clear_elevenlabs_api_key:
-            event.encrypted_elevenlabs_api_key = None
-        elif elevenlabs_api_key and elevenlabs_api_key.strip():
-            event.encrypted_elevenlabs_api_key = encrypt_val(elevenlabs_api_key.strip())
+        try:
+            if clear_openai_api_key:
+                event.encrypted_openai_api_key = None
+            elif openai_api_key and openai_api_key.strip():
+                event.encrypted_openai_api_key = encrypt_val(openai_api_key.strip())
+                
+            if clear_deepgram_api_key:
+                event.encrypted_deepgram_api_key = None
+            elif deepgram_api_key and deepgram_api_key.strip():
+                event.encrypted_deepgram_api_key = encrypt_val(deepgram_api_key.strip())
+                
+            if clear_nvidia_api_key:
+                event.encrypted_nvidia_api_key = None
+            elif nvidia_api_key and nvidia_api_key.strip():
+                event.encrypted_nvidia_api_key = encrypt_val(nvidia_api_key.strip())
+                
+            if clear_elevenlabs_api_key:
+                event.encrypted_elevenlabs_api_key = None
+            elif elevenlabs_api_key and elevenlabs_api_key.strip():
+                event.encrypted_elevenlabs_api_key = encrypt_val(elevenlabs_api_key.strip())
+        except (ValueError, RuntimeError) as e:
+            raise HTTPException(status_code=400, detail=f"API Key encryption failed: {e}")
         
         await session.commit()
         

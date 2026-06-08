@@ -8,13 +8,12 @@ from portal.transcription.providers.base import TranscriptionProvider, ProviderC
 
 logger = logging.getLogger(__name__)
 
-_shared_http_client = None
+import portal.transcription as ts
 
 def get_http_client() -> httpx.AsyncClient:
-    global _shared_http_client
-    if _shared_http_client is None:
-        _shared_http_client = httpx.AsyncClient(timeout=10.0)
-    return _shared_http_client
+    if ts.shared_http_client is None:
+        ts.shared_http_client = httpx.AsyncClient(timeout=10.0)
+    return ts.shared_http_client
 
 class OpenAIProvider(TranscriptionProvider):
     async def process_chunk(self, chunk: bytes, language_code: str, model_variant: str, config: ProviderConfig) -> str:

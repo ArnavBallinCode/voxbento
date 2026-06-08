@@ -12,8 +12,11 @@ def get_fernet() -> Fernet:
     global _fernet
     if _fernet is None:
         from portal.config import settings
-        if not settings.api_key_encryption_key:
-            raise ValueError("API_KEY_ENCRYPTION_KEY environment variable is required to start the application.")
+        key_str = settings.api_key_encryption_key
+        if not key_str or key_str == "change-this-encryption-key-in-production":
+            raise RuntimeError("API_KEY_ENCRYPTION_KEY must be set securely and changed from the default value.")
+        if len(key_str) < 32:
+            raise RuntimeError("API_KEY_ENCRYPTION_KEY must be at least 32 characters long.")
         
         # Derive a 32-byte urlsafe base64 string from the encryption key
         key = hashlib.sha256(settings.api_key_encryption_key.encode()).digest()

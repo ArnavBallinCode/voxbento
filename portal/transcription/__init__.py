@@ -6,6 +6,8 @@ from portal.transcription.worker import (
     start_transcription_worker,
     stop_transcription_worker,
 )
+import httpx
+shared_http_client: httpx.AsyncClient | None = None
 
 __all__ = [
     "ProviderEnum",
@@ -16,4 +18,5 @@ __all__ = [
     "active_processes",
     "start_transcription_worker",
     "stop_transcription_worker",
+    "shared_http_client",
 ]
