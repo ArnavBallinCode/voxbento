@@ -2,16 +2,19 @@ import asyncio
 import json
 import logging
 
-from portal.transcription.providers.base import TranscriptionProvider, ProviderConfig
+from portal.transcription.providers.base import TranscriptionProvider, ProviderConfig, BoothTranscriptionState
 
 logger = logging.getLogger(__name__)
 
 class DeepgramProvider(TranscriptionProvider):
-    async def process_chunk(self, chunk: bytes, language_code: str, model_variant: str, config: ProviderConfig) -> str:
+    async def process_chunk(self, chunk: bytes, language_code: str, model_variant: str, config: ProviderConfig, booth_state: BoothTranscriptionState | None = None) -> str:
         return ""
 
     async def run_stream(self, process: asyncio.subprocess.Process, language_code: str, model_variant: str, config: ProviderConfig, broadcast_callback, booth_id: str) -> None:
         import websockets
+        from portal.transcription.aggregator import CaptionAggregator
+        
+        aggregator = CaptionAggregator(broadcast_callback)
         
         api_key = config.get_key()
         if not api_key:
@@ -48,9 +51,17 @@ class DeepgramProvider(TranscriptionProvider):
                                 if "channel" in data:
                                     try:
                                         transcript = data["channel"]["alternatives"][0]["transcript"].strip()
+                                        is_final = data.get("is_final", False)
+                                        speech_final = data.get("speech_final", False)
+                                        
                                         if transcript:
-                                            logger.debug(f"[{booth_id}] Transcribed: {transcript}")
-                                            await broadcast_callback(booth_id, transcript)
+                                            if speech_final or is_final:
+                                                await aggregator.handle_final(booth_id, transcript)
+                                            else:
+                                                await aggregator.handle_partial(booth_id, transcript)
+                                                
+                                        if speech_final and not transcript:
+                                            await aggregator.handle_clear(booth_id)
                                     except (KeyError, IndexError):
                                         pass
                         except Exception as e:

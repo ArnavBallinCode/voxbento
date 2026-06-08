@@ -1,13 +1,13 @@
 import asyncio
 import logging
 
-from portal.transcription.providers.base import TranscriptionProvider, ProviderConfig
+from portal.transcription.providers.base import TranscriptionProvider, ProviderConfig, BoothTranscriptionState
 
 logger = logging.getLogger(__name__)
 
 class NVIDIAProvider(TranscriptionProvider):
 
-    async def process_chunk(self, chunk: bytes, language_code: str, model_variant: str, config: ProviderConfig) -> str:
+    async def process_chunk(self, chunk: bytes, language_code: str, model_variant: str, config: ProviderConfig, booth_state: BoothTranscriptionState | None = None) -> str:
         return ""
 
     async def run_stream(self, process: asyncio.subprocess.Process, language_code: str, model_variant: str, config: ProviderConfig, broadcast_callback, booth_id: str) -> None:
@@ -51,9 +51,12 @@ class NVIDIAProvider(TranscriptionProvider):
             enable_automatic_punctuation=True
         )
         
+        from portal.transcription.aggregator import CaptionAggregator
+        aggregator = CaptionAggregator(broadcast_callback)
+        
         streaming_config = rc.StreamingRecognitionConfig(
             config=config_rc,
-            interim_results=False
+            interim_results=True
         )
         
         consecutive_errors = 0
@@ -84,13 +87,16 @@ class NVIDIAProvider(TranscriptionProvider):
                             if not response.results:
                                 continue
                             for result in response.results:
-                                if not result.is_final:
-                                    continue
                                 if not result.alternatives:
                                     continue
                                 transcript = result.alternatives[0].transcript.strip()
-                                if transcript:
-                                    asyncio.run_coroutine_threadsafe(broadcast_callback(booth_id, transcript), loop)
+                                if not transcript:
+                                    continue
+                                    
+                                if result.is_final:
+                                    asyncio.run_coroutine_threadsafe(aggregator.handle_final(booth_id, transcript), loop)
+                                else:
+                                    asyncio.run_coroutine_threadsafe(aggregator.handle_partial(booth_id, transcript), loop)
                     except Exception as e:
                         logger.error(f"[{booth_id}] NVIDIA streaming error: {e}")
                         

@@ -100,10 +100,16 @@ async def start_transcription_worker(event_slug: str, language_code: str, booth_
         if len(active_workers) >= MAX_TOTAL_WORKERS:
             raise ValueError(f"System at maximum capacity ({MAX_TOTAL_WORKERS} concurrent transcription booths).")
 
+        if provider == 'local':
+            from portal.transcription.providers.local import increment_model_ref, start_eviction_loop
+            increment_model_ref(model_size)
+            start_eviction_loop()
+
         task = asyncio.create_task(transcription_worker(event_slug, language_code, booth_id, broadcast_callback, provider, model_size, config))
         active_workers[booth_id] = {
             "task": task,
             "provider": provider,
+            "model_size": model_size,
             "stderr_task": None
         }
 
@@ -119,6 +125,10 @@ async def stop_transcription_worker(booth_id: str):
             pass
             
     if worker_data:
+        if worker_data.get("provider") == 'local':
+            from portal.transcription.providers.local import decrement_model_ref
+            decrement_model_ref(worker_data.get("model_size"))
+            
         if "stderr_task" in worker_data and worker_data["stderr_task"]:
             worker_data["stderr_task"].cancel()
         task = worker_data["task"]

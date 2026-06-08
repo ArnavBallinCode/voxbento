@@ -139,9 +139,24 @@ class ListenerConnectionManager:
 manager = ConnectionManager()
 listener_manager = ListenerConnectionManager()
 
-async def broadcast_transcription(booth_id: str, text: str):
-    await listener_manager.broadcast(booth_id, {'type': 'transcription', 'text': text})
-
+async def broadcast_transcription(booth_id: str, payload: str | dict):
+    if isinstance(payload, str):
+        # Legacy support and error handling
+        text = payload
+        if text.startswith("[Server overloaded") or text.startswith("[Transcription provider failed"):
+            await manager.broadcast(booth_id, {'type': 'booth:error', 'message': text})
+            booth = booths.get_booth_sync(booth_id)
+            if booth:
+                booth.ingest_status = 'overloaded'
+                await manager.broadcast(booth_id, {'type': 'booth:state', 'state': booth.as_public_dict()})
+        else:
+            msg = {'type': 'caption', 'status': 'final', 'text': text}
+            await listener_manager.broadcast(booth_id, msg)
+            await manager.broadcast(booth_id, msg)
+    else:
+        # Aggregator payload
+        await listener_manager.broadcast(booth_id, payload)
+        await manager.broadcast(booth_id, payload)
 
 
 # ── Utilities ─────────────────────────────────────────────────────────────────

@@ -4,7 +4,7 @@ import logging
 import httpx
 from tenacity import AsyncRetrying, wait_exponential, stop_after_attempt, retry_if_exception_type
 
-from portal.transcription.providers.base import TranscriptionProvider, ProviderConfig, pcm_to_wav
+from portal.transcription.providers.base import TranscriptionProvider, ProviderConfig, pcm_to_wav, BoothTranscriptionState
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ def get_http_client() -> httpx.AsyncClient:
     return ts.shared_http_client
 
 class OpenAIProvider(TranscriptionProvider):
-    async def process_chunk(self, chunk: bytes, language_code: str, model_variant: str, config: ProviderConfig) -> str:
+    async def process_chunk(self, chunk: bytes, language_code: str, model_variant: str, config: ProviderConfig, booth_state: BoothTranscriptionState | None = None) -> str:
         api_key = config.get_key()
         if not api_key:
             logger.error(f"OpenAI API key missing")
@@ -57,6 +57,9 @@ class OpenAIProvider(TranscriptionProvider):
         if model_variant == "whisper-1":
             await super().run_stream(process, language_code, model_variant, config, broadcast_callback, booth_id)
             return
+
+        from portal.transcription.aggregator import CaptionAggregator
+        aggregator = CaptionAggregator(broadcast_callback)
 
         api_key = config.get_key()
         if not api_key:
@@ -105,6 +108,7 @@ class OpenAIProvider(TranscriptionProvider):
                             
                     async def receiver():
                         try:
+                            current_transcription = ""
                             async for msg in ws:
                                 data = json.loads(msg)
                                 event_type = data.get("type")
@@ -112,8 +116,20 @@ class OpenAIProvider(TranscriptionProvider):
                                 if event_type == "conversation.item.input_audio_transcription.completed":
                                     transcript = data.get("transcript", "").strip()
                                     if transcript:
-                                        await broadcast_callback(booth_id, transcript)
+                                        await aggregator.handle_final(booth_id, transcript)
+                                    current_transcription = ""
                                         
+                                elif event_type == "conversation.item.input_audio_transcription.delta":
+                                    delta = data.get("delta", "")
+                                    if delta:
+                                        current_transcription += delta
+                                        await aggregator.handle_partial(booth_id, current_transcription)
+                                        
+                                elif event_type == "input_audio_buffer.speech_stopped":
+                                    if current_transcription:
+                                        await aggregator.handle_clear(booth_id)
+                                    current_transcription = ""
+                                    
                         except Exception as e:
                             logger.error(f"[{booth_id}] OpenAI WS receiver error: {e}")
                             return "ERROR"

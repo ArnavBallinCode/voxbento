@@ -4,13 +4,13 @@ import logging
 import httpx
 from tenacity import AsyncRetrying, wait_exponential, stop_after_attempt, retry_if_exception_type
 
-from portal.transcription.providers.base import TranscriptionProvider, ProviderConfig, pcm_to_wav
+from portal.transcription.providers.base import TranscriptionProvider, ProviderConfig, pcm_to_wav, BoothTranscriptionState
 from portal.transcription.providers.openai import get_http_client
 
 logger = logging.getLogger(__name__)
 
 class ElevenLabsProvider(TranscriptionProvider):
-    async def process_chunk(self, chunk: bytes, language_code: str, model_variant: str, config: ProviderConfig) -> str:
+    async def process_chunk(self, chunk: bytes, language_code: str, model_variant: str, config: ProviderConfig, booth_state: BoothTranscriptionState | None = None) -> str:
         api_key = config.get_key()
         if not api_key:
             logger.error(f"ElevenLabs API key missing")
@@ -48,6 +48,8 @@ class ElevenLabsProvider(TranscriptionProvider):
         return ""
 
     async def run_stream(self, process: asyncio.subprocess.Process, language_code: str, model_variant: str, config: ProviderConfig, broadcast_callback, booth_id: str) -> None:
+        from portal.transcription.aggregator import CaptionAggregator
+        aggregator = CaptionAggregator(broadcast_callback)
         api_key = config.get_key()
         if not api_key:
             logger.error(f"ElevenLabs API key missing")
@@ -94,7 +96,13 @@ class ElevenLabsProvider(TranscriptionProvider):
                                 if message_type == "committed_transcript":
                                     text = data.get("text", "").strip()
                                     if text:
-                                        await broadcast_callback(booth_id, text)
+                                        await aggregator.handle_final(booth_id, text)
+                                    else:
+                                        await aggregator.handle_clear(booth_id)
+                                elif message_type == "partial_transcript":
+                                    text = data.get("text", "").strip()
+                                    if text:
+                                        await aggregator.handle_partial(booth_id, text)
                                 elif message_type == "error":
                                     logger.error(f"[{booth_id}] ElevenLabs Realtime Error: {data}")
                         except Exception as e:
