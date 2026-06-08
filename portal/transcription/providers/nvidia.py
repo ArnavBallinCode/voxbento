@@ -11,8 +11,13 @@ class NVIDIAProvider(TranscriptionProvider):
         return ""
 
     async def run_stream(self, process: asyncio.subprocess.Process, language_code: str, model_variant: str, config: ProviderConfig, broadcast_callback, booth_id: str) -> None:
+        try:
+            import riva.client as rc
+        except ImportError:
+            raise RuntimeError("nvidia-riva-client is not installed. Please install the [nvidia] extra.")
+            
         import queue
-        import riva.client as rc
+        import threading
         
         api_key = config.get_key()
         if not api_key:
@@ -56,19 +61,26 @@ class NVIDIAProvider(TranscriptionProvider):
             try:
                 q = queue.Queue(maxsize=100)
                 
-                def audio_generator():
-                    while True:
-                        chunk = q.get()
-                        if chunk is None:
-                            break
-                        yield chunk
+                stop_event = threading.Event()
+                
+                def audio_generator(stop_ev):
+                    while not stop_ev.is_set():
+                        try:
+                            chunk = q.get(timeout=0.2)
+                            if chunk is None:
+                                break
+                            yield chunk
+                        except queue.Empty:
+                            continue
                         
                 loop = asyncio.get_running_loop()
                 
-                def run_riva_sync():
+                def run_riva_sync(stop_ev):
                     try:
-                        responses = asr_service.streaming_recognize(audio_generator(), streaming_config)
+                        responses = asr_service.streaming_recognize(audio_generator(stop_ev), streaming_config)
                         for response in responses:
+                            if stop_ev.is_set():
+                                break
                             if not response.results:
                                 continue
                             for result in response.results:
@@ -82,32 +94,31 @@ class NVIDIAProvider(TranscriptionProvider):
                     except Exception as e:
                         logger.error(f"[{booth_id}] NVIDIA streaming error: {e}")
                         
-                thread_task = loop.run_in_executor(None, run_riva_sync)
+                thread_task = loop.run_in_executor(None, run_riva_sync, stop_event)
                 
-                consecutive_errors = 0
-                while True:
-                    try:
-                        chunk = await process.stdout.read(4096)
-                        if not chunk:
+                try:
+                    consecutive_errors = 0
+                    while True:
+                        try:
+                            chunk = await process.stdout.read(4096)
+                        except Exception as e:
+                            logger.error(f"[{booth_id}] Error reading stdout: {e}")
                             q.put(None)
                             await thread_task
                             return
-                    except Exception as e:
-                        logger.error(f"[{booth_id}] Error reading stdout: {e}")
-                        q.put(None)
-                        await thread_task
-                        return
-                            
-                    if not chunk:
-                        q.put(None)
-                        await thread_task
-                        return # EOF, cleanly exit
-                    
-                    try:
-                        q.put_nowait(chunk)
-                    except queue.Full:
-                        # Queue is full because thread died or froze, break to reconnect
-                        break
+                                
+                        if not chunk:
+                            q.put(None)
+                            await thread_task
+                            return # EOF, cleanly exit
+                        
+                        try:
+                            q.put_nowait(chunk)
+                        except queue.Full:
+                            # Queue is full because thread died or froze, break to reconnect
+                            break
+                finally:
+                    stop_event.set()
                         
             except Exception as e:
                 consecutive_errors += 1

@@ -159,18 +159,16 @@ async def test_high_concurrency_isolation_and_capacity_limits():
     # Analyze Responses
     status_codes = [r.status_code for r in responses]
     
-    # 4 Local booths should all succeed (200 OK) because they don't count towards external limits
-    # 12 External booths were fired (6 OpenAI, 6 NVIDIA).
-    # MAX_ACTIVE_WORKERS = 10, so exactly 2 external requests must hit 429 Too Many Requests.
-    assert status_codes.count(429) == 2, "Exactly 2 external booths should be rate-limited."
-    assert status_codes.count(200) == 14, "Exactly 14 booths (10 external, 4 local) should start successfully."
+    # 16 total booths were fired (6 OpenAI, 6 NVIDIA, 4 Local).
+    # MAX_TOTAL_WORKERS = 10, so exactly 6 requests must hit 429 Too Many Requests.
+    assert status_codes.count(429) == 6, "Exactly 6 booths should be rate-limited."
+    assert status_codes.count(200) == 10, "Exactly 10 booths should succeed."
     
     # Give the background tasks a tiny fraction of a second to spin up and populate the provider logs
     await asyncio.sleep(0.1)
     
     # 1. Verify Global Locking limits worked
-    assert len(active_workers) == 14
-    assert len(active_processes) == 14
+    assert len(active_processes) == 10
 
     # 2. Verify API Key Cross-Contamination did not occur
     openai_provider = mock_providers['openai']

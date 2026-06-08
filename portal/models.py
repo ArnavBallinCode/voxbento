@@ -144,6 +144,16 @@ class DBBooth(Base):
     def _validate_language_code(self, _key: str, value: str) -> str:
         return validate_language_code(value)
 
+    @validates('transcription_provider')
+    def _validate_transcription_provider(self, _key: str, value: str) -> str:
+        # Avoid circular imports since models are imported everywhere
+        from portal.transcription.providers.base import ProviderEnum
+        try:
+            ProviderEnum(value)
+        except ValueError:
+            raise ValueError(f"Invalid transcription provider '{value}'. Must be one of: {[p.value for p in ProviderEnum]}")
+        return value
+
     @property
     def mediamtx_path(self) -> str:
         """Derive MediaMTX stream path from event slug + language code.

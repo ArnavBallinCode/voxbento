@@ -21,8 +21,8 @@ PROVIDERS = {
 
 # --- Worker State ---
 active_workers_lock = asyncio.Lock()
-MAX_ACTIVE_WORKERS = 10
-# Store dict containing {"task": asyncio.Task, "provider": str}
+MAX_TOTAL_WORKERS = 10
+# Store dict containing {"task": asyncio.Task, "provider": str, "stderr_task": asyncio.Task | None}
 active_workers: Dict[str, Dict[str, Any]] = {}
 active_processes: Dict[str, asyncio.subprocess.Process] = {}
 
@@ -59,10 +59,12 @@ async def transcription_worker(event_slug: str, language_code: str, booth_id: st
         except Exception:
             pass
             
-    asyncio.create_task(log_stderr(process.stderr, booth_id))
+    stderr_task = asyncio.create_task(log_stderr(process.stderr, booth_id))
     
     async with active_workers_lock:
         active_processes[booth_id] = process
+        if booth_id in active_workers:
+            active_workers[booth_id]["stderr_task"] = stderr_task
     
     try:
         await provider.run_stream(process, language_code, model_size, config, broadcast_callback, booth_id)
@@ -76,7 +78,10 @@ async def transcription_worker(event_slug: str, language_code: str, booth_id: st
     finally:
         async with active_workers_lock:
             proc_to_kill = active_processes.pop(booth_id, None)
-            active_workers.pop(booth_id, None)
+            worker_data = active_workers.pop(booth_id, None)
+            
+        if worker_data and "stderr_task" in worker_data:
+            worker_data["stderr_task"].cancel()
             
         if proc_to_kill and proc_to_kill.returncode is None:
             try:
@@ -92,15 +97,14 @@ async def start_transcription_worker(event_slug: str, language_code: str, booth_
             logger.info(f"Transcription worker for {booth_id} is already running.")
             return
 
-        if provider != "local":
-            external_count = sum(1 for w in active_workers.values() if w["provider"] != "local")
-            if external_count >= MAX_ACTIVE_WORKERS:
-                raise ValueError(f"System at maximum capacity ({MAX_ACTIVE_WORKERS} concurrent external API booths).")
+        if len(active_workers) >= MAX_TOTAL_WORKERS:
+            raise ValueError(f"System at maximum capacity ({MAX_TOTAL_WORKERS} concurrent transcription booths).")
 
         task = asyncio.create_task(transcription_worker(event_slug, language_code, booth_id, broadcast_callback, provider, model_size, config))
         active_workers[booth_id] = {
             "task": task,
-            "provider": provider
+            "provider": provider,
+            "stderr_task": None
         }
 
 async def stop_transcription_worker(booth_id: str):
@@ -115,6 +119,8 @@ async def stop_transcription_worker(booth_id: str):
             pass
             
     if worker_data:
+        if "stderr_task" in worker_data and worker_data["stderr_task"]:
+            worker_data["stderr_task"].cancel()
         task = worker_data["task"]
         task.cancel()
         try:

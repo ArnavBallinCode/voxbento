@@ -247,7 +247,6 @@ dependencies = [
     { name = "httpx" },
     { name = "jinja2" },
     { name = "numpy" },
-    { name = "nvidia-riva-client" },
     { name = "pydantic-settings" },
     { name = "pyjwt" },
     { name = "python-dotenv" },
@@ -256,6 +255,11 @@ dependencies = [
     { name = "tenacity" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "websockets" },
+]
+
+[package.optional-dependencies]
+nvidia = [
+    { name = "nvidia-riva-client" },
 ]
 
 [package.dev-dependencies]
@@ -275,7 +279,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "numpy", specifier = ">=2.4.6" },
-    { name = "nvidia-riva-client", specifier = ">=2.21.1" },
+    { name = "nvidia-riva-client", marker = "extra == 'nvidia'", specifier = ">=2.21.1" },
     { name = "pydantic-settings", specifier = ">=2.9.0" },
     { name = "pyjwt", specifier = ">=2.9.0" },
     { name = "python-dotenv", specifier = "==1.2.2" },
@@ -285,6 +289,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
     { name = "websockets", specifier = ">=16.0" },
 ]
+provides-extras = ["nvidia"]
 
 [package.metadata.requires-dev]
 dev = [
