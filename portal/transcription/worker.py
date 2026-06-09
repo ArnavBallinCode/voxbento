@@ -32,19 +32,20 @@ async def transcription_worker(event_slug: str, language_code: str, booth_id: st
     
     provider = PROVIDERS.get(provider_name, PROVIDERS['local'])
     
-    cmd = [
+    sample_rate = "24000" if provider_name == "openai" else "16000"
+    
+    ffmpeg_cmd = [
         "ffmpeg",
         "-rtsp_transport", "tcp",
         "-i", rtsp_url,
-        "-f", "s16le",
-        "-acodec", "pcm_s16le",
-        "-ar", "16000",
+        "-vn", "-acodec", "pcm_s16le",
+        "-ar", sample_rate,
         "-ac", "1",
-        "-"
+        "-f", "s16le", "-"
     ]
     
     process = await asyncio.create_subprocess_exec(
-        *cmd,
+        *ffmpeg_cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE
     )
@@ -80,8 +81,13 @@ async def transcription_worker(event_slug: str, language_code: str, booth_id: st
             proc_to_kill = active_processes.pop(booth_id, None)
             worker_data = active_workers.pop(booth_id, None)
             
-        if worker_data and "stderr_task" in worker_data:
-            worker_data["stderr_task"].cancel()
+        if worker_data:
+            if worker_data.get("provider") == 'local':
+                from portal.transcription.providers.local import decrement_model_ref
+                decrement_model_ref(worker_data.get("model_size"))
+                
+            if "stderr_task" in worker_data and worker_data["stderr_task"]:
+                worker_data["stderr_task"].cancel()
             
         if proc_to_kill and proc_to_kill.returncode is None:
             try:

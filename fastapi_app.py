@@ -152,12 +152,9 @@ async def broadcast_transcription(booth_id: str, payload: str | dict):
         else:
             msg = {'type': 'caption', 'status': 'final', 'text': text}
             await listener_manager.broadcast(booth_id, msg)
-            await manager.broadcast(booth_id, msg)
     else:
         # Aggregator payload
         await listener_manager.broadcast(booth_id, payload)
-        await manager.broadcast(booth_id, payload)
-
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
 

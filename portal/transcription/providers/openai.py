@@ -54,7 +54,7 @@ class OpenAIProvider(TranscriptionProvider):
         return ""
 
     async def run_stream(self, process: asyncio.subprocess.Process, language_code: str, model_variant: str, config: ProviderConfig, broadcast_callback, booth_id: str) -> None:
-        if model_variant == "whisper-1":
+        if model_variant in ("whisper-1", "gpt-4o-transcribe", "gpt-4o-mini-transcribe"):
             await super().run_stream(process, language_code, model_variant, config, broadcast_callback, booth_id)
             return
 
@@ -77,31 +77,58 @@ class OpenAIProvider(TranscriptionProvider):
             try:
                 import websockets
                 import base64
+                import numpy as np
                 async with websockets.connect(url, additional_headers=headers) as ws:
                     consecutive_errors = 0
 
                     session_update = {
                         "type": "session.update",
                         "session": {
-                            "modalities": ["text"],
-                            "input_audio_format": "pcm16",
-                            "input_audio_transcription": {"model": "whisper-1"},
-                            "turn_detection": {"type": "server_vad", "threshold": 0.5, "prefix_padding_ms": 300, "silence_duration_ms": 1000}
+                            "type": "transcription",
+                            "audio": {
+                                "input": {
+                                    "format": {
+                                        "type": "audio/pcm",
+                                        "rate": 24000
+                                    },
+                                    "transcription": {
+                                        "model": model_variant,
+                                        "language": language_code
+                                    }
+                                }
+                            }
                         }
                     }
                     await ws.send(json.dumps(session_update))
 
                     async def sender():
                         try:
+                            silence_frames = 0
                             while True:
                                 chunk = await process.stdout.read(4096)
                                 if not chunk:
                                     return "EOF"
+                                
+                                # Manual VAD: Calculate RMS energy
+                                audio_data = np.frombuffer(chunk, dtype=np.int16)
+                                rms = np.sqrt(np.mean(np.square(audio_data.astype(np.float32))))
+                                
+                                if rms < 500.0:
+                                    silence_frames += 1
+                                else:
+                                    silence_frames = 0
+                                
                                 payload = {
                                     "type": "input_audio_buffer.append",
                                     "audio": base64.b64encode(chunk).decode('utf-8')
                                 }
                                 await ws.send(json.dumps(payload))
+                                
+                                # If silence for ~1 second (12 frames @ 24kHz)
+                                if silence_frames == 12:
+                                    await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
+                                    silence_frames = 0
+                                    
                         except Exception as e:
                             logger.error(f"[{booth_id}] OpenAI WS sender error: {e}")
                             return "ERROR"
@@ -150,7 +177,7 @@ class OpenAIProvider(TranscriptionProvider):
                             pass
                         for task in pending:
                             task.cancel()
-                        return # Clean exit
+                        return
 
                     for task in pending:
                         task.cancel()
