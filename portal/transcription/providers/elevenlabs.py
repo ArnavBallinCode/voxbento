@@ -55,6 +55,10 @@ class ElevenLabsProvider(TranscriptionProvider):
             logger.error(f"ElevenLabs API key missing")
             return
             
+        # ElevenLabs Realtime WebSocket only accepts scribe_v2_realtime per the API spec.
+        # Normalise any legacy "scribe_v2" value stored in the DB.
+        model_variant = "scribe_v2_realtime"
+
         url = f"wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id={model_variant}&language_code={language_code}&audio_format=pcm_16000&commit_strategy=vad"
         headers = {"xi-api-key": api_key}
         
@@ -66,6 +70,13 @@ class ElevenLabsProvider(TranscriptionProvider):
                 async with websockets.connect(url, additional_headers=headers) as ws:
                     consecutive_errors = 0
                     
+                    # Wait for session initialization before sending audio
+                    init_msg = await ws.recv()
+                    init_data = json.loads(init_msg)
+                    if init_data.get("message_type") != "session_started":
+                        logger.error(f"[{booth_id}] Expected ElevenLabs session_started, got: {init_data}")
+                        return
+                        
                     async def sender():
                         try:
                             while True:
@@ -93,7 +104,7 @@ class ElevenLabsProvider(TranscriptionProvider):
                             async for msg in ws:
                                 data = json.loads(msg)
                                 message_type = data.get("message_type")
-                                if message_type == "committed_transcript":
+                                if message_type == "committed_transcript" or message_type == "committed_transcript_with_timestamps":
                                     text = data.get("text", "").strip()
                                     if text:
                                         await aggregator.handle_final(booth_id, text)
@@ -103,7 +114,7 @@ class ElevenLabsProvider(TranscriptionProvider):
                                     text = data.get("text", "").strip()
                                     if text:
                                         await aggregator.handle_partial(booth_id, text)
-                                elif message_type == "error":
+                                elif message_type and "error" in message_type:
                                     logger.error(f"[{booth_id}] ElevenLabs Realtime Error: {data}")
                         except Exception as e:
                             logger.error(f"[{booth_id}] ElevenLabs WS receiver error: {e}")

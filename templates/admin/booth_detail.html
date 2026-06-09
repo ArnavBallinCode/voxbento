@@ -137,7 +137,7 @@
           <option value="nova-2" data-provider="deepgram" {% if booth.transcription_model == 'nova-2' %}selected{% endif %}>Deepgram: nova-2</option>
           <option value="parakeet-rnnt" data-provider="nvidia" {% if booth.transcription_model == 'parakeet-rnnt' %}selected{% endif %}>NVIDIA: parakeet-rnnt</option>
           <option value="parakeet-ctc" data-provider="nvidia" {% if booth.transcription_model == 'parakeet-ctc' %}selected{% endif %}>NVIDIA: parakeet-ctc</option>
-          <option value="scribe_v2" data-provider="elevenlabs" {% if booth.transcription_model == 'scribe_v2' %}selected{% endif %}>ElevenLabs: scribe_v2</option>
+          <option value="scribe_v2_realtime" data-provider="elevenlabs" {% if booth.transcription_model == 'scribe_v2_realtime' or booth.transcription_model == 'scribe_v2' %}selected{% endif %}>ElevenLabs: scribe_v2_realtime (Streaming)</option>
         </select>
       </div>
       <div class="form-group form-group-btn">
