@@ -7,8 +7,8 @@ const config: Config = {
   tagline: 'Real-Time Browser Interpretation Platform',
   favicon: 'img/favicon.ico',
 
-  url: 'https://voxbento.com',
-  baseUrl: '/voxbento/',
+  url: 'https://docs.voxbento.com',
+  baseUrl: '/',
 
   organizationName: 'fossasia',
   projectName: 'voxbento',
