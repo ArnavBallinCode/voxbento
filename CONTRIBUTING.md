@@ -344,6 +344,8 @@ Copy `.env.example` → `.env` and adjust as needed:
 | `DATABASE_URL` | `sqlite+aiosqlite:///./interpretation.db` | Database (PostgreSQL for production) |
 | `JVB_AUTH_PASSWORD` | `changeme` | Jitsi JVB auth (change in production) |
 | `JICOFO_AUTH_PASSWORD` | `changeme` | Jitsi Jicofo auth (change in production) |
+| `FLOOR_BOT_BASE` | `http://floor-bot:8080` | URL for the floor-bot container to extract Jitsi audio |
+| `MEDIAMTX_RTSP_BASE` | `rtsp://mediamtx:8554` | Internal MediaMTX RTSP URL for floor audio transcription |
 
 ### Stopping services
 
