@@ -1326,6 +1326,27 @@ async def admin_room_detail(request: Request, event_id: int, room_id: int):
     })
 
 
+@app.get('/admin/events/{event_id}/rooms/{room_id}/transcripts/', dependencies=[Depends(require_admin)])
+async def admin_room_transcripts(request: Request, event_id: int, room_id: int):
+    from portal.database import get_session, get_event_by_id, get_room_by_id, list_booths_for_room
+    
+    async with get_session() as session:
+        event = await get_event_by_id(session, event_id)
+        if event is None:
+            raise HTTPException(status_code=404, detail='Event not found.')
+        room = await get_room_by_id(session, room_id)
+        if room is None:
+            raise HTTPException(status_code=404, detail='Room not found.')
+        
+        booths = await list_booths_for_room(session, room_id)
+        
+    return templates.TemplateResponse(request, 'admin/room_transcripts.html', {
+        'event': event,
+        'room': room,
+        'booths': booths
+    })
+
+
 @app.post('/admin/events/{event_id}/rooms/{room_id}/edit', dependencies=[Depends(require_admin)])
 async def admin_edit_room(request: Request, event_id: int, room_id: int):
     from portal.database import get_session, get_room_by_id
@@ -1429,7 +1450,8 @@ async def api_start_floor_transcription(room_id: int):
             provider=room.floor_transcription_provider,
             model_size=room.floor_transcription_model,
             config=config,
-            transcription_language=room.floor_language_code # Added parameter
+            transcription_language=room.floor_language_code,
+            room_id=room_id
         )
     except Exception as e:
         logger.error(f"Failed to start transcription worker: {e}")
@@ -1727,7 +1749,7 @@ async def admin_transcription_settings(
                 
                 import asyncio
                 await asyncio.sleep(0.1)
-                await start_transcription_worker(event.slug, db_booth.language_code, bid, broadcast_transcription, transcription_provider, transcription_model, config)
+                await start_transcription_worker(event.slug, db_booth.language_code, bid, broadcast_transcription, transcription_provider, transcription_model, config, room_id=db_booth.room_id)
     return safe_redirect(
         url=f'/admin/events/{event_id}/rooms/{room_id}/booths/{booth_id}/',
         status_code=status.HTTP_303_SEE_OTHER,
@@ -2091,9 +2113,10 @@ async def api_transcription_start(
             
         from portal.transcription import ProviderConfig
         config = ProviderConfig(api_key=api_key)
+        room_id = db_booth.room_id
 
     try:
-        await start_transcription_worker(event_slug, language_code, booth_id, broadcast_transcription, provider, model_size, config)
+        await start_transcription_worker(event_slug, language_code, booth_id, broadcast_transcription, provider, model_size, config, room_id=room_id)
     except ValueError as e:
         raise HTTPException(status_code=429, detail=str(e))
     return {"status": "started", "provider": provider, "model": model_size}
@@ -2107,6 +2130,35 @@ async def api_transcription_stop(
     _require_access(credentials, token)
     await stop_transcription_worker(booth_id)
     return {"status": "stopped"}
+
+@app.get('/api/admin/events/{event_id}/rooms/{room_id}/transcripts/{language_code}')
+async def api_admin_get_transcripts(
+    event_id: int,
+    room_id: int,
+    language_code: str,
+    admin: bool = Depends(require_admin)
+):
+    from portal.database import get_session
+    from portal.models import TranscriptSegment
+    from sqlalchemy import select
+
+    async with get_session() as session:
+        stmt = select(TranscriptSegment).where(
+            TranscriptSegment.room_id == room_id,
+            TranscriptSegment.language_code == language_code
+        ).order_by(TranscriptSegment.created_at)
+        
+        result = await session.execute(stmt)
+        segments = result.scalars().all()
+        
+        return [
+            {
+                "id": s.id,
+                "text": s.text,
+                "created_at": s.created_at.isoformat()
+            }
+            for s in segments
+        ]
 
 
 def main() -> None:
