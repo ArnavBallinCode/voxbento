@@ -155,12 +155,30 @@
 
   <div class="captions-container" id="captions-container">
     <div class="captions-header">
-      <h3>Live Captions</h3>
+      <div style="display: flex; align-items: center; gap: 15px;">
+        <h3 style="margin: 0;">Live Captions</h3>
+        <select id="caption-mode-select" class="input" style="padding: 2px 8px; font-size: 0.85rem; height: auto;" disabled>
+          <option value="original">Original</option>
+          <option value="translated">Translated</option>
+          <option value="side-by-side">Side-by-Side</option>
+        </select>
+        <select id="translation-lang-select" class="input" style="padding: 2px 8px; font-size: 0.85rem; height: auto; display: none;">
+          <!-- Populated dynamically via JS based on room settings -->
+        </select>
+      </div>
       <button id="toggle-captions-btn" class="toggle-btn" title="Minimize/Maximize Captions">▼</button>
     </div>
     <div id="live-captions" class="captions-box">
-      <div id="caption-history" class="caption-history"></div>
-      <div id="caption-current" class="caption-current"></div>
+      <div id="captions-content-area" class="captions-content" style="display: flex; gap: 20px;">
+        <div id="captions-col-original" style="flex: 1; display: flex; flex-direction: column;">
+          <div class="caption-history" id="caption-history"></div>
+          <div class="caption-current" id="caption-current"></div>
+        </div>
+        <div id="captions-col-translated" style="flex: 1; display: none; flex-direction: column; border-left: 1px solid #444; padding-left: 20px;">
+          <div class="caption-history" id="translation-history"></div>
+          <div class="caption-current" id="translation-current"></div>
+        </div>
+      </div>
       <p id="waiting-text" style="color: #888; font-style: italic; font-size: 0.95rem;">Waiting for interpreter...</p>
     </div>
   </div>
@@ -184,8 +202,13 @@
 (function () {
   var boothsData = {{ booths_json | safe }};
   
+  var roomsData = {{ rooms_json | safe }};
+  
   var roomSelect = document.getElementById('room-select');
   var languageSelect = document.getElementById('language-select');
+  var captionModeSelect = document.getElementById('caption-mode-select');
+  var translationLangSelect = document.getElementById('translation-lang-select');
+  
   var audioEl = document.getElementById('audio-player');
   var statusEl = document.getElementById('status');
   var captionsBox = document.getElementById('live-captions');
@@ -215,9 +238,40 @@
       captionsWs.close();
       captionsWs = null;
     }
-    captionsBox.innerHTML = '<div id="caption-history" class="caption-history"></div><div id="caption-current" class="caption-current"></div><p id="waiting-text" style="color: #888; font-style: italic; font-size: 0.95rem;">Waiting for interpreter...</p>';
+    
+    document.getElementById('caption-history').innerHTML = '';
+    document.getElementById('caption-current').innerHTML = '';
+    document.getElementById('translation-history').innerHTML = '';
+    document.getElementById('translation-current').innerHTML = '';
+    
     setStatus('Waiting for selection...', 'waiting');
   }
+
+  function updateCaptionLayout() {
+    var mode = captionModeSelect.value;
+    var colOrig = document.getElementById('captions-col-original');
+    var colTrans = document.getElementById('captions-col-translated');
+    
+    if (mode === 'original') {
+      colOrig.style.display = 'flex';
+      colTrans.style.display = 'none';
+      translationLangSelect.style.display = 'none';
+    } else if (mode === 'translated') {
+      colOrig.style.display = 'none';
+      colTrans.style.display = 'flex';
+      colTrans.style.borderLeft = 'none';
+      colTrans.style.paddingLeft = '0';
+      translationLangSelect.style.display = 'inline-block';
+    } else if (mode === 'side-by-side') {
+      colOrig.style.display = 'flex';
+      colTrans.style.display = 'flex';
+      colTrans.style.borderLeft = '1px solid #444';
+      colTrans.style.paddingLeft = '20px';
+      translationLangSelect.style.display = 'inline-block';
+    }
+  }
+
+  captionModeSelect.addEventListener('change', updateCaptionLayout);
 
   roomSelect.addEventListener('change', function() {
     var roomId = parseInt(this.value, 10);
@@ -227,8 +281,28 @@
 
     if (!roomId) {
       languageSelect.disabled = true;
+      captionModeSelect.disabled = true;
+      captionModeSelect.value = 'original';
+      updateCaptionLayout();
       return;
     }
+    
+    var room = roomsData.find(r => r.id === roomId);
+    if (room && room.floor_translation_enabled && room.translation_languages.length > 0) {
+      captionModeSelect.disabled = false;
+      translationLangSelect.innerHTML = '';
+      room.translation_languages.forEach(lang => {
+        var opt = document.createElement('option');
+        opt.value = lang.code;
+        opt.textContent = lang.name;
+        translationLangSelect.appendChild(opt);
+      });
+    } else {
+      captionModeSelect.disabled = true;
+      captionModeSelect.value = 'original';
+      translationLangSelect.innerHTML = '';
+    }
+    updateCaptionLayout();
     
     languageSelect.disabled = false;
     var roomBooths = boothsData.filter(function(b) { return b.room_id === roomId; });
@@ -262,13 +336,12 @@
         captionsWs.onmessage = function(event) {
           try {
             var data = JSON.parse(event.data);
+            var waitingText = document.getElementById('waiting-text');
+            if (waitingText) waitingText.remove();
+
             if (data.type === 'caption') {
               var historyBox = document.getElementById('caption-history');
               var currentBox = document.getElementById('caption-current');
-              var waitingText = document.getElementById('waiting-text');
-              if (waitingText) {
-                waitingText.remove();
-              }
               
               if (data.status === 'partial') {
                 currentBox.textContent = data.text || '';
@@ -277,28 +350,22 @@
                   var p = document.createElement('div');
                   p.textContent = data.text;
                   historyBox.appendChild(p);
-                  while (historyBox.children.length > 50) {
-                    historyBox.removeChild(historyBox.firstChild);
-                  }
+                  while (historyBox.children.length > 50) historyBox.removeChild(historyBox.firstChild);
                 }
                 currentBox.textContent = '';
               } else if (data.status === 'clear') {
                 currentBox.textContent = '';
               }
               captionsBox.scrollTop = captionsBox.scrollHeight;
-            } else if (data.type === 'transcription') {
-              // Legacy support
-              if (data.text) {
+              
+            } else if (data.type === 'translation') {
+              if (data.language_code === translationLangSelect.value) {
+                var tHistoryBox = document.getElementById('translation-history');
                 var p = document.createElement('div');
                 p.textContent = data.text;
-                var historyBox = document.getElementById('caption-history');
-                historyBox.appendChild(p);
+                tHistoryBox.appendChild(p);
+                while (tHistoryBox.children.length > 50) tHistoryBox.removeChild(tHistoryBox.firstChild);
                 captionsBox.scrollTop = captionsBox.scrollHeight;
-              } else {
-                var historyBox = document.getElementById('caption-history');
-                historyBox.innerHTML = '';
-                var currentBox = document.getElementById('caption-current');
-                currentBox.textContent = '';
               }
             }
           } catch (e) {

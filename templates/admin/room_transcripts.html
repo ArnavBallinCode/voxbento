@@ -27,7 +27,14 @@
       <select id="transcript_lang_select" class="input">
         <option value="">-- Select Channel --</option>
         {% if room.floor_transcription_enabled %}
-        <option value="floor">Floor Audio</option>
+        <option value="floor">Floor Audio (Original)</option>
+          {% if room.floor_translation_enabled %}
+            {% for lang in room.translation_languages %}
+              {% if lang.enabled %}
+              <option value="floor?target_lang={{ lang.language_code }}">Floor Audio (Translation: {{ lang.language_name }})</option>
+              {% endif %}
+            {% endfor %}
+          {% endif %}
         {% endif %}
         {% for bs in booths %}
         <option value="{{ bs.language_code }}">{{ bs.language_name }} ({{ bs.language_code }})</option>
@@ -98,7 +105,8 @@
       const url = URL.createObjectURL(blob);
       const downloadBtn = document.getElementById('download-csv-btn');
       downloadBtn.href = url;
-      downloadBtn.download = `transcripts_${currentLanguageCode}.csv`;
+      const safeFilename = currentLanguageCode.replace(/[^a-zA-Z0-9_-]/g, '_');
+      downloadBtn.download = `transcripts_${safeFilename}.csv`;
       downloadBtn.style.display = 'inline-block';
       
       // Auto-scroll to bottom

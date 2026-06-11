@@ -614,7 +614,18 @@ async def listen_event_page(
         })
         ensure_tasks.append(_ensure_mediamtx_path(channel_id))
         
+    rooms_data = []
     for r in rooms:
+        lang_data = [
+            {"code": l.language_code, "name": l.language_name} 
+            for l in r.translation_languages if l.enabled
+        ]
+        rooms_data.append({
+            'id': r.id,
+            'floor_translation_enabled': r.floor_translation_enabled,
+            'translation_languages': lang_data
+        })
+        
         if r.floor_transcription_enabled:
             channel_id = f"{ev.slug}/floor"
             booths_data.append({
@@ -636,6 +647,7 @@ async def listen_event_page(
         {
             'event': ev,
             'rooms': rooms,
+            'rooms_json': json.dumps(rooms_data),
             'booths_json': json.dumps(booths_data),
             'js_version': _JS_CACHE_BUST,
         },
@@ -1193,6 +1205,17 @@ async def admin_event_api_settings_post(
     clear_deepgram_api_key: bool | None = Form(False),
     clear_nvidia_api_key: bool | None = Form(False),
     clear_elevenlabs_api_key: bool | None = Form(False),
+    
+    translation_openai_api_key: str | None = Form(None),
+    openrouter_api_key: str | None = Form(None),
+    gemini_api_key: str | None = Form(None),
+    anthropic_api_key: str | None = Form(None),
+    groq_api_key: str | None = Form(None),
+    clear_translation_openai_api_key: bool | None = Form(False),
+    clear_openrouter_api_key: bool | None = Form(False),
+    clear_gemini_api_key: bool | None = Form(False),
+    clear_anthropic_api_key: bool | None = Form(False),
+    clear_groq_api_key: bool | None = Form(False),
 ):
     from portal.database import get_session, get_event_by_id
     from portal.crypto import encrypt_val
@@ -1224,6 +1247,32 @@ async def admin_event_api_settings_post(
                 event.encrypted_elevenlabs_api_key = None
             elif elevenlabs_api_key and elevenlabs_api_key.strip():
                 event.encrypted_elevenlabs_api_key = encrypt_val(elevenlabs_api_key.strip())
+                
+            if clear_translation_openai_api_key:
+                event.encrypted_translation_openai_api_key = None
+            elif translation_openai_api_key and translation_openai_api_key.strip():
+                event.encrypted_translation_openai_api_key = encrypt_val(translation_openai_api_key.strip())
+
+            if clear_openrouter_api_key:
+                event.encrypted_openrouter_api_key = None
+            elif openrouter_api_key and openrouter_api_key.strip():
+                event.encrypted_openrouter_api_key = encrypt_val(openrouter_api_key.strip())
+
+            if clear_gemini_api_key:
+                event.encrypted_gemini_api_key = None
+            elif gemini_api_key and gemini_api_key.strip():
+                event.encrypted_gemini_api_key = encrypt_val(gemini_api_key.strip())
+
+            if clear_anthropic_api_key:
+                event.encrypted_anthropic_api_key = None
+            elif anthropic_api_key and anthropic_api_key.strip():
+                event.encrypted_anthropic_api_key = encrypt_val(anthropic_api_key.strip())
+
+            if clear_groq_api_key:
+                event.encrypted_groq_api_key = None
+            elif groq_api_key and groq_api_key.strip():
+                event.encrypted_groq_api_key = encrypt_val(groq_api_key.strip())
+                
         except (ValueError, RuntimeError) as e:
             raise HTTPException(status_code=400, detail=f"API Key encryption failed: {e}")
         
@@ -1318,11 +1367,23 @@ async def admin_room_detail(request: Request, event_id: int, room_id: int):
     room_id_str = f"Voxbento-{event.slug}-{clean_name}"
     fallback_jitsi_url = _make_jitsi_url(settings.effective_jitsi_base_url, room_id_str)
 
+    import pycountry
+    # Get ISO 639-1 languages
+    translation_languages_dataset = [
+        {"code": lang.alpha_2, "name": lang.name}
+        for lang in pycountry.languages if hasattr(lang, 'alpha_2')
+    ]
+    translation_languages_dataset.sort(key=lambda x: x["name"])
+    
+    enabled_translation_language_codes = [lang.language_code for lang in room.translation_languages if lang.enabled]
+
     return templates.TemplateResponse(request, 'admin/room_detail.html', {
         'event': event,
         'room': room,
         'booths': booth_statuses,
         'fallback_jitsi_url': fallback_jitsi_url,
+        'translation_languages_dataset': translation_languages_dataset,
+        'enabled_translation_language_codes': enabled_translation_language_codes,
     })
 
 
@@ -1350,6 +1411,9 @@ async def admin_room_transcripts(request: Request, event_id: int, room_id: int):
 @app.post('/admin/events/{event_id}/rooms/{room_id}/edit', dependencies=[Depends(require_admin)])
 async def admin_edit_room(request: Request, event_id: int, room_id: int):
     from portal.database import get_session, get_room_by_id
+    from portal.models import RoomTranslationLanguage
+    import pycountry
+
     form = await request.form()
     jitsi_url = form.get('jitsi_url', '').strip()
     relay_booth_id_str = form.get('relay_booth_id', '').strip()
@@ -1360,6 +1424,12 @@ async def admin_edit_room(request: Request, event_id: int, room_id: int):
     floor_transcription_model = form.get('floor_transcription_model', 'tiny').strip()
     floor_language_code = form.get('floor_language_code', '').strip() or None
     
+    floor_translation_enabled = form.get('floor_translation_enabled') == 'on'
+    floor_translation_provider = form.get('floor_translation_provider', '').strip() or None
+    floor_translation_model = form.get('floor_translation_model', '').strip() or None
+    
+    floor_translation_languages = form.getlist('floor_translation_languages')
+    
     async with get_session() as session:
         room = await get_room_by_id(session, room_id)
         if room and room.event_id == event_id:
@@ -1369,12 +1439,46 @@ async def admin_edit_room(request: Request, event_id: int, room_id: int):
             room.floor_transcription_provider = floor_transcription_provider
             room.floor_transcription_model = floor_transcription_model
             room.floor_language_code = floor_language_code
+            
+            room.floor_translation_enabled = floor_translation_enabled
+            room.floor_translation_provider = floor_translation_provider
+            room.floor_translation_model = floor_translation_model
+            
+            # Sync target languages
+            existing_langs = {lang.language_code: lang for lang in room.translation_languages}
+            requested_codes = set(floor_translation_languages)
+            
+            # Disable existing that are no longer requested
+            for code, lang in existing_langs.items():
+                if code not in requested_codes:
+                    lang.enabled = False
+            
+            # Add or enable requested
+            for code in requested_codes:
+                if code in existing_langs:
+                    existing_langs[code].enabled = True
+                else:
+                    lang_obj = pycountry.languages.get(alpha_2=code)
+                    lang_name = lang_obj.name if lang_obj else code
+                    new_lang = RoomTranslationLanguage(
+                        room_id=room_id,
+                        language_code=code,
+                        language_name=lang_name,
+                        enabled=True
+                    )
+                    session.add(new_lang)
+
             await session.commit()
             
     return safe_redirect(
         url=f'/admin/events/{event_id}/rooms/{room_id}/',
         status_code=status.HTTP_303_SEE_OTHER,
     )
+
+@app.get('/api/admin/providers/translation/models', dependencies=[Depends(require_admin)])
+async def get_translation_models():
+    from portal.translations.constants import TRANSLATION_MODELS
+    return TRANSLATION_MODELS
 
 import httpx
 import logging
@@ -2136,29 +2240,50 @@ async def api_admin_get_transcripts(
     event_id: int,
     room_id: int,
     language_code: str,
+    target_lang: str = Query(None),
     admin: bool = Depends(require_admin)
 ):
     from portal.database import get_session
-    from portal.models import TranscriptSegment
+    from portal.models import TranscriptSegment, TranscriptTranslation
     from sqlalchemy import select
+    from sqlalchemy.orm import joinedload
 
     async with get_session() as session:
-        stmt = select(TranscriptSegment).where(
-            TranscriptSegment.room_id == room_id,
-            TranscriptSegment.language_code == language_code
-        ).order_by(TranscriptSegment.created_at)
-        
-        result = await session.execute(stmt)
-        segments = result.scalars().all()
-        
-        return [
-            {
-                "id": s.id,
-                "text": s.text,
-                "created_at": s.created_at.isoformat()
-            }
-            for s in segments
-        ]
+        if target_lang:
+            stmt = select(TranscriptTranslation).join(TranscriptSegment).where(
+                TranscriptSegment.room_id == room_id,
+                TranscriptSegment.language_code == language_code,
+                TranscriptTranslation.language_code == target_lang
+            ).order_by(TranscriptSegment.created_at)
+            
+            result = await session.execute(stmt)
+            translations = result.scalars().all()
+            
+            return [
+                {
+                    "id": t.id,
+                    "text": t.text,
+                    "created_at": t.created_at.isoformat()
+                }
+                for t in translations
+            ]
+        else:
+            stmt = select(TranscriptSegment).where(
+                TranscriptSegment.room_id == room_id,
+                TranscriptSegment.language_code == language_code
+            ).order_by(TranscriptSegment.created_at)
+            
+            result = await session.execute(stmt)
+            segments = result.scalars().all()
+            
+            return [
+                {
+                    "id": s.id,
+                    "text": s.text,
+                    "created_at": s.created_at.isoformat()
+                }
+                for s in segments
+            ]
 
 
 def main() -> None:

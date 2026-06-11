@@ -154,13 +154,15 @@ async def create_room(
 
 
 async def get_room_by_id(session: AsyncSession, room_id: int) -> Room | None:
-    result = await session.execute(select(Room).where(Room.id == room_id))
+    from sqlalchemy.orm import selectinload
+    result = await session.execute(select(Room).options(selectinload(Room.translation_languages)).where(Room.id == room_id))
     return result.scalar_one_or_none()
 
 
 async def list_rooms_for_event(session: AsyncSession, event_id: int) -> list[Room]:
+    from sqlalchemy.orm import selectinload
     result = await session.execute(
-        select(Room).where(Room.event_id == event_id).order_by(Room.created_at),
+        select(Room).options(selectinload(Room.translation_languages)).where(Room.event_id == event_id).order_by(Room.created_at),
     )
     return list(result.scalars().all())
 
@@ -493,14 +495,14 @@ async def revoke_invite_token(session: AsyncSession, token_str: str) -> InviteTo
 # Transcripts
 # ---------------------------------------------------------------------------
 
-async def save_transcript_segment(booth_id_str: str, text: str, room_id: int | None = None) -> None:
-    """Save a finalized transcript segment to the database asynchronously."""
+async def save_transcript_segment(booth_id_str: str, text: str, room_id: int | None = None) -> int | None:
+    """Save a finalized transcript segment to the database asynchronously and return its ID."""
     from portal.models import TranscriptSegment, DBBooth, Event
     from sqlalchemy import select
 
     parts = booth_id_str.split('-')
     if len(parts) < 2:
-        return
+        return None
         
     language_code = parts[-1]
     event_slug = "-".join(parts[:-1])
@@ -522,5 +524,8 @@ async def save_transcript_segment(booth_id_str: str, text: str, room_id: int | N
                 text=text
             )
             session.add(segment)
+            await session.commit()
+            return segment.id
     except Exception as e:
         logger.error(f"Failed to save transcript segment: {e}")
+        return None
