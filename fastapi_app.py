@@ -1384,13 +1384,13 @@ async def api_start_floor_transcription(room_id: int):
             jitsi_url = room.jitsi_url
             # Replace local or production domains with internal docker routing (use https internally to avoid WebRTC HTTP blocking)
             if jitsi_url.startswith(settings.effective_jitsi_base_url):
-                jitsi_url = jitsi_url.replace(settings.effective_jitsi_base_url, "https://jitsi-web", 1)
+                jitsi_url = jitsi_url.replace(settings.effective_jitsi_base_url, settings.effective_jitsi_internal_base, 1)
             elif "jitsi.voxbento.com" in jitsi_url:
-                jitsi_url = re.sub(r"https?://jitsi\.voxbento\.com", "https://jitsi-web", jitsi_url, count=1)
+                jitsi_url = re.sub(r"https?://jitsi\.voxbento\.com", settings.effective_jitsi_internal_base, jitsi_url, count=1)
             elif "localhost" in jitsi_url or "127.0.0.1" in jitsi_url:
-                jitsi_url = re.sub(r"https?://(?:localhost|127\.0\.0\.1)(?::\d+)?", "https://jitsi-web", jitsi_url, count=1)
+                jitsi_url = re.sub(r"https?://(?:localhost|127\.0\.0\.1)(?::\d+)?", settings.effective_jitsi_internal_base, jitsi_url, count=1)
         else:
-            jitsi_url = f"https://jitsi-web/{room_id_str}"
+            jitsi_url = f"{settings.effective_jitsi_internal_base}/{room_id_str}"
             
         floor_language_code = room.floor_language_code
     
@@ -1402,7 +1402,7 @@ async def api_start_floor_transcription(room_id: int):
                 json={
                     "event_slug": event_slug,
                     "jitsi_url": jitsi_url,
-                    "mediamtx_rtsp_base": "rtsp://mediamtx:8554"
+                    "mediamtx_rtsp_base": settings.mediamtx_rtsp_base
                 },
                 timeout=10.0
             )

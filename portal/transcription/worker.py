@@ -26,9 +26,11 @@ MAX_TOTAL_WORKERS = 10
 active_workers: Dict[str, Dict[str, Any]] = {}
 active_processes: Dict[str, asyncio.subprocess.Process] = {}
 
+from portal.config import settings
+
 async def transcription_worker(event_slug: str, language_code: str, booth_id: str, broadcast_callback, provider_name: str, model_size: str, config: ProviderConfig, transcription_language: str | None = None):
     logger.info(f"Starting {provider_name} transcription worker for booth {booth_id}")
-    rtsp_url = f"rtsp://mediamtx:8554/{event_slug}/{language_code}"
+    rtsp_url = f"{settings.mediamtx_rtsp_base}/{event_slug}/{language_code}"
     
     provider = PROVIDERS.get(provider_name, PROVIDERS['local'])
     

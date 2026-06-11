@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     # MediaMTX Control API (port 9997). Used to dynamically create named
     # paths with alwaysAvailable so WHEP readers survive publisher handoffs.
     mediamtx_api_base: str = 'http://localhost:9997'
+    mediamtx_rtsp_base: str = 'rtsp://mediamtx:8554'
     floor_bot_base: str = 'http://floor-bot:8080'
 
 
