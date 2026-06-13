@@ -1989,21 +1989,26 @@ async def admin_booth_translation_settings(
 @app.post('/admin/events/{event_id}/rooms/{room_id}/booths/{booth_id}/edit', dependencies=[Depends(require_admin)])
 async def admin_edit_booth(request: Request, event_id: int, room_id: int, booth_id: int):
     from portal.database import get_session, get_booth_by_id
+    from portal.booth_identity import validate_language_code
+    
     form = await request.form()
     language_name = form.get('language_name', '').strip()
-    language_code = form.get('language_code', '').strip()
+    language_code_raw = form.get('language_code', '').strip()
     
     async with get_session() as session:
         booth = await get_booth_by_id(session, booth_id)
         if booth and booth.event_id == event_id and booth.room_id == room_id:
             if language_name:
                 booth.language_name = language_name
-            if language_code:
-                booth.language_code = language_code
+            if language_code_raw:
+                try:
+                    booth.language_code = validate_language_code(language_code_raw)
+                except ValueError:
+                    pass
         await session.commit()
         
     return safe_redirect(
-        url=f'/admin/events/{event_id}/rooms/{room_id}/booths/{booth_id}/',
+        url=str(request.url_for('admin_booth_detail', event_id=event_id, room_id=room_id, booth_id=booth_id)),
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
