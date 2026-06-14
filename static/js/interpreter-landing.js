@@ -34,48 +34,44 @@ async function boot() {
   await runPreflightChecks()
 }
 
+function handleMicDeviceChange() {
+  state.micDeviceId = elements.micDeviceSelect.value
+  localStorage.setItem('mic-device-id', state.micDeviceId)
+  if (micTestStream) {
+    stopMicTest().then(startMicTest).catch(() => {})
+  }
+}
+
+function handleShowVirtualDevicesChange() {
+  populateMicDevices()
+}
+
+async function handleMicTestClick() {
+  if (micTestStream) {
+    stopMicTest()
+  } else {
+    await startMicTest()
+  }
+}
+
+async function handleLoopbackTestClick() {
+  if (loopbackRecorder || loopbackAudio) {
+    stopLoopbackTest()
+  } else {
+    await startLoopbackTest()
+  }
+}
+
+function handlePreflightRetryClick() {
+  runPreflightChecks()
+}
+
 function bindEventHandlers() {
-  if (elements.micDeviceSelect) {
-    elements.micDeviceSelect.addEventListener('change', () => {
-      state.micDeviceId = elements.micDeviceSelect.value
-      localStorage.setItem('mic-device-id', state.micDeviceId)
-      if (micTestStream) {
-        stopMicTest().then(startMicTest).catch(() => {})
-      }
-    })
-  }
-
-  if (elements.showVirtualDevices) {
-    elements.showVirtualDevices.addEventListener('change', () => {
-      populateMicDevices()
-    })
-  }
-
-  if (elements.micTestBtn) {
-    elements.micTestBtn.addEventListener('click', async () => {
-      if (micTestStream) {
-        stopMicTest()
-      } else {
-        await startMicTest()
-      }
-    })
-  }
-
-  if (elements.loopbackTestBtn) {
-    elements.loopbackTestBtn.addEventListener('click', async () => {
-      if (loopbackRecorder || loopbackAudio) {
-        stopLoopbackTest()
-      } else {
-        await startLoopbackTest()
-      }
-    })
-  }
-
-  if (elements.preflightRetry) {
-    elements.preflightRetry.addEventListener('click', () => {
-      runPreflightChecks()
-    })
-  }
+  elements.micDeviceSelect?.addEventListener('change', handleMicDeviceChange)
+  elements.showVirtualDevices?.addEventListener('change', handleShowVirtualDevicesChange)
+  elements.micTestBtn?.addEventListener('click', handleMicTestClick)
+  elements.loopbackTestBtn?.addEventListener('click', handleLoopbackTestClick)
+  elements.preflightRetry?.addEventListener('click', handlePreflightRetryClick)
 }
 
 async function populateMicDevices() {
