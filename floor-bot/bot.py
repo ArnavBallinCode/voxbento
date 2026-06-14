@@ -3,16 +3,47 @@ import logging
 import os
 import subprocess  # nosec B404
 import threading
+import asyncio
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Dict
+from typing import Dict, Any
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("floor-bot")
 
 class SubprocessManager:
     def __init__(self):
-        self.rooms: Dict[str, subprocess.Popen] = {}
+        self.rooms: Dict[str, Any] = {}
+        self.background_tasks = set()
         self.lock = threading.Lock()
+        self.loop = asyncio.new_event_loop()
+        self.thread = threading.Thread(target=self.loop.run_forever, daemon=True)
+        self.thread.start()
+
+    async def _start_room_async(self, event_slug: str, cmd: list, env: dict):
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env
+        )
+
+        async def log_stream(stream, prefix):
+            while True:
+                line = await stream.readline()
+                if not line:
+                    break
+                logger.info(f"{prefix}: {line.decode('utf-8', errors='replace').strip()}")
+
+        if proc.stdout:
+            task = asyncio.create_task(log_stream(proc.stdout, f"bot[{event_slug}] stdout"))
+            self.background_tasks.add(task)
+            task.add_done_callback(self.background_tasks.discard)
+        if proc.stderr:
+            task = asyncio.create_task(log_stream(proc.stderr, f"bot[{event_slug}] stderr"))
+            self.background_tasks.add(task)
+            task.add_done_callback(self.background_tasks.discard)
+
+        return proc
 
     def start_room(self, event_slug: str, jitsi_url: str, mediamtx_rtsp_base: str):
         with self.lock:
@@ -184,29 +215,18 @@ asyncio.run(run_capture())
 """
             ]
 
-            proc = subprocess.Popen(  # nosec B603
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-                env=env
+            future = asyncio.run_coroutine_threadsafe(
+                self._start_room_async(event_slug, cmd, env),
+                self.loop
             )
-
-            def log_stream(stream, prefix):
-                for line in iter(stream.readline, ''):
-                    logger.info(f"{prefix}: {line.strip()}")
-
-            threading.Thread(target=log_stream, args=(proc.stdout, f"bot[{event_slug}] stdout"), daemon=True).start()
-            threading.Thread(target=log_stream, args=(proc.stderr, f"bot[{event_slug}] stderr"), daemon=True).start()
-
+            proc = future.result()
             self.rooms[event_slug] = proc
 
     def stop_room_locked(self, event_slug: str):
         if event_slug in self.rooms:
             logger.info(f"Terminating subprocess for {event_slug}")
             proc = self.rooms[event_slug]
-            if proc.poll() is None:
+            if proc.returncode is None:
                 proc.terminate()
             del self.rooms[event_slug]
 
@@ -258,7 +278,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             status = {}
             with manager.lock:
                 for event_slug, proc in manager.rooms.items():
-                    if proc.poll() is not None:
+                    if proc.returncode is not None:
                         status[event_slug] = {"state": "dead", "exit_code": proc.returncode}
                     else:
                         status[event_slug] = {"state": "healthy", "pid": proc.pid}
