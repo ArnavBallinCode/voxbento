@@ -232,7 +232,16 @@ function authHeaders() {
 // ── Event binding ─────────────────────────────────────────────────────────────
 
 function bindEventHandlers() {
-  // Handover button click
+  bindHandoffEvents()
+  bindChatEvents()
+  bindMicEvents()
+  bindRelayEvents()
+  bindDeviceAndTestEvents()
+  bindMiscEvents()
+  bindGlobalEvents()
+}
+
+function bindHandoffEvents() {
   elements.handoverBtn.addEventListener('click', () => {
     if (!state.joined || !state.participantId) return
     const isActive = state.activeInterpreterId === state.participantId
@@ -255,16 +264,34 @@ function bindEventHandlers() {
       wsSend({ type: 'booth:cancel-handoff' })
     }
   })
+}
 
+function bindChatEvents() {
   elements.chatForm.addEventListener('submit', (event) => {
     event.preventDefault()
     sendChatMessage()
   })
+}
 
+function bindMicEvents() {
   elements.toggleMic.addEventListener('click', async () => {
     await toggleMicMute()
   })
 
+  elements.micDeviceSelect.addEventListener('change', () => {
+    state.micDeviceId = elements.micDeviceSelect.value
+    localStorage.setItem('mic-device-id', state.micDeviceId)
+    if (micTestStream) {
+      stopMicTest().then(startMicTest).catch(() => {})
+    }
+  })
+
+  elements.showVirtualDevices.addEventListener('change', () => {
+    populateMicDevices()
+  })
+}
+
+function bindRelayEvents() {
   if (elements.passRelay) {
     elements.passRelay.addEventListener('click', toggleRelayAudio)
   }
@@ -281,15 +308,6 @@ function bindEventHandlers() {
     })
   }
 
-  // Booth Audio Volume slider
-  if (elements.boothVolume && elements.boothAudio) {
-    elements.boothVolume.addEventListener('input', () => {
-      const val = parseInt(elements.boothVolume.value, 10)
-      elements.boothAudio.volume = val / 100
-      if (elements.boothVolumeLabel) elements.boothVolumeLabel.textContent = `${val}%`
-    })
-  }
-
   if (elements.showVirtualRelayDevices) {
     elements.showVirtualRelayDevices.addEventListener('change', populateRelayDevices)
   }
@@ -299,19 +317,9 @@ function bindEventHandlers() {
       elements.relayAudio.volume = parseFloat(elements.relayVolume.value)
     })
   }
+}
 
-  elements.micDeviceSelect.addEventListener('change', () => {
-    state.micDeviceId = elements.micDeviceSelect.value
-    localStorage.setItem('mic-device-id', state.micDeviceId)
-    if (micTestStream) {
-      stopMicTest().then(startMicTest).catch(() => {})
-    }
-  })
-
-  elements.showVirtualDevices.addEventListener('change', () => {
-    populateMicDevices()
-  })
-
+function bindDeviceAndTestEvents() {
   elements.micTestBtn.addEventListener('click', async () => {
     if (micTestStream) {
       stopMicTest()
@@ -329,6 +337,17 @@ function bindEventHandlers() {
       }
     })
   }
+}
+
+function bindMiscEvents() {
+  // Booth Audio Volume slider
+  if (elements.boothVolume && elements.boothAudio) {
+    elements.boothVolume.addEventListener('input', () => {
+      const val = parseInt(elements.boothVolume.value, 10)
+      elements.boothAudio.volume = val / 100
+      if (elements.boothVolumeLabel) elements.boothVolumeLabel.textContent = `${val}%`
+    })
+  }
 
   if (elements.copyListenerUrl) {
     elements.copyListenerUrl.addEventListener('click', () => {
@@ -343,25 +362,11 @@ function bindEventHandlers() {
     })
   }
 
-  document.addEventListener('keydown', (event) => {
-    if (event.code !== 'Space') return
-    const tag = document.activeElement?.tagName?.toLowerCase()
-    if (tag === 'input' || tag === 'textarea' || tag === 'select') return
-    event.preventDefault()
-    toggleMicMute().catch(() => {})
-  })
-
   elements.preflightRetry.addEventListener('click', () => {
     runPreflightChecks().catch((error) => {
       showError(`Preflight checks failed: ${error.message}`)
     })
   })
-
-  if (navigator.mediaDevices) {
-    navigator.mediaDevices.addEventListener('devicechange', () => {
-      populateMicDevices().catch(() => {})
-    })
-  }
 
   elements.participantList.addEventListener('click', (event) => {
     const target = event.target
@@ -374,6 +379,22 @@ function bindEventHandlers() {
       target_id: participantId,
     })
   })
+}
+
+function bindGlobalEvents() {
+  document.addEventListener('keydown', (event) => {
+    if (event.code !== 'Space') return
+    const tag = document.activeElement?.tagName?.toLowerCase()
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return
+    event.preventDefault()
+    toggleMicMute().catch(() => {})
+  })
+
+  if (navigator.mediaDevices) {
+    navigator.mediaDevices.addEventListener('devicechange', () => {
+      populateMicDevices().catch(() => {})
+    })
+  }
 
   window.addEventListener('beforeunload', () => {
     if (state.joined && state.participantId) {
