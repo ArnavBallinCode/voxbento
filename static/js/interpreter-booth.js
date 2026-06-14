@@ -581,17 +581,14 @@ function joinBooth() {
   })
 }
 
-function joinMonitoringFeed() {
+export function getJitsiMonitoringUrl(rawUrl, requiredDomain, displayName) {
   try {
-    const rawUrl = portal.dataset.jitsiUrl
     if (!rawUrl) {
-      showError('Jitsi meeting URL is required.')
-      return
+      return { error: 'Jitsi meeting URL is required.' }
     }
     const meetingUrl = new URL(rawUrl)
-    if (state.jitsiDomain && meetingUrl.host !== state.jitsiDomain) {
-      showError(`Jitsi URL must use ${state.jitsiDomain}.`)
-      return
+    if (requiredDomain && meetingUrl.host !== requiredDomain) {
+      return { error: `Jitsi URL must use ${requiredDomain}.` }
     }
     const hashParams = new URLSearchParams({
       'config.startWithAudioMuted': 'true',
@@ -603,16 +600,27 @@ function joinMonitoringFeed() {
       'interfaceConfig.TOOLBAR_BUTTONS': '["microphone","camera","chat","participants-pane","tileview","fullscreen","settings"]',
     })
     
-    const dName = portal.dataset.displayName || 'Interpreter'
-    if (dName) {
-      hashParams.set('userInfo.displayName', `"${dName}"`)
+    if (displayName) {
+      hashParams.set('userInfo.displayName', `"${displayName}"`)
     }
     
     const hash = hashParams.toString()
-    elements.jitsiFrame.src = `${meetingUrl.origin}${meetingUrl.pathname}#${hash}`
-    showError('')
+    return { url: `${meetingUrl.origin}${meetingUrl.pathname}#${hash}` }
   } catch (error) {
-    showError(`Invalid Jitsi URL: ${error.message}`)
+    return { error: `Invalid Jitsi URL: ${error.message}` }
+  }
+}
+
+function joinMonitoringFeed() {
+  const rawUrl = portal.dataset.jitsiUrl
+  const dName = portal.dataset.displayName || 'Interpreter'
+  const result = getJitsiMonitoringUrl(rawUrl, state.jitsiDomain, dName)
+
+  if (result.error) {
+    showError(result.error)
+  } else {
+    elements.jitsiFrame.src = result.url
+    showError('')
   }
 }
 
