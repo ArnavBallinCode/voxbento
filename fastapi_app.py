@@ -692,43 +692,23 @@ async def interpreter_booth(
     )
 
 
-@app.get('/listener/{event_slug}')
-async def listen_event_page(
-    request: Request,
-    event_slug: str,
-    code: str | None = None
-) -> Any:
-    """Listener page scoped by event, allowing users to select room and language."""
-    import asyncio
+def _check_listener_access(request: Request, ev: Any, code: str | None) -> bool:
+    """Determine if a user is allowed to access the listener page."""
+    payload = get_booth_session(request)
+    if payload and payload.get('user'):
+        return True
 
-    from portal.database import get_event_by_slug, get_session, list_booths_for_event, list_rooms_for_event
+    cookie_code = request.cookies.get(f'listener_code_{ev.slug}')
+    active_code = code or cookie_code
 
-    async with get_session() as session:
-        ev = await get_event_by_slug(session, event_slug)
-        if not ev:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    if ev.listener_join_code and active_code == ev.listener_join_code:
+        return True
 
-        # Check access
-        has_access = False
-        payload = get_booth_session(request)
-        if payload and payload.get('user'):
-            has_access = True
+    return False
 
-        cookie_code = request.cookies.get(f'listener_code_{event_slug}')
-        active_code = code or cookie_code
 
-        if ev.listener_join_code and active_code == ev.listener_join_code:
-            has_access = True
-
-        if not has_access:
-            return templates.TemplateResponse(request, 'listener_join.html', {
-                'event': ev,
-                'error': 'Invalid join code.' if code else None
-            })
-
-        rooms = await list_rooms_for_event(session, ev.id)
-        db_booths = await list_booths_for_event(session, ev.id)
-
+def _build_booths_data_and_tasks(db_booths: list[Any]) -> tuple[list[dict[str, Any]], list[Any]]:
+    """Convert database booths to frontend dicts and collect MediaMTX tasks."""
     booths_data = []
     ensure_tasks = []
     for b in db_booths:
@@ -748,7 +728,16 @@ async def listen_event_page(
             'translation_languages': booth_lang_data
         })
         ensure_tasks.append(_ensure_mediamtx_path(channel_id))
+    return booths_data, ensure_tasks
 
+
+def _process_rooms_data(
+    rooms: list[Any],
+    ev_slug: str,
+    booths_data: list[dict[str, Any]],
+    ensure_tasks: list[Any]
+) -> list[dict[str, Any]]:
+    """Convert database rooms to frontend dicts and inject floor booths if needed."""
     rooms_data = []
     for r in rooms:
         lang_data = [
@@ -762,7 +751,7 @@ async def listen_event_page(
         })
 
         if r.floor_transcription_enabled:
-            channel_id = f"{ev.slug}/floor"
+            channel_id = f"{ev_slug}/floor"
             booths_data.append({
                 'id': f"floor_{r.id}",
                 'room_id': r.id,
@@ -774,6 +763,36 @@ async def listen_event_page(
                 'translation_languages': lang_data
             })
             ensure_tasks.append(_ensure_mediamtx_path(channel_id))
+    return rooms_data
+
+
+@app.get('/listener/{event_slug}')
+async def listen_event_page(
+    request: Request,
+    event_slug: str,
+    code: str | None = None
+) -> Any:
+    """Listener page scoped by event, allowing users to select room and language."""
+    import asyncio
+
+    from portal.database import get_event_by_slug, get_session, list_booths_for_event, list_rooms_for_event
+
+    async with get_session() as session:
+        ev = await get_event_by_slug(session, event_slug)
+        if not ev:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+
+        if not _check_listener_access(request, ev, code):
+            return templates.TemplateResponse(request, 'listener_join.html', {
+                'event': ev,
+                'error': 'Invalid join code.' if code else None
+            })
+
+        rooms = await list_rooms_for_event(session, ev.id)
+        db_booths = await list_booths_for_event(session, ev.id)
+
+        booths_data, ensure_tasks = _build_booths_data_and_tasks(db_booths)
+        rooms_data = _process_rooms_data(rooms, ev.slug, booths_data, ensure_tasks)
 
     if ensure_tasks:
         await asyncio.gather(*ensure_tasks)
