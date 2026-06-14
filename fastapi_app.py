@@ -1215,7 +1215,8 @@ async def user_login_submit(request: Request):
 @app.get('/logout')
 async def user_logout(request: Request):
     response = safe_redirect(url='/', status_code=status.HTTP_303_SEE_OTHER)
-    response.delete_cookie('user_token')
+    response.delete_cookie('user_token', httponly=True, samesite='lax')
+    response.delete_cookie('session_token', httponly=True, samesite='lax')
     return response
 
 
@@ -1392,7 +1393,7 @@ async def admin_login_submit(request: Request):
 @app.get('/admin/logout')
 async def admin_logout():
     response = safe_redirect(url='/admin/login', status_code=status.HTTP_303_SEE_OTHER)
-    response.delete_cookie('admin_token')
+    response.delete_cookie('admin_token', httponly=True, samesite='lax')
     return response
 
 
