@@ -1,0 +1,4 @@
+## 2025-02-24 - Startup guard for weak default secret_key
+**Vulnerability:** The application previously booted in production mode even if `secret_key` and `jwt_secret` were set to weak default values (e.g. 'change-me'). These weak values are used to sign all JWTs, making the application vulnerable to forged tokens allowing unauthorized role access.
+**Learning:** Hardcoded, default secrets can easily make it into production deployments if no explicit fail-fast mechanism exists to block startup in non-debug mode. Also, `effective_jwt_secret` depends on both `jwt_secret` and `secret_key`, requiring both to be securely mocked in test suites to prevent flakiness.
+**Prevention:** Implement a method like `validate_production_secrets` on configuration objects (e.g. `Settings`) that raises an error (like `RuntimeError`) during the application's lifespan setup if a weak secret is detected in production mode.
