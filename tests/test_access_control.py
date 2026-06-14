@@ -11,7 +11,6 @@ import pytest
 
 from portal.auth import create_admin_token, create_user_token, hash_password
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
