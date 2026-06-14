@@ -12,7 +12,7 @@ conditions, run every verification command, and update your row when done.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| [001](001-agents-context-docs.md) | Create the missing `.github/.agents` context and skills directories | P1 | M | — | TODO |
+| [001](001-agents-context-docs.md) | Create the missing `.github/.agents` context and skills directories | P1 | M | — | DONE |
 | [002](002-pagination-list-queries.md) | Add pagination to unbounded list query helpers | P1 | S | — | TODO |
 | [003](003-ruff-linter.md) | Add ruff linter and pre-commit hook | P1 | S | — | TODO |
 | [004](004-js-instructions-applyto.md) | Fix `js.instructions.md` applyTo glob | P1 | S | — | TODO |
