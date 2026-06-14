@@ -58,7 +58,7 @@ class TestValidateEventSlug:
             validate_event_slug('my event')
 
     def test_too_long_slug_rejected(self):
-        with pytest.raises(ValueError, match='must not exceed'):
+        with pytest.raises(ValueError, match=r'must not exceed 64 characters \(got 65\)'):
             validate_event_slug('a' * 65)
 
     def test_max_length_slug_accepted(self):
@@ -161,6 +161,14 @@ class TestMakeMediamtxPath:
     def test_normalises_inputs(self):
         assert make_mediamtx_path('PyCon2026', 'EN') == 'pycon2026/en'
 
+    def test_invalid_slug_raises(self):
+        with pytest.raises(ValueError):
+            make_mediamtx_path('', 'en')
+
+    def test_invalid_code_raises(self):
+        with pytest.raises(ValueError):
+            make_mediamtx_path('pycon2026', 'xyz')
+
 
 # ── parse_booth_id ────────────────────────────────────────────────────────────
 
@@ -180,6 +188,10 @@ class TestParseBoothId:
     def test_missing_language_raises(self):
         with pytest.raises(ValueError, match='event_slug'):
             parse_booth_id('pycon2026')
+
+    def test_invalid_slug_raises(self):
+        with pytest.raises(ValueError):
+            parse_booth_id('invalid_slug-en')
 
     def test_empty_string_raises(self):
         with pytest.raises(ValueError):
