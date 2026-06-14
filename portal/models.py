@@ -74,6 +74,16 @@ class Event(Base):
     encrypted_anthropic_api_key: Mapped[str | None] = mapped_column("anthropic_api_key", Text, nullable=True, default=None)
     encrypted_groq_api_key: Mapped[str | None] = mapped_column("groq_api_key", Text, nullable=True, default=None)
     listener_join_code: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
+
+    # SMTP Settings
+    smtp_host: Mapped[str | None] = mapped_column(String(200), nullable=True, default=None)
+    smtp_port: Mapped[int | None] = mapped_column(nullable=True, default=None)
+    smtp_username: Mapped[str | None] = mapped_column(String(200), nullable=True, default=None)
+    encrypted_smtp_password: Mapped[str | None] = mapped_column("smtp_password", Text, nullable=True, default=None)
+    smtp_sender_email: Mapped[str | None] = mapped_column(String(320), nullable=True, default=None)
+    smtp_sender_name: Mapped[str | None] = mapped_column(String(200), nullable=True, default=None)
+    smtp_use_tls: Mapped[bool] = mapped_column(Boolean, default=True, server_default='1')
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     rooms: Mapped[list[Room]] = relationship(back_populates='event', cascade='all, delete-orphan')
@@ -426,6 +436,27 @@ class BoothMembership(Base):
 
     def __repr__(self) -> str:
         return f'<BoothMembership user={self.user_id} booth={self.booth_id} role={self.role!r}>'
+
+
+# ---------------------------------------------------------------------------
+# EventEmailLog
+# ---------------------------------------------------------------------------
+
+class EventEmailLog(Base):
+    __tablename__ = 'event_email_logs'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey('events.id', ondelete='CASCADE'))
+    recipient_email: Mapped[str] = mapped_column(String(320))
+    role: Mapped[str] = mapped_column(String(50))
+    status: Mapped[str] = mapped_column(String(20))
+    error_details: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    event: Mapped[Event] = relationship()
+
+    def __repr__(self) -> str:
+        return f'<EventEmailLog id={self.id} status={self.status!r}>'
 
 
 # ---------------------------------------------------------------------------

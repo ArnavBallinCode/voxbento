@@ -1652,6 +1652,221 @@ async def admin_event_api_settings_post(
     return safe_redirect(url=f'/admin/events/{event_id}/api-settings/', status_code=status.HTTP_303_SEE_OTHER)
 
 
+@app.get('/admin/events/{event_id}/email-preview/', dependencies=[Depends(require_admin)])
+async def admin_event_email_preview_get(request: Request, event_id: int, template: str = 'coordinator_invitation.html'):
+    from portal.database import get_event_by_id, get_session
+    from portal.email import env
+
+    async with get_session() as session:
+        event = await get_event_by_id(session, event_id)
+        if not event:
+            raise HTTPException(status_code=404, detail='Event not found')
+
+        try:
+            jinja_template = env.get_template(template)
+            html_content = jinja_template.render(
+                recipient_name="John Doe",
+                role="Test Role",
+                event_name=event.display_name,
+                portal_url=str(request.base_url).rstrip('/')
+            )
+            from fastapi.responses import HTMLResponse
+            return HTMLResponse(content=html_content)
+        except Exception as e:
+            return HTMLResponse(content=f"Error loading template: {str(e)}", status_code=500)
+
+
+from fastapi import BackgroundTasks
+
+
+async def send_email_and_log(event_id: int, to_email: str, subject: str, template_name: str, context: dict, role: str):
+    from portal.database import get_event_by_id, get_session
+    from portal.email import send_email
+    from portal.models import EventEmailLog
+    import logging
+    logger = logging.getLogger(__name__)
+
+    async with get_session() as session:
+        event = await get_event_by_id(session, event_id)
+        if event and event.smtp_host:
+            try:
+                await send_email(
+                    event=event,
+                    to_email=to_email,
+                    subject=subject,
+                    template_name=template_name,
+                    context=context
+                )
+                success = True
+                error = None
+            except Exception as e:
+                logger.exception(f"Failed to send email to {to_email} for event {event.slug}")
+                success = False
+                error = str(e)
+
+            log = EventEmailLog(
+                event_id=event_id,
+                recipient_email=to_email,
+                role=role,
+                status="sent" if success else "failed",
+                error_details=error
+            )
+            session.add(log)
+            await session.commit()
+
+
+@app.post('/admin/events/{event_id}/email-logs/{log_id}/resend', dependencies=[Depends(require_admin)])
+async def admin_event_email_log_resend(request: Request, event_id: int, log_id: int, background_tasks: BackgroundTasks):
+    from sqlalchemy import select
+
+    from portal.database import get_event_by_id, get_session
+    from portal.models import EventEmailLog
+
+    async with get_session() as session:
+        event = await get_event_by_id(session, event_id)
+        if not event:
+            raise HTTPException(status_code=404, detail='Event not found')
+
+        stmt = select(EventEmailLog).where(EventEmailLog.id == log_id, EventEmailLog.event_id == event_id)
+        result = await session.execute(stmt)
+        log = result.scalars().first()
+
+        if not log:
+            raise HTTPException(status_code=404, detail='Log not found')
+
+        # Determine the template and subject based on the role
+        if log.role == 'event_owner':
+            template_name = "event_owner_invitation.html"
+            subject = f"You're Invited to Join {event.display_name} as an Event Owner"
+        elif log.role == 'interpreter':
+            template_name = "interpreter_invitation.html"
+            subject = f"Invitation to Join {event.display_name} as an Interpreter"
+        else:
+            template_name = "coordinator_invitation.html"
+            subject = f"You're Invited to Join {event.display_name} as a Coordinator"
+
+        background_tasks.add_task(
+            send_email_and_log,
+            event_id=event.id,
+            to_email=log.recipient_email,
+            subject=subject,
+            template_name=template_name,
+            context={
+                "recipient_name": "Team Member", # We don't store the name in the log, so fallback to generic
+                "role": log.role,
+                "event_name": event.display_name,
+                "portal_url": str(request.base_url).rstrip('/')
+            },
+            role=log.role
+        )
+
+    return safe_redirect(url=f'/admin/events/{event_id}/smtp-settings/', status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.get('/admin/events/{event_id}/smtp-settings/', dependencies=[Depends(require_admin)])
+async def admin_event_smtp_settings_get(request: Request, event_id: int):
+    from sqlalchemy import select
+
+    from portal.database import get_event_by_id, get_session
+    from portal.models import EventEmailLog
+
+    async with get_session() as session:
+        event = await get_event_by_id(session, event_id)
+        if not event:
+            raise HTTPException(status_code=404, detail='Event not found')
+
+        # Fetch email logs
+        stmt = select(EventEmailLog).where(EventEmailLog.event_id == event_id).order_by(EventEmailLog.created_at.desc()).limit(100)
+        result = await session.execute(stmt)
+        email_logs = result.scalars().all()
+
+        return templates.TemplateResponse('admin/smtp_settings.html', {
+            'request': request,
+            'event': event,
+            'email_logs': email_logs,
+        })
+
+
+@app.post('/admin/events/{event_id}/smtp-settings', dependencies=[Depends(require_admin)])
+async def admin_event_smtp_settings_post(
+    request: Request,
+    event_id: int,
+    smtp_host: str | None = Form(None),
+    smtp_port: int | None = Form(None),
+    smtp_username: str | None = Form(None),
+    smtp_password: str | None = Form(None),
+    smtp_sender_email: str | None = Form(None),
+    smtp_sender_name: str | None = Form(None),
+    smtp_use_tls: bool | None = Form(False),
+):
+    from portal.crypto import encrypt_val
+    from portal.database import get_event_by_id, get_session
+
+    async with get_session() as session:
+        event = await get_event_by_id(session, event_id)
+        if not event:
+            raise HTTPException(status_code=404, detail='Event not found')
+
+        event.smtp_host = smtp_host.strip() if smtp_host else None
+        event.smtp_port = smtp_port
+        event.smtp_username = smtp_username.strip() if smtp_username else None
+
+        if smtp_password and smtp_password.strip():
+            event.encrypted_smtp_password = encrypt_val(smtp_password.strip())
+
+        event.smtp_sender_email = smtp_sender_email.strip() if smtp_sender_email else None
+        event.smtp_sender_name = smtp_sender_name.strip() if smtp_sender_name else None
+        event.smtp_use_tls = bool(smtp_use_tls)
+
+        await session.commit()
+
+    return safe_redirect(url=f'/admin/events/{event_id}/smtp-settings/', status_code=status.HTTP_303_SEE_OTHER)
+
+
+class SMTPTestRequest(BaseModel):
+    smtp_host: str | None = None
+    smtp_port: int | None = None
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_use_tls: bool = False
+
+@app.post('/api/admin/events/{event_id}/test-smtp', dependencies=[Depends(require_admin)])
+async def api_admin_test_smtp(event_id: int, req: SMTPTestRequest):
+    from portal.crypto import decrypt_val
+    from portal.database import get_event_by_id, get_session
+    from portal.email import test_smtp_connection
+
+    async with get_session() as session:
+        event = await get_event_by_id(session, event_id)
+        if not event:
+            raise HTTPException(status_code=404, detail='Event not found')
+
+        password = req.smtp_password
+        if not password and event.encrypted_smtp_password:
+            # Prevent SSRF credential leak: only decrypt the saved password
+            # if the target host matches the saved host.
+            if req.smtp_host == event.smtp_host:
+                password = decrypt_val(event.encrypted_smtp_password)
+            else:
+                return {"success": False, "error": "Password required for new host."}
+
+        if not req.smtp_host or not req.smtp_port:
+            return {"success": False, "error": "SMTP Host and Port are required."}
+
+        success, error = await test_smtp_connection(
+            host=req.smtp_host,
+            port=req.smtp_port,
+            username=req.smtp_username,
+            password=password,
+            use_tls=req.smtp_use_tls
+        )
+
+        if success:
+            return {"success": True}
+        else:
+            return {"success": False, "error": error}
+
+
 @app.post('/admin/events/{event_id}/delete', dependencies=[Depends(require_admin)])
 async def admin_delete_event(request: Request, event_id: int):
     from portal.database import delete_event, get_session
@@ -2142,8 +2357,9 @@ async def admin_booth_detail(request: Request, event_id: int, room_id: int, boot
     '/admin/events/{event_id}/rooms/{room_id}/members/',
     dependencies=[Depends(require_admin)],
 )
-async def admin_add_room_member(request: Request, event_id: int, room_id: int):
+async def admin_add_room_member(request: Request, event_id: int, room_id: int, background_tasks: BackgroundTasks):
     from portal.database import (
+        get_event_by_id,
         get_session,
         get_user_by_email,
         list_memberships_for_room,
@@ -2154,6 +2370,8 @@ async def admin_add_room_member(request: Request, event_id: int, room_id: int):
     form = await request.form()
     email = form.get('email', '').strip()
     role = form.get('role', '').strip()
+    send_invitation = form.get('send_invitation') == 'true'
+
     if email:
         async with get_session() as session:
             user = await get_user_by_email(session, email)
@@ -2166,6 +2384,25 @@ async def admin_add_room_member(request: Request, event_id: int, room_id: int):
             if role:
                 try:
                     await set_room_membership(session, user_id=uid, room_id=room_id, role=role)
+
+                    if send_invitation:
+                        event = await get_event_by_id(session, event_id)
+                        if event and event.smtp_host:
+                            background_tasks.add_task(
+                                send_email_and_log,
+                                event_id=event.id,
+                                to_email=email,
+                                subject=f"You're Invited to Join {event.display_name} as a Coordinator",
+                                template_name="coordinator_invitation.html",
+                                context={
+                                    "recipient_name": user.display_name,
+                                    "role": role,
+                                    "event_name": event.display_name,
+                                    "portal_url": str(request.base_url).rstrip('/')
+                                },
+                                role=role
+                            )
+
                 except ValueError:
                     return safe_redirect(
                         url=f'/admin/events/{event_id}/rooms/{room_id}/?error=invalid_role',
@@ -2202,8 +2439,9 @@ async def admin_remove_room_member(request: Request, event_id: int, room_id: int
     '/admin/events/{event_id}/rooms/{room_id}/booths/{booth_id}/members/',
     dependencies=[Depends(require_admin)],
 )
-async def admin_add_booth_member(request: Request, event_id: int, room_id: int, booth_id: int):
+async def admin_add_booth_member(request: Request, event_id: int, room_id: int, booth_id: int, background_tasks: BackgroundTasks):
     from portal.database import (
+        get_event_by_id,
         get_session,
         get_user_by_email,
         list_memberships_for_booth,
@@ -2214,6 +2452,8 @@ async def admin_add_booth_member(request: Request, event_id: int, room_id: int, 
     form = await request.form()
     email = form.get('email', '').strip()
     role = form.get('role', '').strip()
+    send_invitation = form.get('send_invitation') == 'true'
+
     if email:
         async with get_session() as session:
             user = await get_user_by_email(session, email)
@@ -2226,6 +2466,25 @@ async def admin_add_booth_member(request: Request, event_id: int, room_id: int, 
             if role:
                 try:
                     await set_booth_membership(session, user_id=uid, booth_id=booth_id, role=role)
+
+                    if send_invitation:
+                        event = await get_event_by_id(session, event_id)
+                        if event and event.smtp_host:
+                            background_tasks.add_task(
+                                send_email_and_log,
+                                event_id=event.id,
+                                to_email=email,
+                                subject=f"Invitation to Join {event.display_name} as an Interpreter",
+                                template_name="interpreter_invitation.html",
+                                context={
+                                    "recipient_name": user.display_name,
+                                    "role": role,
+                                    "event_name": event.display_name,
+                                    "portal_url": str(request.base_url).rstrip('/')
+                                },
+                                role=role
+                            )
+
                 except ValueError:
                     return safe_redirect(
                         url=f'/admin/events/{event_id}/rooms/{room_id}/booths/{booth_id}/?error=invalid_role',
@@ -2584,8 +2843,9 @@ async def admin_event_members(request: Request, event_id: int):
 
 
 @app.post('/admin/events/{event_id}/members/', dependencies=[Depends(require_admin)])
-async def admin_add_event_member(request: Request, event_id: int):
+async def admin_add_event_member(request: Request, event_id: int, background_tasks: BackgroundTasks):
     from portal.database import (
+        get_event_by_id,
         get_session,
         get_user_by_email,
         list_memberships_for_event,
@@ -2596,6 +2856,8 @@ async def admin_add_event_member(request: Request, event_id: int):
     form = await request.form()
     email = form.get('email', '').strip()
     role = form.get('role', '').strip()
+    send_invitation = form.get('send_invitation') == 'true'
+
     if email:
         async with get_session() as session:
             user = await get_user_by_email(session, email)
@@ -2608,6 +2870,25 @@ async def admin_add_event_member(request: Request, event_id: int):
             if role:
                 try:
                     await set_event_membership(session, user_id=uid, event_id=event_id, role=role)
+
+                    if send_invitation:
+                        event = await get_event_by_id(session, event_id)
+                        if event and event.smtp_host:
+                            background_tasks.add_task(
+                                send_email_and_log,
+                                event_id=event.id,
+                                to_email=email,
+                                subject=f"You're Invited to Join {event.display_name} as an Event Owner",
+                                template_name="event_owner_invitation.html",
+                                context={
+                                    "recipient_name": user.display_name,
+                                    "role": role,
+                                    "event_name": event.display_name,
+                                    "portal_url": str(request.base_url).rstrip('/')
+                                },
+                                role=role
+                            )
+
                 except ValueError:
                     return safe_redirect(
                         url=f'/admin/events/{event_id}/members/?error=invalid_role',

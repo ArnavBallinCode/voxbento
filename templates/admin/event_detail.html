@@ -142,6 +142,14 @@
   <p class="muted">Configure third-party transcription provider API keys for this event. These keys are securely stored and can be selected by booths.</p>
 </div>
 
+<div class="section-card">
+  <div class="section-header">
+    <h2>SMTP Email Configuration</h2>
+    <a href="/admin/events/{{ event.id }}/smtp-settings/" class="btn btn-sm btn-primary">Manage SMTP Settings</a>
+  </div>
+  <p class="muted">Configure SMTP credentials to send invitation emails to members.</p>
+</div>
+
 <div class="danger-zone">
   <h3>Danger Zone</h3>
   <form method="post" action="/admin/events/{{ event.id }}/delete" class="inline-delete"
