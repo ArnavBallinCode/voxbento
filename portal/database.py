@@ -258,6 +258,16 @@ async def count_booths_for_event(session: AsyncSession, event_id: int) -> int:
     return result.scalar_one()
 
 
+async def get_booth_counts_for_event_rooms(session: AsyncSession, event_id: int) -> dict[int, int]:
+    """Return a mapping of room_id -> booth count for all rooms in an event."""
+    result = await session.execute(
+        select(DBBooth.room_id, func.count(DBBooth.id))
+        .where(DBBooth.event_id == event_id)
+        .group_by(DBBooth.room_id)
+    )
+    return dict(result.all())
+
+
 async def list_booths_for_event(
     session: AsyncSession,
     event_id: int,
