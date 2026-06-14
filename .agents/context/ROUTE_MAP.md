@@ -18,6 +18,8 @@
 | GET | `/logout` | open | — | Deletes `user_token` cookie → `/` |
 | GET | `/account` | user | `account.html` | Shows profile + event memberships |
 | GET | `/join/{token}` | open | — | Validates invite token, sets `session_token` → booth or listener |
+| GET | `/mission-control/` | admin | `admin/mission_control.html` | Mission control dashboard |
+| GET | `/mission-control/{event_slug}/` | admin | `admin/mission_control.html` | Event-specific mission control dashboard |
 
 ---
 
@@ -43,6 +45,11 @@
 | GET | `/api/events/{event_slug}/booths/{language_code}/state` | token/Bearer | booth state dict | 404 if booth not in memory |
 | GET | `/api/events/{event_slug}/booths/{language_code}/whip-url` | token/Bearer | `{whip_url, channel_id, booth_id}` | Validates event ownership first |
 | GET | `/api/interpreter/status/{channel_id:path}` | open | `{channel_id, state, reachable}` | MediaMTX reachability (preflight check) |
+| GET | `/api/admin/providers/translation/models` | admin | list of models | Lists available translation models |
+| POST | `/api/rooms/{room_id}/floor-transcription/start` | admin | — | Starts floor transcription worker |
+| POST | `/api/rooms/{room_id}/floor-transcription/stop` | admin | — | Stops floor transcription worker |
+| POST | `/api/booth/{booth_id}/transcription/start` | admin | — | Starts booth transcription worker |
+| POST | `/api/booth/{booth_id}/transcription/stop` | admin | — | Stops booth transcription worker |
 
 ---
 
@@ -70,15 +77,19 @@ All admin routes require `admin_token` cookie (or `user_token` with `is_admin=Tr
 | GET | `/admin/events/{event_id}/` | `admin/event_detail.html` | Event + rooms + booths |
 | GET | `/admin/events/{event_id}/api-settings/` | `admin/api_settings.html` | View encrypted API keys |
 | POST | `/admin/events/{event_id}/api-settings` | — | Update transcription API keys (Fernet-encrypted) |
+| POST | `/admin/events/{event_id}/regenerate_join_code/` | — | Regenerates event join code |
 | POST | `/admin/events/{event_id}/delete` | — | Cascade-deletes event |
 | GET | `/admin/events/{event_id}/rooms/` | `admin/room_list.html` | — |
 | POST | `/admin/events/{event_id}/rooms/` | — | Creates room; auto-generates Jitsi URL |
 | GET | `/admin/events/{event_id}/rooms/{room_id}/` | `admin/room_detail.html` | Room + booths |
 | POST | `/admin/events/{event_id}/rooms/{room_id}/edit` | — | Updates jitsi_url + relay_booth_id |
+| GET | `/admin/events/{event_id}/rooms/{room_id}/transcripts/` | `admin/room_transcripts.html` | View room transcripts |
+| GET | `/api/admin/events/{event_id}/rooms/{room_id}/transcripts/{language_code}` | — | API for retrieving room transcripts |
 | POST | `/admin/events/{event_id}/rooms/{room_id}/delete` | — | Deletes room |
 | GET | `/admin/events/{event_id}/rooms/{room_id}/booths/` | `admin/booth_list.html` | — |
 | POST | `/admin/events/{event_id}/rooms/{room_id}/booths/` | — | Creates DBBooth |
 | GET | `/admin/events/{event_id}/rooms/{room_id}/booths/{booth_id}/` | `admin/booth_detail.html` | DB + live state, tokens, members |
+| POST | `/admin/events/{event_id}/rooms/{room_id}/booths/{booth_id}/edit` | — | Edits a DBBooth |
 | POST | `…/booths/{booth_id}/members/` | — | Upserts `BoothMembership` by email + role |
 | POST | `…/booths/{booth_id}/members/{membership_id}/delete` | — | Removes membership |
 | POST | `…/booths/{booth_id}/delete` | — | Deletes DBBooth (cascade) |

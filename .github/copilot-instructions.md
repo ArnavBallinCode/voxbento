@@ -21,7 +21,7 @@ A browser-first interpretation booth console.
 - Attendees listen via `/listener-webrtc/{booth_id}` (WHEP WebRTC, primary) or `/listen/{booth_id}` (hls.js fallback)
 - Coordination (booth state, roles, chat) is via native WebSocket on FastAPI
 
-**Frontend:** Jinja2 templates + vanilla ES module JavaScript in `templates/` and `static/js/`. No Vue, no React, no build step. The `src/` directory has been removed.
+**Frontend:** Jinja2 templates + vanilla ES module JavaScript in `templates/` and `static/js/`. No Vue, no React, no build step.
 
 ## Non-negotiable rules
 
