@@ -7,9 +7,12 @@ existing test suite.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, patch
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 # We import CRUD helpers and test them against our isolated test DB.
@@ -37,8 +40,9 @@ from portal.database import (
     list_tokens_for_booth,
     list_users,
     redeem_invite_token,
+    save_transcript_segment,
 )
-from portal.models import Base, DBBooth, Event, InviteToken, Room, generate_token, utc_now
+from portal.models import Base, DBBooth, Event, InviteToken, Room, TranscriptSegment, generate_token, utc_now
 from portal.roles import ALL_ROLES
 
 # ---------------------------------------------------------------------------
@@ -675,3 +679,94 @@ async def test_list_events_default_limit_does_not_break(db: AsyncSession):
     events = await list_events(db)
     assert len(events) == 3
 
+
+# ---------------------------------------------------------------------------
+# Transcript Segments
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_save_transcript_segment_success(db: AsyncSession):
+    event = await create_event(db, slug="my-event", display_name="My Event")
+    room = await create_room(db, event_id=event.id, display_name="Main Hall")
+    booth = await create_booth(db, event_id=event.id, room_id=room.id, language_code="en", language_name="English")
+
+    @asynccontextmanager
+    async def mock_get_session():
+        async def fake_commit():
+            await db.flush()
+        with patch.object(db, "commit", side_effect=fake_commit):
+            yield db
+
+    with patch("portal.database.get_session", mock_get_session):
+        segment_id = await save_transcript_segment("my-event-en", "Hello, world!", room_id=room.id)
+
+    assert segment_id is not None
+
+    stmt = select(TranscriptSegment).where(TranscriptSegment.id == segment_id)
+    segment = await db.scalar(stmt)
+
+    assert segment is not None
+    assert segment.text == "Hello, world!"
+    assert segment.booth_id == booth.id
+    assert segment.language_code == "en"
+    assert segment.room_id == room.id
+
+@pytest.mark.anyio
+async def test_save_transcript_segment_floor(db: AsyncSession):
+    event = await create_event(db, slug="my-event", display_name="My Event")
+    room = await create_room(db, event_id=event.id, display_name="Main Hall")
+
+    @asynccontextmanager
+    async def mock_get_session():
+        async def fake_commit():
+            await db.flush()
+        with patch.object(db, "commit", side_effect=fake_commit):
+            yield db
+
+    with patch("portal.database.get_session", mock_get_session):
+        segment_id = await save_transcript_segment("my-event-floor", "Floor audio", room_id=room.id)
+
+    assert segment_id is not None
+
+    stmt = select(TranscriptSegment).where(TranscriptSegment.id == segment_id)
+    segment = await db.scalar(stmt)
+
+    assert segment is not None
+    assert segment.text == "Floor audio"
+    assert segment.booth_id is None
+    assert segment.language_code == "floor"
+    assert segment.room_id == room.id
+
+@pytest.mark.anyio
+async def test_save_transcript_segment_invalid_booth_id_str():
+    # If the string doesn't contain a hyphen, it returns None early
+    # without needing a database connection.
+    segment_id = await save_transcript_segment("invalid", "text", room_id=123)
+    assert segment_id is None
+
+@pytest.mark.anyio
+async def test_save_transcript_segment_db_error():
+    # Test that a DB error doesn't crash the application, but returns None
+    # and logs an error instead.
+
+    class MockSession:
+        async def scalar(self, stmt):
+            return 1
+
+        def add(self, instance):
+            pass
+
+        async def commit(self):
+            raise ValueError("Mock DB Error")
+
+    @asynccontextmanager
+    async def mock_get_session():
+        yield MockSession()
+
+    with patch("portal.database.get_session", mock_get_session):
+        with patch("portal.database.logger.error") as mock_logger:
+            segment_id = await save_transcript_segment("my-event-en", "Hello", room_id=123)
+
+    assert segment_id is None
+    mock_logger.assert_called_once()
+    assert "Failed to save transcript segment: Mock DB Error" in mock_logger.call_args[0][0]
