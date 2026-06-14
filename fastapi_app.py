@@ -1670,9 +1670,9 @@ async def admin_delete_event(request: Request, event_id: int):
 @app.get('/admin/events/{event_id}/rooms/', dependencies=[Depends(require_admin)])
 async def admin_room_list(request: Request, event_id: int):
     from portal.database import (
+        get_booth_counts_for_event_rooms,
         get_event_by_id,
         get_session,
-        list_booths_for_room,
         list_rooms_for_event,
     )
 
@@ -1680,11 +1680,15 @@ async def admin_room_list(request: Request, event_id: int):
         event = await get_event_by_id(session, event_id)
         if event is None:
             raise HTTPException(status_code=404, detail='Event not found.')
+
         rooms = await list_rooms_for_event(session, event_id)
+        booth_counts = await get_booth_counts_for_event_rooms(session, event_id)
+
         room_data = []
         for room in rooms:
-            room_booths = await list_booths_for_room(session, room.id)
-            room_data.append({'room': room, 'booth_count': len(room_booths)})
+            count = booth_counts.get(room.id, 0)
+            room_data.append({'room': room, 'booth_count': count})
+
     return templates.TemplateResponse(request, 'admin/room_list.html', {
         'event': event,
         'room_data': room_data,
