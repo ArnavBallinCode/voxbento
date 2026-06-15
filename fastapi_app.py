@@ -85,6 +85,7 @@ from portal.database import (
     get_session,
     get_user_by_email,
     get_user_by_id,
+    list_all_booths_for_events,
     list_booth_memberships_for_user,
     list_booths_for_event,
     list_booths_for_room,
@@ -477,13 +478,6 @@ async def join_via_invite(token: str) -> RedirectResponse:
 
 @app.get("/")
 async def home(request: Request):
-    from portal.database import (
-        get_session,
-        list_all_booths_for_events,
-        list_booth_memberships_for_user,
-        list_events,
-        list_memberships_for_user,
-    )
 
     current_user = await get_current_user(request)
     my_booths = []
@@ -1530,15 +1524,6 @@ async def admin_logout():
 
 @app.get("/admin/", dependencies=[Depends(require_admin)])
 async def admin_dashboard(request: Request, page: int = 1):
-    import math
-
-    from portal.auth import get_accessible_event_ids, get_admin_flags, get_current_user
-    from portal.database import (
-        count_events,
-        get_session,
-        list_all_booths_for_events,
-        list_events,
-    )
 
     admin_flags = await get_admin_flags(request)
     user = await get_current_user(request)
