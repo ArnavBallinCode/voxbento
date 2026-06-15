@@ -1662,8 +1662,6 @@ async def admin_event_email_preview_get(request: Request, event_id: int, templat
         if not event:
             raise HTTPException(status_code=404, detail='Event not found')
 
-    import logging
-    logger = logging.getLogger(__name__)
         try:
             jinja_template = env.get_template(template)
             html_content = jinja_template.render(
@@ -1680,9 +1678,8 @@ async def admin_event_email_preview_get(request: Request, event_id: int, templat
 
 from fastapi import BackgroundTasks
 
-        except Exception:
-            logger.exception("Error loading email preview template '%s' for event_id=%s", template, event_id)
-            return HTMLResponse(content="Error loading template.", status_code=500)
+
+async def send_email_and_log(event_id: int, to_email: str, subject: str, template_name: str, context: dict, role: str):
     from portal.database import get_event_by_id, get_session
     from portal.email import send_email
     from portal.models import EventEmailLog
