@@ -16,6 +16,13 @@ When a transcription provider is configured for a booth and an interpreter goes 
 
 Listeners receive caption messages automatically with no extra configuration. The captions WebSocket requires no authentication, so any client — including embedded third-party players — can subscribe.
 
+## Floor Audio Capture & Translation
+
+In addition to transcribing interpreter audio, Voxbento can capture and translate the main conference **Floor Audio**.
+A headless Chromium instance (`floor-bot`) secretly joins the Jitsi meeting, captures the floor audio via PulseAudio, and pushes it via RTSP to MediaMTX.
+
+The transcription worker processes this audio, and a dedicated **Translation Worker** reads 'final' segments to translate the text into target languages. These translations are broadcast immediately via the `/ws/translations` WebSocket.
+
 ## Available Transcription Providers
 
 <Tabs>
