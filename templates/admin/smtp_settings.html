@@ -1,0 +1,174 @@
+{% extends "admin/base.html" %}
+{% block title %}SMTP Settings — {{ event.display_name }}{% endblock %}
+
+{% block breadcrumb %}
+<nav class="breadcrumb">
+  <a href="/admin/">Dashboard</a> <span>/</span>
+  <a href="/admin/events/">Events</a> <span>/</span>
+  <a href="/admin/events/{{ event.id }}/">{{ event.display_name }}</a> <span>/</span>
+  <span>SMTP Settings</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>SMTP Settings — {{ event.display_name }}</h1>
+</div>
+
+<div class="section-card">
+  <form method="post" action="/admin/events/{{ event.id }}/smtp-settings" class="standard-form">
+    <div class="form-group">
+      <label for="smtp_host">SMTP Host</label>
+      <input type="text" id="smtp_host" name="smtp_host" class="input" value="{{ event.smtp_host or '' }}" placeholder="e.g. smtp.example.com">
+    </div>
+
+    <div class="form-group">
+      <label for="smtp_port">SMTP Port</label>
+      <input type="number" id="smtp_port" name="smtp_port" class="input" value="{{ event.smtp_port or '' }}" placeholder="e.g. 587">
+    </div>
+
+    <div class="form-group">
+      <label for="smtp_username">SMTP Username</label>
+      <input type="text" id="smtp_username" name="smtp_username" class="input" value="{{ event.smtp_username or '' }}">
+    </div>
+
+    <div class="form-group">
+      <label for="smtp_password">SMTP Password</label>
+      <input type="password" id="smtp_password" name="smtp_password" class="input" placeholder="{{ '********' if event.encrypted_smtp_password else '' }}">
+      {% if event.encrypted_smtp_password %}
+      <small class="muted" style="display:block; margin-top: 4px;">A password is saved. Leave blank to keep the current password.</small>
+      {% endif %}
+    </div>
+
+    <div class="form-group">
+      <label for="smtp_sender_email">Sender Email Address</label>
+      <input type="email" id="smtp_sender_email" name="smtp_sender_email" class="input" value="{{ event.smtp_sender_email or '' }}" placeholder="e.g. noreply@example.com">
+    </div>
+
+    <div class="form-group">
+      <label for="smtp_sender_name">Sender Display Name</label>
+      <input type="text" id="smtp_sender_name" name="smtp_sender_name" class="input" value="{{ event.smtp_sender_name or '' }}" placeholder="e.g. {{ event.display_name }} Notifications">
+    </div>
+
+    <div class="form-group checkbox-group">
+      <label>
+        <input type="checkbox" name="smtp_use_tls" value="true" {% if event.smtp_use_tls %}checked{% endif %}>
+        Use TLS/SSL
+      </label>
+      <small class="muted" style="display:block; margin-top: 4px;">Usually required for modern SMTP servers.</small>
+    </div>
+
+    <div class="form-actions" style="display: flex; gap: 10px; align-items: center; margin-top: 20px;">
+      <button type="submit" class="btn btn-primary">Save Settings</button>
+      <button type="button" class="btn btn-outline" id="test-smtp-btn">Test Connection</button>
+      <span id="test-smtp-result" style="margin-left: 10px; font-weight: bold;"></span>
+    </div>
+  </form>
+</div>
+
+<div class="section-card" style="margin-top: 20px;">
+  <div class="section-header">
+    <h2>Email Templates Preview</h2>
+  </div>
+  <p class="muted">Preview the different invitation templates sent to users.</p>
+  <div style="display: flex; gap: 10px; margin-top: 10px;">
+    <a href="/admin/events/{{ event.id }}/email-preview/?template=coordinator_invitation.html" target="_blank" class="btn btn-outline btn-sm">Preview Coordinator Invitation</a>
+    <a href="/admin/events/{{ event.id }}/email-preview/?template=interpreter_invitation.html" target="_blank" class="btn btn-outline btn-sm">Preview Interpreter Invitation</a>
+    <a href="/admin/events/{{ event.id }}/email-preview/?template=event_owner_invitation.html" target="_blank" class="btn btn-outline btn-sm">Preview Event Owner Invitation</a>
+  </div>
+</div>
+
+<div class="section-card" style="margin-top: 20px;">
+  <div class="section-header">
+    <h2>Email Delivery Logs</h2>
+  </div>
+  {% if email_logs %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Recipient</th>
+        <th>Role</th>
+        <th>Status</th>
+        <th>Details</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for log in email_logs %}
+      <tr>
+        <td>{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        <td>{{ log.recipient_email }}</td>
+        <td><span class="badge badge-role badge-{{ log.role }}">{{ log.role }}</span></td>
+        <td>
+          {% if log.status == 'sent' %}
+          <span style="color: green;">Sent</span>
+          {% else %}
+          <span style="color: red;">Failed</span>
+          {% endif %}
+        </td>
+        <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ log.error_details or '' }}">
+          {{ log.error_details or '—' }}
+        </td>
+        <td class="actions-cell">
+          <form method="post" action="/admin/events/{{ event.id }}/email-logs/{{ log.id }}/resend" style="display:inline;">
+            <button type="submit" class="btn btn-sm btn-outline">Resend</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No invitation emails have been sent yet.</p>
+  {% endif %}
+</div>
+
+<script>
+document.getElementById('test-smtp-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('test-smtp-btn');
+    const resultSpan = document.getElementById('test-smtp-result');
+
+    // gather data
+    const payload = {
+        smtp_host: document.getElementById('smtp_host').value,
+        smtp_port: parseInt(document.getElementById('smtp_port').value) || 0,
+        smtp_username: document.getElementById('smtp_username').value,
+        smtp_password: document.getElementById('smtp_password').value, // can be empty
+        smtp_use_tls: document.querySelector('input[name="smtp_use_tls"]').checked
+    };
+
+    btn.disabled = true;
+    btn.textContent = 'Testing...';
+    resultSpan.textContent = '';
+    resultSpan.style.color = 'inherit';
+
+    try {
+        const response = await fetch(`/api/admin/events/{{ event.id }}/test-smtp`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            resultSpan.textContent = 'Connection Successful!';
+            resultSpan.style.color = 'green';
+        } else {
+            resultSpan.textContent = 'Failed: ' + (data.detail || data.error || 'Unknown error');
+            resultSpan.style.color = 'red';
+        }
+    } catch (err) {
+        resultSpan.textContent = 'Error: ' + err.message;
+        resultSpan.style.color = 'red';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Test Connection';
+    }
+});
+</script>
+
+{% endblock %}

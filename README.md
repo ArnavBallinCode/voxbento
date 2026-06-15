@@ -87,3 +87,20 @@ NVIDIA Riva support is now an optional dependency to reduce the default installa
 ```bash
 uv pip install -e .[nvidia]
 ```
+
+### SMTP Email Configuration & Invitations
+Voxbento supports sending automated email invitations when administrators add users (e.g., Coordinators, Interpreters, Event Owners) to events, rooms, and booths.
+
+**Features:**
+* **Per-Event Configuration**: Each event has an independent SMTP configuration panel in the admin UI.
+* **Security**: SMTP passwords are encrypted using the mandatory `API_KEY_ENCRYPTION_KEY` via Fernet symmetric encryption. Passwords are never returned to the browser after being saved.
+* **Background Tasks & Retries**: Email dispatch is offloaded to background tasks to prevent UI blocking. `tenacity` provides automatic retry logic if the SMTP server is temporarily unreachable.
+* **Delivery Logs**: Administrators can view a log of all sent emails, including error statuses, and can quickly resend invitations.
+
+**Templates:**
+Email templates are located in `templates/emails/` and are rendered using Jinja2. You can customize them by editing:
+* `coordinator_invitation.html`
+* `interpreter_invitation.html`
+* `event_owner_invitation.html`
+
+The templates accept variables such as `{{ recipient_name }}`, `{{ role }}`, `{{ event_name }}`, and `{{ portal_url }}`.

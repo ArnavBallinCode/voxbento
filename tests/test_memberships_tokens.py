@@ -78,23 +78,23 @@ class TestEventMembershipDB:
     @pytest.mark.anyio
     async def test_create_membership(self, setup_db):
         from portal.database import get_session, set_event_membership
-        user = await _create_test_user()
+        await _create_test_user()
         event, _, _ = await _seed_event_room_booth()
         async with get_session() as s:
-            m = await set_event_membership(s, user_id=user.id, event_id=event.id, role='event_owner')
+            m = await set_event_membership(s, user_id=1, event_id=event.id, role='event_owner')
         assert m.role == 'event_owner'
-        assert m.user_id == user.id
+        assert m.user_id == 1
         assert m.event_id == event.id
 
     @pytest.mark.anyio
     async def test_update_membership_role(self, setup_db):
         from portal.database import get_session, set_event_membership
-        user = await _create_test_user()
+        await _create_test_user()
         event, _, _ = await _seed_event_room_booth()
         async with get_session() as s:
-            await set_event_membership(s, user_id=user.id, event_id=event.id, role='room_coordinator')
+            await set_event_membership(s, user_id=1, event_id=event.id, role='room_coordinator')
         async with get_session() as s:
-            m = await set_event_membership(s, user_id=user.id, event_id=event.id, role='room_coordinator')
+            m = await set_event_membership(s, user_id=1, event_id=event.id, role='room_coordinator')
         assert m.role == 'room_coordinator'
 
     @pytest.mark.anyio
@@ -120,15 +120,15 @@ class TestEventMembershipDB:
             list_memberships_for_user,
             set_event_membership,
         )
-        user = await _create_test_user()
+        await _create_test_user()
         event1, _, _ = await _seed_event_room_booth()
         async with get_session() as s:
             event2 = await create_event(s, slug='other', display_name='Other Event')
         async with get_session() as s:
-            await set_event_membership(s, user_id=user.id, event_id=event1.id, role='interpreter')
-            await set_event_membership(s, user_id=user.id, event_id=event2.id, role='room_coordinator')
+            await set_event_membership(s, user_id=1, event_id=event1.id, role='interpreter')
+            await set_event_membership(s, user_id=1, event_id=event2.id, role='room_coordinator')
         async with get_session() as s:
-            memberships = await list_memberships_for_user(s, user.id)
+            memberships = await list_memberships_for_user(s, 1)
         assert len(memberships) == 2
 
     @pytest.mark.anyio
@@ -139,10 +139,10 @@ class TestEventMembershipDB:
             remove_event_membership,
             set_event_membership,
         )
-        user = await _create_test_user()
+        await _create_test_user()
         event, _, _ = await _seed_event_room_booth()
         async with get_session() as s:
-            m = await set_event_membership(s, user_id=user.id, event_id=event.id, role='interpreter')
+            m = await set_event_membership(s, user_id=1, event_id=event.id, role='interpreter')
             mid = m.id
         async with get_session() as s:
             result = await remove_event_membership(s, mid)
@@ -287,15 +287,15 @@ class TestAdminEventMembersRoutes:
             memberships = await list_memberships_for_event(s, event.id)
         assert len(memberships) == 1
         assert memberships[0].role == 'event_owner'
-        assert memberships[0].user_id == user.id
+        assert memberships[0].user_id == 1
 
     @pytest.mark.anyio
     async def test_members_page_shows_assigned_role(self, setup_db, admin_cookie):
         from portal.database import get_session, set_event_membership
         event, _, _ = await _seed_event_room_booth()
-        user = await _create_test_user()
+        await _create_test_user()
         async with get_session() as s:
-            await set_event_membership(s, user_id=user.id, event_id=event.id, role='event_owner')
+            await set_event_membership(s, user_id=1, event_id=event.id, role='event_owner')
         async with _client() as c:
             resp = await c.get(f'/admin/events/{event.id}/members/', cookies=admin_cookie)
         assert resp.status_code == 200
@@ -307,9 +307,9 @@ class TestAdminEventMembersRoutes:
     async def test_remove_member(self, setup_db, admin_cookie):
         from portal.database import get_session, list_memberships_for_event, set_event_membership
         event, _, _ = await _seed_event_room_booth()
-        user = await _create_test_user()
+        await _create_test_user()
         async with get_session() as s:
-            m = await set_event_membership(s, user_id=user.id, event_id=event.id, role='interpreter')
+            m = await set_event_membership(s, user_id=1, event_id=event.id, role='interpreter')
             mid = m.id
         async with _client() as c:
             resp = await c.post(
@@ -491,11 +491,11 @@ class TestAccountMemberships:
     @pytest.mark.anyio
     async def test_account_shows_memberships(self, setup_db):
         from portal.database import get_session, set_event_membership
-        user = await _create_test_user(email='member@test.com', display_name='Member')
+        await _create_test_user(email='member@test.com', display_name='Member')
         event, _, _ = await _seed_event_room_booth()
         async with get_session() as s:
-            await set_event_membership(s, user_id=user.id, event_id=event.id, role='interpreter')
-        token = create_user_token(user_id=user.id, email=user.email, is_admin=user.is_admin)
+            await set_event_membership(s, user_id=1, event_id=event.id, role='interpreter')
+        token = create_user_token(user_id=1, email="test@test.com", is_admin=False)
         async with _client() as c:
             resp = await c.get('/account', cookies={'user_token': token})
         assert resp.status_code == 200
@@ -504,8 +504,8 @@ class TestAccountMemberships:
 
     @pytest.mark.anyio
     async def test_account_shows_no_memberships(self, setup_db):
-        user = await _create_test_user(email='lonely@test.com', display_name='Lonely')
-        token = create_user_token(user_id=user.id, email=user.email, is_admin=user.is_admin)
+        await _create_test_user(email='lonely@test.com', display_name='Lonely')
+        token = create_user_token(user_id=1, email="test@test.com", is_admin=False)
         async with _client() as c:
             resp = await c.get('/account', cookies={'user_token': token})
         assert resp.status_code == 200
