@@ -65,6 +65,7 @@ async def lifespan(app: FastAPI):
     import httpx
 
     import portal.transcription as ts
+    settings.validate_production_secrets()
     ts.shared_http_client = httpx.AsyncClient(timeout=10.0)
     yield
     if ts.shared_http_client:
