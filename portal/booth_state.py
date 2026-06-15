@@ -97,8 +97,13 @@ class Booth:
 
 
 def _pick_next_interpreter(booth: Booth) -> str | None:
+    """Return the next interpreter participant ID, or None if none present.
+
+    Coordinators and admins who join for monitoring are intentionally excluded
+    so they never claim the active-interpreter slot.
+    """
     for p in booth.participants.values():
-        if p.role in ('interpreter', 'room_coordinator', 'event_owner', 'super_admin'):
+        if p.role == 'interpreter':
             return p.participant_id
     return None
 
@@ -219,7 +224,9 @@ class BoothRegistry:
                 channel_id=channel_id.strip() or booth.channel_id,
             )
             booth.participants[participant.participant_id] = participant
-            if participant.role in ('interpreter', 'room_coordinator', 'event_owner', 'super_admin') and booth.active_interpreter_id is None:
+            # Only auto-assign active slot to interpreters; coordinators/admins
+            # join as observers and must not claim the active-interpreter position.
+            if participant.role == 'interpreter' and booth.active_interpreter_id is None:
                 booth.active_interpreter_id = participant.participant_id
             return participant, booth.as_public_dict()
 
