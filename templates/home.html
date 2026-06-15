@@ -1,160 +1,686 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>VoxBento</title>
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoxBento — Real-Time AI Interpretation for Global Events</title>
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', path='img/favicon.ico') }}" />
-    <link rel="stylesheet" href="{{ url_for('static', path='css/admin.css') }}" />
-  </head>
-  <body>
-    <header class="portal-home-header">
-      <a class="brand" href="/"><img src="{{ url_for('static', path='img/wordmark.png') }}" alt="Voxbento" style="height: 32px; vertical-align: middle;" /></a>
-      <nav class="header-nav">
-        {% if current_user %}
-        <a href="/account">My Account</a>
-        <a href="/logout">Logout</a>
-        {% else %}
-        <a href="/login">Sign In</a>
-        <a href="/register">Register</a>
-        {% endif %}
-        <a href="/admin/">Admin Panel</a>
-      </nav>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Custom CSS for animations and overrides -->
+    <link rel="stylesheet" href="{{ url_for('static', path='css/landing.css') }}" />
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#eff6ff',
+                            100: '#dbeafe',
+                            400: '#60a5fa',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            700: '#1d4ed8',
+                            900: '#1e3a8a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased overflow-x-hidden selection:bg-brand-500 selection:text-white">
+
+    <!-- Premium Navbar -->
+    <header class="fixed top-0 w-full z-50 glass transition-all duration-300 border-b border-slate-200/50 bg-white/80 backdrop-blur-md" id="navbar">
+        <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+            <a href="/" class="flex items-center gap-2">
+                <img src="{{ url_for('static', path='img/wordmark.png') }}" alt="VoxBento" class="h-6">
+            </a>
+            <nav class="flex max-md:hidden items-center gap-8 text-sm font-bold text-slate-600">
+                <a href="#solutions" class="hover:text-brand-600 transition-colors uppercase tracking-wider">Solutions</a>
+                <a href="#interactive-demo" class="hover:text-brand-600 transition-colors uppercase tracking-wider">Demo</a>
+                <a href="#open-source" class="hover:text-brand-600 transition-colors uppercase tracking-wider">Open Source</a>
+            </nav>
+            <div class="flex items-center gap-4 text-sm font-bold">
+                {% if current_user %}
+                <a href="/logout" class="text-slate-600 hover:text-brand-600 transition-colors uppercase tracking-wider">Logout</a>
+                <a href="/admin/events/" class="bg-slate-900 text-white px-5 py-2.5 rounded-full hover:bg-slate-800 transition-all shadow-sm hover:shadow-md uppercase tracking-wider">Dashboard</a>
+                {% else %}
+                <a href="/login" class="text-slate-600 hover:text-brand-600 transition-colors uppercase tracking-wider">Sign In</a>
+                <a href="/register" class="bg-slate-900 text-white px-5 py-2.5 rounded-full hover:bg-slate-800 transition-all shadow-sm hover:shadow-md uppercase tracking-wider">Register</a>
+                {% endif %}
+            </div>
+        </div>
     </header>
 
-    <main class="home-main">
-      <section class="hero">
-        <h1>VoxBento</h1>
-        <p class="hero-subtitle">Open-source, AI-powered real-time Speech-to-Text (STT), Translation, and Text-to-Speech (TTS) for live events — browser-first, no external software required.</p>
-      </section>
+    <main class="pt-24">
+        
+        <!-- Hero Section -->
+        <section class="relative max-w-7xl mx-auto px-6 pt-12 pb-24 lg:pt-20 lg:pb-32 flex flex-col lg:flex-row items-center gap-12 animate-fade-in-up">
+            <!-- Left Text -->
+            <div class="flex-1 text-center lg:text-left z-10">
+                <h1 class="text-[2.75rem] md:text-6xl lg:text-7xl font-extrabold tracking-tight text-slate-900 mb-8 leading-[1.1] flex flex-col items-center lg:items-start text-center lg:text-left w-full">
+                    <div class="relative w-full text-brand-600">
+                        <!-- Invisible spacer to perfectly preserve layout size for the longest word without CLS -->
+                        <span class="opacity-0 pointer-events-none select-none block w-full" aria-hidden="true">Conference Interpretation</span>
+                        <span id="rotator-capability" class="absolute bottom-0 left-0 block w-full transition-all duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] opacity-100 translate-y-0 blur-0">Interpretation</span>
+                    </div>
+                    <span class="block text-slate-900 my-1 lg:my-2">Built for</span>
+                    <div class="relative w-full text-brand-600">
+                        <!-- Invisible spacer to perfectly preserve layout size for the longest word without CLS -->
+                        <span class="opacity-0 pointer-events-none select-none block w-full" aria-hidden="true">Educational Institutions</span>
+                        <span id="rotator-audience" class="absolute top-0 left-0 block w-full transition-all duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] opacity-100 translate-y-0 blur-0">Enterprise</span>
+                    </div>
+                </h1>
+                <p class="text-lg text-slate-600 mb-10 max-w-xl mx-auto lg:mx-0 leading-relaxed font-medium">
+                    VoxBento helps organizations communicate across languages with real-time interpretation, AI voice translation, speech-to-text, captions, subtitles, dubbing, and accessibility services — all from a single platform.
+                </p>
+                <div class="flex flex-col sm:flex-row items-center gap-4 justify-center lg:justify-start">
+                    <a href="{% if current_user %}/admin/events/{% else %}/register{% endif %}" class="bg-brand-600 text-white px-8 py-4 rounded-full text-sm font-extrabold hover:bg-brand-700 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 w-full sm:w-auto text-center uppercase tracking-widest">
+                        Start Hosting Free
+                    </a>
+                    <a href="#interactive-demo" class="bg-white text-slate-700 border border-slate-200 px-8 py-4 rounded-full text-sm font-extrabold hover:bg-slate-50 transition-all shadow-sm w-full sm:w-auto text-center uppercase tracking-widest">
+                        View Interactive Demo
+                    </a>
+                </div>
+            </div>
+            
+            <!-- Right Visual -->
+            <div class="flex-1 w-full relative max-md:hidden">
+                <div class="relative w-full aspect-[4/3] rounded-[2rem] overflow-hidden bg-slate-100 shadow-2xl">
+                    <!-- Main Hero Image -->
+                    <img src="https://images.unsplash.com/photo-1541829070764-84a7d30dd3f3?q=80&w=1200&auto=format&fit=crop" alt="Speaker" class="w-full h-full object-cover">
+                    <div class="absolute inset-0 bg-brand-600 mix-blend-overlay opacity-20"></div>
+                    
+                    <!-- Floating Elements -->
+                    <div class="absolute top-8 right-8 bg-brand-600 text-white px-4 py-2 rounded-full shadow-2xl text-sm font-bold flex items-center gap-2 animate-bounce">
+                        <span class="w-2 h-2 rounded-full bg-white animate-pulse"></span> LIVE
+                    </div>
+                    
+                    <div class="absolute bottom-8 left-8 bg-slate-900/90 backdrop-blur-md border border-white/10 p-5 rounded-2xl shadow-2xl w-72 text-white">
+                        <div class="flex justify-between items-center mb-4">
+                            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Audio</span>
+                            <div class="w-10 h-5 bg-brand-600 rounded-full relative"><div class="absolute right-1 top-1 w-3 h-3 bg-white rounded-full"></div></div>
+                        </div>
+                        <div class="space-y-3">
+                            <div class="bg-slate-800 rounded-lg p-2 flex items-center justify-between border border-brand-500/30">
+                                <span class="text-sm font-medium">English</span>
+                                <svg class="w-4 h-4 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            </div>
+                            <div class="p-2 flex items-center justify-between text-slate-400 hover:text-white transition-colors cursor-pointer">
+                                <span class="text-sm font-medium">Mandarin <span class="ml-2 bg-brand-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold">AI</span></span>
+                            </div>
+                            <div class="p-2 flex items-center justify-between text-slate-400 hover:text-white transition-colors cursor-pointer">
+                                <span class="text-sm font-medium">Spanish</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="absolute top-1/3 -left-10 bg-slate-900 p-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-3 animate-float">
+                        <div class="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-lg">🗣️</div>
+                        <div class="pr-3">
+                            <p class="text-sm font-bold text-white flex items-center gap-2">你好 <span class="bg-brand-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold">AI</span></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Dynamic User/Event Dashboard Injections -->
+        {% if my_booths or events %}
+        <section class="max-w-7xl mx-auto px-6 py-12 border-t border-slate-200 bg-white rounded-3xl shadow-sm mb-24 relative z-20">
+            <div class="mb-8">
+                <h2 class="text-2xl font-bold text-slate-900">Live Dashboard</h2>
+                <p class="text-slate-600 text-sm">Access your active events and interpretation booths.</p>
+            </div>
+            
+            <div class="flex flex-col gap-8">
+                {% if my_booths %}
+                <div>
+                    <h3 class="text-lg font-semibold text-slate-800 mb-4">Your Assigned Booths</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {% for b in my_booths %}
+                        <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow">
+                            <div class="flex justify-between items-start mb-4">
+                                <div>
+                                    <h4 class="font-semibold text-slate-900">{{ b.language_name }}</h4>
+                                    <p class="text-sm text-slate-500">{{ b.event_name }}</p>
+                                </div>
+                                {% if b.is_live %}
+                                <span class="bg-red-50 text-red-600 text-xs font-bold px-2 py-1 rounded-full uppercase tracking-wide flex items-center gap-1"><span class="w-1.5 h-1.5 bg-red-600 rounded-full"></span> Live</span>
+                                {% endif %}
+                            </div>
+                            <div class="flex justify-between items-center mt-6">
+                                <span class="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded-md capitalize">{{ b.membership.role.replace('_', ' ') }}</span>
+                                {% if b.membership.role in ['room_coordinator', 'event_owner', 'super_admin'] %}
+                                <a href="/mission-control/{{ b.event_slug }}/" class="text-brand-600 text-sm font-bold hover:text-brand-700">Mission Control &rarr;</a>
+                                {% else %}
+                                <a href="/interpreter" class="text-brand-600 text-sm font-bold hover:text-brand-700">Go to Lobby &rarr;</a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
 
-      {% if my_booths %}
-      <section class="home-section">
-        <h2>Your Assigned Booths</h2>
-        <div class="card-grid">
-          {% for b in my_booths %}
-          <div class="card event-card home-event-card">
-            <div class="card-header">
-              <span class="card-title">{{ b.language_name }} — {{ b.event_name }}</span>
-              {% if b.is_live %}
-              <span class="status-live">● LIVE</span>
-              {% endif %}
+                {% if events %}
+                <div>
+                    <h3 class="text-lg font-semibold text-slate-800 mb-4">Public Events</h3>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {% for ed in events %}
+                        <div class="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                            <div class="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                                <h4 class="font-semibold text-slate-900">{{ ed.event.display_name }}</h4>
+                                {% if ed.live_count > 0 %}
+                                <span class="bg-green-50 text-green-700 text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1"><span class="w-1.5 h-1.5 bg-green-600 rounded-full"></span> {{ ed.live_count }} Live</span>
+                                {% endif %}
+                            </div>
+                            <div class="p-5">
+                                {% if ed.booths %}
+                                <div class="space-y-3">
+                                    {% for bs in ed.booths %}
+                                    <div class="flex items-center justify-between text-sm">
+                                        <div class="flex items-center gap-2">
+                                            <span class="font-medium text-slate-700">{{ bs.db.language_name }}</span>
+                                            {% if bs.is_live %}
+                                            <span class="w-2 h-2 bg-red-500 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.6)]"></span>
+                                            {% else %}
+                                            <span class="w-2 h-2 bg-slate-300 rounded-full"></span>
+                                            {% endif %}
+                                        </div>
+                                        {% if bs.can_interpret %}
+                                        <a href="/interpreter" class="text-brand-600 hover:text-brand-800 font-bold text-xs">Enter Lobby &rarr;</a>
+                                        {% endif %}
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                <div class="mt-6 pt-4 border-t border-slate-100">
+                                    <a href="/listener/{{ ed.event.slug }}" class="block w-full text-center bg-slate-900 text-white px-4 py-3 rounded-xl text-sm font-bold hover:bg-slate-800 transition-colors uppercase tracking-wide">Listen as Attendee</a>
+                                </div>
+                                {% else %}
+                                <p class="text-sm text-slate-500 italic">No booths configured.</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
             </div>
-            <div class="card-body">
-              <p style="margin-bottom: 0;">Role: <span class="badge badge-role badge-{{ b.membership.role }}">{{ b.membership.role }}</span></p>
-            </div>
-            <div class="card-footer">
-              {% if b.membership.role in ['room_coordinator', 'event_owner', 'super_admin'] %}
-                <a href="/mission-control/{{ b.event_slug }}/" class="btn btn-primary" style="width: 100%; text-align: center;">Go to Mission Control ↗</a>
-              {% else %}
-                <a href="/interpreter" class="btn btn-primary" style="width: 100%; text-align: center;">Go to Lobby ↗</a>
-              {% endif %}
-            </div>
-          </div>
-          {% endfor %}
-        </div>
-      </section>
-      {% endif %}
+        </section>
+        {% endif %}
 
-      {% if events %}
-      <section class="home-section">
-        <h2>Active Events</h2>
-        <div class="card-grid">
-          {% for ed in events %}
-          <div class="card event-card home-event-card">
-            <div class="card-header">
-              <span class="card-title">{{ ed.event.display_name }}</span>
-              {% if ed.live_count > 0 %}
-              <span class="status-live">● {{ ed.live_count }} live</span>
-              {% endif %}
+        <!-- Solutions Section -->
+        <section id="solutions" class="py-24 bg-white relative z-10 border-t border-slate-200">
+            <div class="max-w-7xl mx-auto px-6">
+                <div class="text-center mb-16">
+                    <h2 class="text-4xl md:text-5xl font-extrabold text-slate-900 mb-6">Make Every Event Multilingual</h2>
+                    <p class="text-slate-600 max-w-3xl mx-auto text-lg leading-relaxed font-medium">
+                        Give every attendee access to real-time captions, translations, and interpretation in their preferred language.
+                    </p>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <!-- Card 1: Human Interpretation -->
+                    <div class="group h-80 lg:h-96 w-full [perspective:1000px]" onclick="if(window.innerWidth < 1024) this.classList.toggle('rotate-active')">
+                        <div class="relative w-full h-full transition-all duration-700 [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)] group-[.rotate-active]:[transform:rotateY(180deg)] rounded-[2rem] shadow-xl cursor-pointer">
+                            <!-- Front side -->
+                            <div class="absolute inset-0 [backface-visibility:hidden] rounded-[2rem] overflow-hidden">
+                                <img src="https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=800&auto=format&fit=crop" class="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt="Human Interpretation">
+                                <div class="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/50 to-transparent opacity-90"></div>
+                                <div class="absolute inset-0 p-8 flex flex-col justify-end text-center items-center">
+                                    <h3 class="text-3xl font-extrabold text-white leading-tight">Human<br>Interpretation</h3>
+                                </div>
+                            </div>
+                            <!-- Back side -->
+                            <div class="absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)] bg-brand-600 rounded-[2rem] p-8 flex flex-col justify-center text-center items-center border border-brand-500 shadow-inner">
+                                <p class="text-white text-base font-medium mb-6 leading-snug">Empower professional interpreters with our latency-free virtual booths. Enable seamless handoffs, dedicated chat, and intuitive controls designed for human-led events.</p>
+                                <span class="text-white font-extrabold text-sm tracking-widest uppercase bg-white/10 px-4 py-2 rounded-full backdrop-blur-sm">Explore More &rarr;</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Card 2: AI Speech Translation -->
+                    <div class="group h-80 lg:h-96 w-full [perspective:1000px]" onclick="if(window.innerWidth < 1024) this.classList.toggle('rotate-active')">
+                        <div class="relative w-full h-full transition-all duration-700 [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)] group-[.rotate-active]:[transform:rotateY(180deg)] rounded-[2rem] shadow-xl cursor-pointer">
+                            <!-- Front side -->
+                            <div class="absolute inset-0 [backface-visibility:hidden] rounded-[2rem] overflow-hidden">
+                                <img src="https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=800&auto=format&fit=crop" class="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt="AI Speech Translation">
+                                <div class="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/50 to-transparent opacity-90"></div>
+                                <div class="absolute inset-0 p-8 flex flex-col justify-end text-center items-center">
+                                    <h3 class="text-3xl font-extrabold text-white leading-tight">AI Speech<br>Translation</h3>
+                                </div>
+                            </div>
+                            <!-- Back side -->
+                            <div class="absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)] bg-brand-600 rounded-[2rem] p-8 flex flex-col justify-center text-center items-center border border-brand-500 shadow-inner">
+                                <p class="text-white text-base font-medium mb-6 leading-snug">Bridge language gaps instantly with state-of-the-art neural translation models. Deliver precise, context-aware audio streams without the overhead of physical booths.</p>
+                                <span class="text-white font-extrabold text-sm tracking-widest uppercase bg-white/10 px-4 py-2 rounded-full backdrop-blur-sm">Explore More &rarr;</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Card 3: Live Captions & Subtitles -->
+                    <div class="group h-80 lg:h-96 w-full [perspective:1000px]" onclick="if(window.innerWidth < 1024) this.classList.toggle('rotate-active')">
+                        <div class="relative w-full h-full transition-all duration-700 [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)] group-[.rotate-active]:[transform:rotateY(180deg)] rounded-[2rem] shadow-xl cursor-pointer">
+                            <!-- Front side -->
+                            <div class="absolute inset-0 [backface-visibility:hidden] rounded-[2rem] overflow-hidden">
+                                <img src="https://images.unsplash.com/photo-1551818255-e6e10975bc17?q=80&w=800&auto=format&fit=crop" class="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt="Live Captions">
+                                <div class="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/50 to-transparent opacity-90"></div>
+                                <div class="absolute inset-0 p-8 flex flex-col justify-end text-center items-center">
+                                    <h3 class="text-3xl font-extrabold text-white leading-tight">Live Captions<br>& Subtitles</h3>
+                                </div>
+                            </div>
+                            <!-- Back side -->
+                            <div class="absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)] bg-brand-600 rounded-[2rem] p-8 flex flex-col justify-center text-center items-center border border-brand-500 shadow-inner">
+                                <p class="text-white text-base font-medium mb-6 leading-snug">Boost accessibility and comprehension with real-time, highly accurate captioning. Generate readable text streams dynamically as your speakers deliver their message.</p>
+                                <span class="text-white font-extrabold text-sm tracking-widest uppercase bg-white/10 px-4 py-2 rounded-full backdrop-blur-sm">Explore More &rarr;</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Card 4: Media Routing -->
+                    <div class="group h-80 lg:h-96 w-full [perspective:1000px]" onclick="if(window.innerWidth < 1024) this.classList.toggle('rotate-active')">
+                        <div class="relative w-full h-full transition-all duration-700 [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)] group-[.rotate-active]:[transform:rotateY(180deg)] rounded-[2rem] shadow-xl cursor-pointer">
+                            <!-- Front side -->
+                            <div class="absolute inset-0 [backface-visibility:hidden] rounded-[2rem] overflow-hidden">
+                                <img src="https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?q=80&w=800&auto=format&fit=crop" class="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt="Media Routing">
+                                <div class="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/50 to-transparent opacity-90"></div>
+                                <div class="absolute inset-0 p-8 flex flex-col justify-end text-center items-center">
+                                    <h3 class="text-3xl font-extrabold text-white leading-tight">Media<br>Routing</h3>
+                                </div>
+                            </div>
+                            <!-- Back side -->
+                            <div class="absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)] bg-brand-600 rounded-[2rem] p-8 flex flex-col justify-center text-center items-center border border-brand-500 shadow-inner">
+                                <p class="text-white text-base font-medium mb-6 leading-snug">Leverage our robust WebRTC infrastructure to broadcast low-latency audio to thousands of concurrent listeners globally. No dedicated apps or complex hardware needed.</p>
+                                <span class="text-white font-extrabold text-sm tracking-widest uppercase bg-white/10 px-4 py-2 rounded-full backdrop-blur-sm">Explore More &rarr;</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="card-body">
-              {% if ed.booths %}
-              <h4>Interpretation Booths</h4>
-              <table class="data-table compact home-table">
-                <thead>
-                  <tr>
-                    <th>Language</th>
-                    <th>Status</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for bs in ed.booths %}
-                  <tr>
-                    <td>{{ bs.db.language_name }}</td>
-                    <td>
-                      {% if bs.is_live %}
-                      <span class="status-live">● Live</span>
-                      {% else %}
-                      <span class="status-offline">○</span>
-                      {% endif %}
-                    </td>
-                    <td>
-                      {% if bs.can_interpret %}
-                      <div style="display: flex; gap: 0.5rem; align-items: center;">
-                        <a href="/interpreter" class="btn btn-sm btn-outline" style="border-color: #007bff; color: #007bff; background: transparent;">Go to Lobby ↗</a>
-                      </div>
-                      {% else %}
-                      <span class="muted">—</span>
-                      {% endif %}
-                    </td>
-                  </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-              {% else %}
-              <p class="muted">No interpretation booths configured yet.</p>
-              {% endif %}
-            </div>
-            {% if ed.booths %}
-            <div class="card-footer" style="padding: 1rem; border-top: 1px solid var(--border-color, #dee2e6);">
-              <a href="/listener/{{ ed.event.slug }}" class="btn btn-primary" style="width: 100%; text-align: center; display: block;">Listen to Event ↗</a>
-            </div>
-            {% endif %}
-          </div>
-          {% endfor %}
-        </div>
-      </section>
-      {% else %}
-      <section class="home-section">
-        <div class="empty-state home-empty">
-          {% if current_user %}
-          <p>No events are currently configured. Admins can create events in the <a href="/admin/">Admin Panel</a>.</p>
-          {% else %}
-          <p>No events are currently configured. Admins can <a href="/admin/">sign in</a> to set up events and booths.</p>
-          {% endif %}
-        </div>
-      </section>
-      {% endif %}
+        </section>
 
-      <section class="home-section roles-section">
-        <h2>How It Works</h2>
-        <div class="role-cards">
-          <div class="role-card">
-            <div class="role-icon">🎤</div>
-            <h3>Interpreters</h3>
-            <p>Join your assigned booth via invite link, go live, and provide real-time interpretation. No OBS or external tools needed.</p>
-          </div>
-          <div class="role-card">
-            <div class="role-icon">🎧</div>
-            <h3>Listeners</h3>
-            <p>Select your language and listen to interpretation in real-time with sub-second latency via WebRTC.</p>
-          </div>
-          <div class="role-card">
-            <div class="role-icon">📋</div>
-            <h3>Coordinators</h3>
-            <p>Manage interpreter assignments, monitor booth status, and coordinate handoffs between interpreters.</p>
-          </div>
-          <div class="role-card">
-            <div class="role-icon">⚙️</div>
-            <h3>Admins</h3>
-            <p>Set up events, rooms, and booths. Generate invite tokens and monitor live status from the admin panel.</p>
-          </div>
-        </div>
-      </section>
+        <!-- Enterprise-Ready Section -->
+        <section class="py-24 bg-white">
+            <div class="max-w-7xl mx-auto px-6">
+                <div class="text-center md:text-left mb-16 md:mb-0">
+                    <h2 class="text-4xl md:text-5xl font-extrabold text-slate-900 md:max-w-2xl mx-auto md:mx-0">Enterprise-Ready for Every Event Format</h2>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-5 gap-12 items-start mt-12">
+                    <!-- Left: Floating Image / Graphic (Spans 2 cols) -->
+                    <div class="lg:col-span-2 sticky top-32 max-md:hidden">
+                        <div class="relative rounded-[2rem] overflow-hidden bg-brand-500 aspect-[4/5] shadow-2xl">
+                            <img src="https://images.unsplash.com/photo-1505373877841-8d25f7d46678?q=80&w=1000&auto=format&fit=crop" class="w-full h-full object-cover mix-blend-overlay opacity-80" alt="Speaker">
+                            <div class="absolute top-8 right-8 text-white/50">
+                                <svg class="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Right: Text Blocks (Spans 3 cols) -->
+                    <div class="lg:col-span-3">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <!-- Format 1 -->
+                            <div class="bg-slate-50 rounded-[2rem] p-8 hover:bg-slate-100 transition-colors border border-slate-100">
+                                <h3 class="text-2xl font-bold text-slate-900 mb-4">In-Person Events</h3>
+                                <p class="text-slate-600 mb-8 leading-relaxed font-medium">Enhance your in-person multilingual event experience with simultaneous interpretation, live speech translation and captions integrated into your AV setup.</p>
+                                <a href="#" class="text-brand-600 font-extrabold text-sm uppercase tracking-widest flex items-center gap-2 hover:text-brand-700 transition-colors">Explore More <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg></a>
+                            </div>
+                            
+                            <!-- Format 2 -->
+                            <div class="bg-slate-50 rounded-[2rem] p-8 hover:bg-slate-100 transition-colors border border-slate-100">
+                                <h3 class="text-2xl font-bold text-slate-900 mb-4">Online Meetings & Events</h3>
+                                <p class="text-slate-600 mb-8 leading-relaxed font-medium">Host high-quality meetings in multiple languages with our enterprise-grade technology that can integrate with any meeting platform.</p>
+                                <a href="#" class="text-brand-600 font-extrabold text-sm uppercase tracking-widest flex items-center gap-2 hover:text-brand-700 transition-colors">Explore More <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg></a>
+                            </div>
+                            
+                            <!-- Format 3 -->
+                            <div class="bg-slate-50 rounded-[2rem] p-8 hover:bg-slate-100 transition-colors border border-slate-100">
+                                <h3 class="text-2xl font-bold text-slate-900 mb-4">Hybrid Events</h3>
+                                <p class="text-slate-600 mb-8 leading-relaxed font-medium">Bring on-site and remote participants together with enterprise-level live translation and interpretation technology, supported end-to-end.</p>
+                                <a href="#" class="text-brand-600 font-extrabold text-sm uppercase tracking-widest flex items-center gap-2 hover:text-brand-700 transition-colors">Explore More <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg></a>
+                            </div>
+                            
+                            <!-- Format 4 -->
+                            <div class="bg-slate-50 rounded-[2rem] p-8 hover:bg-slate-100 transition-colors border border-slate-100">
+                                <h3 class="text-2xl font-bold text-slate-900 mb-4">Broadcasting</h3>
+                                <p class="text-slate-600 mb-8 leading-relaxed font-medium">Make your live broadcasts easy to follow in any language. We add real-time interpretation and captions, so everyone stays connected.</p>
+                                <a href="#" class="text-brand-600 font-extrabold text-sm uppercase tracking-widest flex items-center gap-2 hover:text-brand-700 transition-colors">Explore More <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg></a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Interactive Demo Section -->
+        <section id="interactive-demo" class="py-32 bg-white border-t border-slate-200">
+            <div class="max-w-5xl mx-auto px-6">
+                <div class="text-center mb-16">
+                    <h2 class="text-5xl font-extrabold text-brand-600 mb-6">VoxBento Demo</h2>
+                    <p class="text-slate-600 max-w-3xl mx-auto text-lg leading-relaxed font-medium">
+                        Real-time AI translation isn't something you can fully grasp from a product page, you have to hear it, see it, and feel how naturally it flows. Hit play, pick your language, and experience instant AI-powered translation in action.
+                    </p>
+                </div>
+                
+                <!-- Device Mockups (Separate for Mobile & Desktop to ensure perfect rendering) -->
+
+                <!-- 1. MOBILE DEVICE MOCKUP (iPhone Portrait) - Visible only below md -->
+                <div class="md:hidden relative mx-auto w-full max-w-[280px] sm:max-w-[320px] hover:scale-[1.02] transition-transform duration-500 group/mockup mt-10">
+                    
+                    <!-- Phone Screen Container -->
+                    <div class="bg-slate-900 rounded-[2.5rem] p-2 pb-2 shadow-2xl relative border-[8px] border-slate-800 flex flex-col">
+                        
+                        <!-- Phone Notch -->
+                        <div class="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-slate-800 rounded-b-xl z-20 flex justify-center items-end pb-1.5">
+                            <div class="w-12 h-1 bg-slate-900 rounded-full"></div>
+                        </div>
+
+                        <!-- Phone Screen Content -->
+                        <div class="bg-black w-full aspect-[9/19] rounded-[1.5rem] relative overflow-hidden flex flex-col border border-white/5">
+                            <!-- Fake Video Background -->
+                            <img src="https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=1200&auto=format&fit=crop" class="absolute inset-0 w-full h-full object-cover opacity-30 group-hover/mockup:scale-105 transition-transform duration-1000" alt="Demo Video">
+                            
+                            <!-- Video area logic -->
+                            <div class="flex-1 flex flex-col justify-center items-center relative z-10 p-6 pt-12">
+                                <button class="w-16 h-16 bg-brand-600/90 text-white rounded-full flex items-center justify-center shadow-[0_0_40px_rgba(250,92,36,0.5)] z-10 relative">
+                                    <svg class="w-6 h-6 ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                </button>
+                            </div>
+
+                            <!-- Bottom Control Bar overlay inside screen -->
+                            <div class="relative z-10 bg-gradient-to-t from-black/95 via-black/80 to-transparent p-4 w-full mt-auto">
+                                <div class="flex flex-col items-center justify-between gap-4">
+                                    <div class="flex items-center justify-center gap-4 text-white w-full">
+                                        <span class="font-bold text-xs tracking-widest uppercase">Live Demo</span>
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></svg>
+                                    </div>
+                                    <div class="flex items-center justify-center gap-2 w-full">
+                                        <button class="bg-brand-600 text-white p-2 rounded-full shadow-lg border border-brand-500">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                        </button>
+                                        <button class="bg-white/20 text-white p-2 rounded-full backdrop-blur-sm border border-white/20">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"></path></svg>
+                                        </button>
+                                        <button class="bg-white/20 text-white p-2 rounded-full backdrop-blur-sm border border-white/20">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z"></path></svg>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Phone Subtitle Bar -->
+                        <div class="bg-white p-3 rounded-[1rem] flex items-center justify-center gap-2 mt-2 shadow-inner">
+                            <img src="{{ url_for('static', path='img/wordmark.png') }}" alt="VoxBento" class="h-4">
+                            <p class="text-xs font-bold text-slate-600">This is VoxBento translating live...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. DESKTOP DEVICE MOCKUP (MacBook Air) - Visible only on md and up -->
+                <div class="max-md:hidden relative mx-auto w-full max-w-4xl hover:scale-[1.02] transition-transform duration-500 group/mockup mt-16">
+                    
+                    <!-- Screen Container -->
+                    <div class="bg-black rounded-[1.5rem] p-3 pb-4 shadow-2xl relative ring-1 ring-white/20 shadow-[0_0_50px_rgba(0,0,0,0.25)] flex flex-col">
+                        
+                        <!-- MacBook Camera Notch -->
+                        <div class="absolute top-0 left-1/2 -translate-x-1/2 w-36 h-7 bg-black rounded-b-[1rem] z-20 flex justify-center items-center gap-3">
+                            <!-- Camera dot -->
+                            <div class="w-2 h-2 rounded-full bg-[#1a1a24] shadow-inner flex items-center justify-center border border-[#2a2a35]"><div class="w-0.5 h-0.5 rounded-full bg-blue-900/50"></div></div>
+                            <!-- Green active light -->
+                            <div class="w-1 h-1 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] opacity-90"></div>
+                        </div>
+                        
+                        <!-- Screen Content -->
+                        <div class="bg-black w-full aspect-video rounded-xl relative overflow-hidden flex flex-col border border-white/5">
+                            
+                            <!-- Fake Video Background -->
+                            <img src="https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=1200&auto=format&fit=crop" class="absolute inset-0 w-full h-full object-cover opacity-30 group-hover/mockup:scale-105 transition-transform duration-1000" alt="Demo Video">
+                            
+                            <!-- Video area logic -->
+                            <div class="flex-1 flex flex-col justify-center items-center relative z-10 p-6">
+                                <!-- Center Play Button -->
+                                <button class="w-20 h-20 bg-brand-600/90 text-white rounded-full flex items-center justify-center hover:bg-brand-500 hover:scale-110 transition-all shadow-[0_0_40px_rgba(250,92,36,0.5)] z-10 relative">
+                                    <svg class="w-8 h-8 ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                </button>
+                            </div>
+
+                            <!-- Bottom Control Bar overlay inside screen -->
+                            <div class="relative z-10 bg-gradient-to-t from-black/95 via-black/80 to-transparent p-6 w-full absolute bottom-0 left-0 right-0 pt-16 mt-auto">
+                                <div class="flex flex-row items-end justify-between gap-4">
+                                    <!-- Left Controls -->
+                                    <div class="flex items-center justify-start gap-4 text-white w-auto">
+                                        <span class="font-bold text-sm tracking-widest uppercase">Live Demo</span>
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></svg>
+                                    </div>
+                                    <!-- Right Controls -->
+                                    <div class="flex items-center justify-end gap-3 w-auto">
+                                        <!-- Tooltip / Popover -->
+                                        <div class="relative max-md:hidden">
+                                            <div class="absolute bottom-[120%] right-0 mb-2 bg-brand-600 text-white text-xs font-bold px-4 py-3 rounded-lg whitespace-nowrap animate-bounce shadow-xl">
+                                                Click the translation icon<br>to select your language
+                                                <div class="absolute top-full right-8 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-brand-600"></div>
+                                            </div>
+                                        </div>
+                                        <button class="bg-brand-600 hover:bg-brand-500 text-white p-3 rounded-full shadow-lg transition-colors border border-brand-500">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                        </button>
+                                        <button class="bg-white/20 hover:bg-white/30 text-white p-3 rounded-full backdrop-blur-sm transition-colors border border-white/20">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"></path></svg>
+                                        </button>
+                                        <button class="bg-white/20 hover:bg-white/30 text-white p-3 rounded-full backdrop-blur-sm transition-colors border border-white/20">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z"></path></svg>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Appended Subtitle Bar (Inside screen bezel) -->
+                        <div class="bg-white p-4 rounded-[0.5rem] flex flex-row items-center justify-between mt-2 shadow-inner mx-0">
+                            <div class="flex items-center justify-start gap-4 text-slate-800 w-full">
+                                <img src="{{ url_for('static', path='img/wordmark.png') }}" alt="VoxBento" class="h-5">
+                                <div class="w-px h-6 bg-slate-200"></div>
+                                <p class="text-base font-bold text-slate-600">This is VoxBento translating live...</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Hinge Gap -->
+                    <div class="w-full h-1 bg-transparent"></div>
+
+                    <!-- MacBook Bottom Base -->
+                    <div class="relative z-20 w-[104%] -ml-[2%]">
+                        <!-- Top silver lip -->
+                        <div class="bg-gradient-to-b from-[#e5e7eb] to-[#d1d5db] h-3.5 rounded-t-md w-full relative shadow-[inset_0_1px_1px_rgba(255,255,255,0.8)] border-b border-[#9ca3af]">
+                            <!-- Trackpad thumb indentation -->
+                            <div class="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-1.5 bg-gradient-to-b from-[#d1d5db] to-[#9ca3af] rounded-b-lg shadow-[inset_0_1px_2px_rgba(0,0,0,0.15)]"></div>
+                        </div>
+                        <!-- Bottom shadow lip -->
+                        <div class="bg-gradient-to-b from-[#9ca3af] to-[#4b5563] h-2 rounded-b-2xl w-full shadow-[0_20px_40px_rgba(0,0,0,0.5)]"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Open Source Highlight -->
+        <section id="open-source" class="py-24 bg-slate-50 border-t border-slate-200">
+            <div class="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center gap-16">
+                <div class="flex-1 space-y-8">
+                    <h2 class="text-4xl md:text-5xl font-extrabold text-slate-900">Proudly Open Source</h2>
+                    <p class="text-slate-600 text-xl leading-relaxed font-medium">
+                        VoxBento is built on transparent, community-driven principles. Host it on your own infrastructure for maximum privacy, or integrate it with your existing tools via our open APIs.
+                    </p>
+                    <div class="flex gap-4 pt-4">
+                        <a href="https://github.com/fossasia/voxbento" target="_blank" class="flex items-center gap-3 bg-slate-900 text-white px-8 py-4 rounded-full text-sm font-extrabold hover:bg-slate-800 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 uppercase tracking-widest">
+                            <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.416 22 12c0-5.523-4.477-10-10-10z"/></svg>
+                            View on GitHub
+                        </a>
+                    </div>
+                </div>
+                <div class="flex-1 w-full relative max-md:hidden">
+                    <!-- GitHub style contribution graph mockup -->
+                    <div class="bg-white border border-slate-200 rounded-3xl p-8 shadow-xl transform rotate-3 hover:rotate-0 transition-transform duration-500">
+                        <div class="flex gap-2 flex-wrap">
+                            <!-- Generate some randomish colored blocks for the mockup -->
+                            <div class="w-4 h-4 bg-green-200 rounded-sm"></div><div class="w-4 h-4 bg-green-400 rounded-sm"></div><div class="w-4 h-4 bg-slate-100 rounded-sm"></div><div class="w-4 h-4 bg-green-500 rounded-sm"></div>
+                            <div class="w-4 h-4 bg-slate-100 rounded-sm"></div><div class="w-4 h-4 bg-green-300 rounded-sm"></div><div class="w-4 h-4 bg-green-600 rounded-sm"></div><div class="w-4 h-4 bg-slate-100 rounded-sm"></div>
+                            <div class="w-4 h-4 bg-green-400 rounded-sm"></div><div class="w-4 h-4 bg-slate-100 rounded-sm"></div><div class="w-4 h-4 bg-green-200 rounded-sm"></div><div class="w-4 h-4 bg-green-500 rounded-sm"></div>
+                            <div class="w-4 h-4 bg-slate-100 rounded-sm"></div><div class="w-4 h-4 bg-green-400 rounded-sm"></div><div class="w-4 h-4 bg-slate-100 rounded-sm"></div><div class="w-4 h-4 bg-green-700 rounded-sm"></div>
+                            <div class="w-4 h-4 bg-green-200 rounded-sm"></div><div class="w-4 h-4 bg-green-400 rounded-sm"></div><div class="w-4 h-4 bg-slate-100 rounded-sm"></div><div class="w-4 h-4 bg-green-500 rounded-sm"></div>
+                        </div>
+                        <p class="text-sm font-bold text-slate-500 mt-6 text-right">2,412 contributions in the last year</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Final CTA -->
+        <section class="bg-brand-600 py-32 text-center text-white px-6">
+            <h2 class="text-5xl md:text-6xl font-extrabold mb-8 leading-tight">Break Language Barriers<br>at Your Next Event</h2>
+            <p class="text-brand-100 text-xl mb-12 max-w-2xl mx-auto font-medium">Launch multilingual events in minutes with VoxBento. No complex setups, no hardware.</p>
+            <div class="flex flex-col sm:flex-row justify-center gap-6">
+                <a href="{% if current_user %}/admin/events/{% else %}/register{% endif %}" class="bg-white text-brand-900 px-10 py-5 rounded-full font-extrabold shadow-2xl hover:shadow-3xl hover:-translate-y-1 transition-all w-full sm:w-auto text-sm tracking-widest uppercase">Get Started Now</a>
+            </div>
+        </section>
+        
     </main>
 
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 pt-20 pb-10">
+        <div class="max-w-7xl mx-auto px-6">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-8 mb-12">
+                <div>
+                    <img src="{{ url_for('static', path='img/wordmark.png') }}" alt="VoxBento" class="h-6 mb-6">
+                    <p class="text-slate-500 text-sm font-medium">Open-source interpretation for the modern web.</p>
+                </div>
+                <div>
+                    <h4 class="font-bold text-slate-900 mb-6 uppercase tracking-wider text-sm">Product</h4>
+                    <ul class="space-y-4 text-sm font-medium text-slate-500">
+                        <li><a href="#solutions" class="hover:text-brand-600 transition-colors">Solutions</a></li>
+                        <li><a href="#interactive-demo" class="hover:text-brand-600 transition-colors">Interactive Demo</a></li>
+                        <li><a href="/login" class="hover:text-brand-600 transition-colors">Sign In</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 class="font-bold text-slate-900 mb-6 uppercase tracking-wider text-sm">Resources</h4>
+                    <ul class="space-y-4 text-sm font-medium text-slate-500">
+                        <li><a href="https://docs.voxbento.com" class="hover:text-brand-600 transition-colors">Documentation</a></li>
+                        <li><a href="#" class="hover:text-brand-600 transition-colors">API Reference</a></li>
+                        <li><a href="#" class="hover:text-brand-600 transition-colors">Blog</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 class="font-bold text-slate-900 mb-6 uppercase tracking-wider text-sm">Community</h4>
+                    <ul class="space-y-4 text-sm font-medium text-slate-500">
+                        <li><a href="https://github.com/fossasia/voxbento" class="hover:text-brand-600 transition-colors">GitHub</a></li>
+                        <li><a href="#" class="hover:text-brand-600 transition-colors">Discord</a></li>
+                        <li><a href="#" class="hover:text-brand-600 transition-colors">Twitter</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="border-t border-slate-100 pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-sm font-medium text-slate-400">
+                <p>&copy; 2026 VoxBento. Open Source software by FOSSASIA.</p>
+                <div class="flex gap-6">
+                    <a href="#" class="hover:text-slate-900 transition-colors">Privacy Policy</a>
+                    <a href="#" class="hover:text-slate-900 transition-colors">Terms of Service</a>
+                </div>
+            </div>
+        </div>
+    </footer>
 
-  </body>
+    <!-- Script to handle rotating hero text -->
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const capabilities = [
+                "Interpretation", "Live Translation", "AI Captions", "Speech-to-Text", 
+                "Text-to-Speech", "Voice Translation", "Real-Time Transcription", 
+                "Multilingual Subtitles", "AI Dubbing", "Meeting Translation", 
+                "Conference Interpretation", "Voice Cloning", "Accessibility Services", 
+                "Audio Translation"
+            ];
+
+            const audiences = [
+                "Enterprise", "Global Teams", "Meetings", "Webinars", "Conferences", 
+                "Events", "Town Halls", "Training Programs", "Customer Support", 
+                "Sales Teams", "Healthcare Organizations", "Educational Institutions", 
+                "Government Agencies", "International Summits", "Hybrid Events"
+            ];
+
+            const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+            function setupRotator(containerId, words, interval) {
+                const container = document.getElementById(containerId);
+                if (!container) return;
+                
+                let currentIndex = 0;
+                
+                setInterval(() => {
+                    // Outgoing animation
+                    container.classList.remove('opacity-100', 'translate-y-0', 'blur-0');
+                    container.classList.add('opacity-0');
+                    if (!prefersReducedMotion) {
+                        container.classList.add('-translate-y-4', 'blur-sm');
+                    }
+                    
+                    setTimeout(() => {
+                        // Swap text
+                        currentIndex = (currentIndex + 1) % words.length;
+                        container.innerText = words[currentIndex];
+                        
+                        // Reset starting position for incoming animation
+                        if (!prefersReducedMotion) {
+                            container.classList.remove('-translate-y-4');
+                            container.classList.add('translate-y-4');
+                        }
+                        
+                        // Force a reflow so the browser registers the starting position
+                        void container.offsetWidth;
+                        
+                        // Incoming animation
+                        container.classList.remove('opacity-0', 'translate-y-4', 'blur-sm');
+                        container.classList.add('opacity-100');
+                        if (!prefersReducedMotion) {
+                            container.classList.add('translate-y-0', 'blur-0');
+                        }
+                    }, 700); // Wait for the 700ms CSS transition to finish
+                    
+                }, interval);
+            }
+
+            // Start rotators with staggered timing
+            setupRotator('rotator-capability', capabilities, 3500);
+            setTimeout(() => {
+                setupRotator('rotator-audience', audiences, 3500);
+            }, 1750);
+        });
+    </script>
+
+    <!-- Script to handle sticky navbar background -->
+    <script>
+        window.addEventListener('scroll', () => {
+            const navbar = document.getElementById('navbar');
+            if (window.scrollY > 20) {
+                navbar.classList.add('shadow-md');
+                navbar.classList.remove('border-transparent');
+                navbar.classList.add('border-slate-200/50');
+            } else {
+                navbar.classList.remove('shadow-md');
+                navbar.classList.remove('border-slate-200/50');
+                navbar.classList.add('border-transparent');
+            }
+        });
+    </script>
+</body>
 </html>
