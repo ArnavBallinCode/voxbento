@@ -616,8 +616,8 @@ def test_whip_url_standby_interpreter_rejected():
     assert 'active interpreter' in res.json()['detail'].lower()
 
 
-def test_whip_url_coordinator_rejected():
-    """Coordinator role receives 403 from the WHIP URL endpoint."""
+def test_whip_url_active_coordinator_passes():
+    """Active coordinator role receives 200 from the WHIP URL endpoint."""
     booth = 'whip-coord-booth'
     channel = f'{booth}-audio'
     with client.websocket_connect(f'/ws/booth/{booth}', cookies=_ws_auth()) as ws:
@@ -636,8 +636,10 @@ def test_whip_url_coordinator_rejected():
             params={'participant_id': pid, 'language': 'English', 'channel': channel},
         )
 
-    assert res.status_code == 403
-    assert 'interpreter role' in res.json()['detail'].lower()
+    assert res.status_code == 200
+    body = res.json()
+    assert 'whip_url' in body
+    assert body['whip_url'].endswith(f'/{channel}/whip')
 
 
 def test_whip_url_unknown_participant_returns_404():
