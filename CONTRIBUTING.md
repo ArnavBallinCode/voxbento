@@ -424,13 +424,13 @@ SQLite is the default for development; PostgreSQL is supported for production vi
 
 ```bash
 # Apply migrations (creates tables if needed)
-alembic upgrade head
+uv run alembic upgrade head
 
 # After changing models, generate a migration
-alembic revision --autogenerate -m "describe the change"
+uv run alembic revision --autogenerate -m "describe the change"
 
 # Apply the new migration
-alembic upgrade head
+uv run alembic upgrade head
 ```
 
 The SQLite database file (`interpretation.db`) is git-ignored. Migration scripts in
