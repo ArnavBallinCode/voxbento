@@ -14,7 +14,7 @@ from portal.globals import booths
 def safe_redirect(url: str, status_code: int = status.HTTP_303_SEE_OTHER) -> RedirectResponse:
     url = url.replace("\\", "").strip()
     parsed = urlparse(url)
-    if url and not parsed.netloc and not parsed.scheme and url.startswith("/"):
+    if url and not parsed.netloc and not parsed.scheme and url.startswith("/") and not url.startswith("//"):
         return RedirectResponse(url=url, status_code=status_code)
     return RedirectResponse(url="/", status_code=status_code)
 
