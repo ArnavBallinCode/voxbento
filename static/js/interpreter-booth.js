@@ -963,21 +963,35 @@ async function startLoopbackTest() {
   }
 }
 
-function stopLoopbackTest() {
+function stopLoopbackRecorder() {
   if (loopbackRecorder && loopbackRecorder.state !== 'inactive') {
     loopbackRecorder.stop()
   }
   loopbackRecorder = null
-  
+}
+
+function stopLoopbackAudio() {
   if (loopbackAudio) {
     loopbackAudio.pause()
     loopbackAudio.src = ''
     loopbackAudio = null
   }
-  
-  elements.loopbackTestBtn.textContent = '🎙️ Record & Play'
-  elements.loopbackTestBtn.classList.remove('btn-primary')
-  elements.loopbackProgressRow.classList.add('hidden')
+}
+
+function resetLoopbackUI() {
+  if (elements.loopbackTestBtn) {
+    elements.loopbackTestBtn.textContent = '🎙️ Record & Play'
+    elements.loopbackTestBtn.classList.remove('btn-primary')
+  }
+  if (elements.loopbackProgressRow) {
+    elements.loopbackProgressRow.classList.add('hidden')
+  }
+}
+
+function stopLoopbackTest() {
+  stopLoopbackRecorder()
+  stopLoopbackAudio()
+  resetLoopbackUI()
 }
 
 async function toggleMicMute() {
