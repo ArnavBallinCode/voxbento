@@ -223,7 +223,7 @@ Manual browser check:
 Every PR that adds, removes, or changes a feature **must** update these files in the same commit:
 
 - `README.md` — operational usage and setup
-- `ARCHITECTURE.md` — system design
+- `docs/architecture.md` — system design
 - `agents.md` (this file) — guardrails, if they changed
 - Relevant context file in `.agents/context/` — if the change affects routes, DB schema, or transcription
 
