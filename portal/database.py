@@ -327,6 +327,27 @@ async def list_booths_for_room(session: AsyncSession, room_id: int) -> list[DBBo
     return list(result.scalars().all())
 
 
+async def count_booths_for_rooms(session: AsyncSession, room_ids: list[int]) -> dict[int, int]:
+    """Return a mapping of room_id → count for the given room IDs.
+
+    Executes a single query instead of one-per-room.
+    """
+    if not room_ids:
+        return {}
+
+    stmt = (
+        select(DBBooth.room_id, func.count(DBBooth.id))
+        .where(DBBooth.room_id.in_(room_ids))
+        .group_by(DBBooth.room_id)
+    )
+    result = await session.execute(stmt)
+
+    counts: dict[int, int] = dict.fromkeys(room_ids, 0)
+    for row in result.all():
+        counts[row.room_id] = row[1]
+    return counts
+
+
 async def delete_booth(session: AsyncSession, booth_id: int) -> bool:
     booth = await get_booth_by_id(session, booth_id)
     if booth is None:
