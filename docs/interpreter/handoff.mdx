@@ -1,7 +1,7 @@
 ---
 title: "Interpreter Handoff and Booth Coordination"
 sidebarTitle: "Handoff"
-description: "Switch the active interpreter mid-event without dropping listener connections — coordinators and interpreters both have tools for smooth audio handoffs."
+description: "Switch the active interpreter mid-event without dropping listener connections — room_coordinators and interpreters both have tools for smooth audio handoffs."
 ---
 
 Interpretation at live events rarely runs on a single interpreter for the entire duration. Voxbento is built for real-world shifts: you can replace the active publisher with a backup interpreter in roughly one to two seconds, and listeners never lose their connection or need to refresh. This page explains how handoff works under the hood, who can trigger one, and the exact steps for both the outgoing and incoming interpreter.
@@ -31,7 +31,7 @@ When a room_coordinator or active interpreter triggers a handoff, Voxbento immed
 
 ## Steps to Hand Off (Coordinator Perspective)
 
-As a coordinator, you initiate the handoff from the participant roster panel inside the booth.
+As a room_coordinator, you initiate the handoff from the participant roster panel inside the booth.
 
 ### Locate the incoming interpreter in the roster
 
@@ -52,7 +52,7 @@ Smooth handoffs depend on the incoming interpreter being ready before the room_c
 
 ### Join the booth before your shift starts
 
-Open the booth URL and join as a participant well ahead of your scheduled slot. Stay muted — do not click **UNMUTE** yet. This ensures you're visible in the coordinator's roster.
+Open the booth URL and join as a participant well ahead of your scheduled slot. Stay muted — do not click **UNMUTE** yet. This ensures you're visible in the room_coordinator's roster.
   ### Watch for your Go Live button to activate
 
 When the room_coordinator designates you as the active interpreter, the top-left indicator will change to **STANDBY** (or **ON AIR** if you are unmuted).
@@ -66,7 +66,7 @@ Agree on a hand signal or chat message before the event to coordinate smooth han
 
 ## Using the Chat Panel for Coordination
 
-All participants in a booth — interpreters, coordinators, and any joined listeners with appropriate roles — can send text messages using the **Chat** panel. The chat is separate from the audio stream and is never heard by listeners.
+All participants in a booth — interpreters, room_coordinators, and any joined listeners with appropriate roles — can send text messages using the **Chat** panel. The chat is separate from the audio stream and is never heard by listeners.
 
 <details>
 <summary>Suggested chat conventions for handoffs</summary>
