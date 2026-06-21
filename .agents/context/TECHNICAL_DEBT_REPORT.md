@@ -67,7 +67,7 @@
 
 ---
 
-### TD-09: `alembic/versions/` uses integer revision IDs (001–008)
+### TD-09: `alembic/versions/` uses integer revision IDs (001–015)
 **File:** `alembic/versions/*.py`
 **Problem:** Alembic expects random hex IDs. Using `001`–`008` works but creates ordering confusion if revisions are created out-of-order by different developers.
 **Impact:** Low — functional for single-developer usage; becomes a problem with parallel branches.
@@ -94,7 +94,7 @@
 ## Documentation Gaps
 
 - `docs/` directory is partially outdated (pre-database auth design).
-- `ARCHITECTURE.md` needs update to reflect 8-migration DB state and transcription subsystem.
+- `docs/how-it-works.mdx` needs update to reflect 15-migration DB state and transcription subsystem.
 - No OpenAPI documentation for REST API endpoints (FastAPI generates `/docs` automatically but no custom descriptions on most routes).
 
 ---
