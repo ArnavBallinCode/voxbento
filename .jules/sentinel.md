@@ -1,0 +1,4 @@
+## 2026-06-23 - [Open Redirect via Protocol-Relative URL Parsing Edge Case]
+**Vulnerability:** The `safe_redirect` function attempted to prevent external redirects by verifying that `parsed.netloc` and `parsed.scheme` were empty. However, due to how `urllib.parse.urlparse` works, providing three slashes like `///evil.com` results in `netloc=""` and `path="/evil.com"`, which bypassed the check. Browsers interpret `///evil.com` as a protocol-relative URL to `//evil.com`, causing an open redirect.
+**Learning:** Python's `urlparse` treats URLs beginning with `///` differently than `//`. The former results in an empty `netloc`, bypassing naive checks that assume any external URL will have a populated `netloc` or `scheme`.
+**Prevention:** Explicitly check for `url.startswith("//")` and block/normalize it before relying on `urlparse` properties to determine if a URL is safely relative.
