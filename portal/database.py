@@ -266,6 +266,14 @@ async def count_booths_for_event(session: AsyncSession, event_id: int) -> int:
     return result.scalar_one()
 
 
+async def get_booth_counts_for_rooms(session: AsyncSession, event_id: int) -> dict[int, int]:
+    # ⚡ Bolt Optimization: Single aggregate query grouping by room_id
+    # to avoid N+1 queries when loading the admin_room_list
+    stmt = select(DBBooth.room_id, func.count(DBBooth.id)).where(DBBooth.event_id == event_id).group_by(DBBooth.room_id)
+    result = await session.execute(stmt)
+    return dict(result.all())
+
+
 async def list_booths_for_event(
     session: AsyncSession,
     event_id: int,
