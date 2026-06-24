@@ -1,7 +1,7 @@
 # VoxBento — Repository Context
 
 > Primary context file for coding agents. Read this before any other context file.
-> All facts derived from live implementation as of 2026-06-09.
+> All facts derived from live implementation as of current.
 
 ---
 
