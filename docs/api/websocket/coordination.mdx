@@ -113,7 +113,7 @@ Received when another participant sends a message.
 When a `room_coordinator` clicks "Set Active" in the UI, here is the exact sequence of technical events:
 
 1. **WS Request:** Coordinator sends `booth:set-active` with the target's ID.
-2. **Server Auth:** The `_handle_set_active` backend function verifies the coordinator has `BOOTH_SET_ACTIVE` permissions.
+2. **Server Auth:** The `_handle_set_active` backend function verifies the room_coordinator has `BOOTH_SET_ACTIVE` permissions.
 3. **State Update:** The server updates the in-memory `BoothRegistry` and immediately broadcasts a new `booth:state` to all clients.
 4. **Client Auth Fetch:** The target interpreter's client sees they are now the `active_interpreter_id`. The client immediately sends an HTTP `GET /api/booth/{id}/whip-url`.
 5. **WHIP URL Gating:** The FastAPI backend verifies the requesting client's `session_id` exactly matches the `active_interpreter_id` stored in the `BoothRegistry`. It returns the WHIP URL.

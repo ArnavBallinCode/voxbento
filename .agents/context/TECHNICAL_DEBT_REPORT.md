@@ -75,10 +75,10 @@
 
 ---
 
-### TD-10: Legacy booth URL `/interpreter/{booth_id}` still active
+### TD-10: [RESOLVED] Legacy booth URL `/interpreter/{booth_id}` still active
 **File:** `portal/routers/interpreter.py` — `GET /interpreter/{booth_id}`
 **Problem:** Free-form booth IDs bypass the structured identity scheme. No event scope, no relay booth, no per-room Jitsi URL.
-**Impact:** Low — kept for backward compatibility; new features do not support it.
+**Status:** Fixed. The route has been completely removed.
 **Fix:** Deprecate and remove once all clients migrate to `/interpreter/{event_slug}/{language_code}`.
 
 ---
@@ -94,7 +94,7 @@
 ## Documentation Gaps
 
 - `docs/` directory is partially outdated (pre-database auth design).
-- `ARCHITECTURE.md` needs update to reflect 8-migration DB state and transcription subsystem.
+- `docs/architecture.md` needs update to reflect 8-migration DB state and transcription subsystem.
 - No OpenAPI documentation for REST API endpoints (FastAPI generates `/docs` automatically but no custom descriptions on most routes).
 
 ---
