@@ -1179,3 +1179,34 @@ def test_full_isolation_flow():
         # fest2 listing must not show fest1 booths
         listing2 = client.get("/api/events/fest2/booths").json()
         assert all(b["event_slug"] == "fest2" for b in listing2["booths"])
+
+
+# --- Secret guard tests ---
+
+
+def test_weak_secret_raises_in_production(monkeypatch):
+    from portal.config import settings
+
+    monkeypatch.setattr(settings, "debug", False)
+    monkeypatch.setattr(settings, "secret_key", "change-me")
+    with pytest.raises(RuntimeError) as exc_info:
+        settings.validate_production_secrets()
+    assert "SECRET_KEY" in str(exc_info.value)
+
+
+def test_weak_secret_allowed_in_debug_mode(monkeypatch):
+    from portal.config import settings
+
+    monkeypatch.setattr(settings, "debug", True)
+    monkeypatch.setattr(settings, "secret_key", "change-me")
+    # Should not raise
+    settings.validate_production_secrets()
+
+
+def test_strong_secret_passes_production(monkeypatch):
+    from portal.config import settings
+
+    monkeypatch.setattr(settings, "debug", False)
+    monkeypatch.setattr(settings, "secret_key", "a-strong-random-64-char-hex-value-here-xxxxx")
+    # Should not raise
+    settings.validate_production_secrets()

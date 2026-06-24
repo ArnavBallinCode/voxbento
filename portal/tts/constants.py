@@ -13,8 +13,9 @@ DEEPGRAM_VOICE_MAPPING: Dict[str, str] = {
     "ja": "aura-2-fujin-ja",
 }
 
+
 def get_deepgram_voice_for_language(language_code: str) -> str:
     """Returns the best Deepgram voice model for a given ISO 639-1 language code."""
     # We extract the primary language subtag (e.g., 'en' from 'en-US')
-    primary_lang = language_code.split('-')[0].lower()
+    primary_lang = language_code.split("-")[0].lower()
     return DEEPGRAM_VOICE_MAPPING.get(primary_lang, "aura-2-thalia-en")
