@@ -23,7 +23,7 @@ Attendees receive sub-second audio via WHEP. All coordination flows through Fast
 | Floor monitoring | Jitsi Meet | `jitsi/*:stable-9823` — self-hosted, receive-only iframe |
 | DB (dev) | SQLite + aiosqlite | `sqlite+aiosqlite:///./interpretation.db` |
 | DB (prod) | PostgreSQL + asyncpg | via `DATABASE_URL` env override |
-| ORM / migrations | SQLAlchemy 2.0 async + Alembic | 8 migrations in `alembic/versions/` |
+| ORM / migrations | SQLAlchemy 2.0 async + Alembic | 15 migrations in `alembic/versions/` |
 | Auth | PyJWT (HS256) + bcrypt | three JWT token types (see Auth section) |
 | API key crypto | Fernet (cryptography) | `portal/crypto.py`; keys hashed via SHA-256 |
 | Transcription | faster-whisper + 4 cloud providers | `portal/transcription/` |
@@ -57,7 +57,7 @@ Attendees receive sub-second audio via WHEP. All coordination flows through Fast
 | `mediamtx.yml` | MediaMTX config — WHIP/WHEP paths, RTSP, Control API |
 | `docker-compose.yml` | portal + mediamtx + jitsi-web/prosody/jicofo/jvb |
 | `Dockerfile` | Portal container (uv-based, runs alembic then uvicorn) |
-| `alembic/versions/` | 8 migrations (001–008) |
+| `alembic/versions/` | 15 migrations (001–015) |
 
 ---
 
