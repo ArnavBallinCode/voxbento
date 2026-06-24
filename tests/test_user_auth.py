@@ -98,6 +98,23 @@ class TestRegistration:
         assert "user_token" in resp.headers.get("set-cookie", "")
 
     @pytest.mark.anyio
+    @pytest.mark.parametrize("payload", ["///example.com", "/\\/example.com"])
+    async def test_login_redirect_evasion(self, setup_db, payload):
+        await _create_test_user(email="login@example.com", password="securepass123")
+        async with _client() as c:
+            resp = await c.post(
+                "/login",
+                data={
+                    "email": "login@example.com",
+                    "password": "securepass123",
+                    "next_url": payload,
+                },
+                follow_redirects=False,
+            )
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/"
+
+    @pytest.mark.anyio
     async def test_register_rejects_short_password(self, setup_db):
         async with _client() as c:
             resp = await c.post(
@@ -193,6 +210,23 @@ class TestUserLogin:
         assert resp.status_code == 303
         assert resp.headers["location"] == "/account"
         assert "user_token" in resp.headers.get("set-cookie", "")
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize("payload", ["///example.com", "/\\/example.com"])
+    async def test_login_redirect_evasion(self, setup_db, payload):
+        await _create_test_user(email="login@example.com", password="securepass123")
+        async with _client() as c:
+            resp = await c.post(
+                "/login",
+                data={
+                    "email": "login@example.com",
+                    "password": "securepass123",
+                    "next_url": payload,
+                },
+                follow_redirects=False,
+            )
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/"
 
     @pytest.mark.anyio
     async def test_login_with_wrong_password(self, setup_db):
