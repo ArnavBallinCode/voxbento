@@ -92,13 +92,7 @@ class TranslationWorker:
                 logger.error(f"[{booth_id_str}] Translation API key not found for provider {provider}")
                 return
 
-            # Resolve vocabulary entries once for all target languages
-            vocab_entries: list[AIVocabularyEntry] = []
-            if vocabulary_enabled:
-                from portal.translations.vocabulary import resolve_vocabulary_entries
 
-                # We resolve vocabulary per-language inside the task below
-                pass
 
             # Execute translation for all target languages concurrently
             tasks = [

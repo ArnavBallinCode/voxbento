@@ -49,7 +49,7 @@ class DeepgramProvider(TranscriptionProvider):
             from urllib.parse import quote
             for kw in keywords:
                 url += f"&keywords={quote(kw, safe=':')}"
-                
+
         headers = {"Authorization": f"Token {api_key}"}
 
         consecutive_errors = 0

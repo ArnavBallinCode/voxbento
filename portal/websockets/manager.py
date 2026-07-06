@@ -9,7 +9,7 @@ from portal.auth import can_perform_role
 from portal.booth_identity import parse_booth_id
 from portal.database import get_session as get_db_session
 from portal.globals import booths
-from portal.models import DBBooth, Event, Room
+from portal.models import DBBooth, Event
 
 
 @dataclass

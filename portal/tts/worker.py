@@ -406,7 +406,7 @@ class TTSWorker:
             style=style,
             vocabulary_entries=vocab_entries,
         )
-        system_prompt = messages[0]["content"]
+
 
         # Currently optimized for OpenAI-compatible streaming endpoints (Groq, OpenRouter, OpenAI)
         if provider not in [
