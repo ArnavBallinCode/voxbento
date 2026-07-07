@@ -92,7 +92,21 @@ class TranslationWorker:
                 logger.error(f"[{booth_id_str}] Translation API key not found for provider {provider}")
                 return
 
+            # Pre-resolve vocabulary for all enabled languages
+            vocab_map: dict[str, list["AIVocabularyEntry"]] = {}
+            if vocabulary_enabled and event.id is not None:
+                from portal.translations.vocabulary import resolve_vocabulary_entries
 
+                async with get_session() as vocab_session:
+                    for lang in enabled_langs:
+                        vocab_map[lang.language_code] = await resolve_vocabulary_entries(
+                            vocab_session,
+                            event_id=event.id,
+                            room_id=room.id,
+                            booth_id=booth_db_id,
+                            target_language=lang.language_code,
+                            transcript_text=text,
+                        )
 
             # Execute translation for all target languages concurrently
             tasks = [
@@ -110,10 +124,7 @@ class TranslationWorker:
                     source_language_code=source_language_code,
                     persona=persona,
                     style=style,
-                    vocabulary_enabled=vocabulary_enabled,
-                    event_id=event.id,
-                    room_db_id=room.id,
-                    booth_db_id=booth_db_id,
+                    vocab_entries=vocab_map.get(lang.language_code),
                 )
                 for lang in enabled_langs
             ]
@@ -138,26 +149,9 @@ class TranslationWorker:
         source_language_code: str | None = None,
         persona: str | None = None,
         style: str | None = None,
-        vocabulary_enabled: bool = True,
-        event_id: int | None = None,
-        room_db_id: int | None = None,
-        booth_db_id: int | None = None,
+        vocab_entries: list["AIVocabularyEntry"] | None = None,
     ):
         try:
-            # Resolve vocabulary entries for this specific target language
-            vocab_entries: list[AIVocabularyEntry] = []
-            if vocabulary_enabled and event_id is not None:
-                from portal.translations.vocabulary import resolve_vocabulary_entries
-
-                async with get_session() as vocab_session:
-                    vocab_entries = await resolve_vocabulary_entries(
-                        vocab_session,
-                        event_id=event_id,
-                        room_id=room_db_id,
-                        booth_id=booth_db_id,
-                        target_language=lang_code,
-                        transcript_text=text,
-                    )
 
             translated_text = await self._call_llm(
                 provider,
@@ -186,8 +180,8 @@ class TranslationWorker:
                 booth_id_str, {"type": "translation", "language_code": lang_code, "text": translated_text}
             )
 
-        except Exception as e:
-            logger.error(f"[{booth_id_str}] Translation failed for {lang_code}: {e}")
+        except Exception:
+            logger.exception("[%s] Translation failed for %s", booth_id_str, lang_code)
 
     async def _call_llm(
         self,

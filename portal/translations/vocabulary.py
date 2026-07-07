@@ -83,12 +83,8 @@ class VocabularyImportResult:
 
 
 def _sanitize_cell(value: str) -> str:
-    """Strip leading formula-injection characters from CSV cell values."""
-    # Prevent spreadsheet formula injection (=, +, -, @, \t, \r)
-    stripped = value.strip()
-    while stripped and stripped[0] in ("=", "+", "-", "@", "\t", "\r"):
-        stripped = stripped[1:].strip()
-    return stripped
+    """Strip whitespace from CSV cell values."""
+    return value.strip()
 
 
 def _parse_bool(value: str, default: bool = False) -> bool:
@@ -383,13 +379,13 @@ async def get_deepgram_keywords(
     """Return Deepgram-formatted keyword boost params for the WebSocket URL.
 
     Fetches the top ``MAX_DEEPGRAM_KEYWORDS`` vocabulary entries (by
-    priority) and returns strings like ``"FOSSASIA:10"`` suitable for
+    priority) and returns strings like ``"FOSSASIA:3"`` suitable for
     appending as ``&keywords=...`` query parameters.
 
     The boost value is derived from priority:
-    - priority >= 90 -> boost 10 (strong)
-    - priority >= 50 -> boost 5 (moderate)
-    - else           -> boost 2 (mild)
+    - priority >= 90 -> boost 3 (strong)
+    - priority >= 50 -> boost 2 (moderate)
+    - else           -> boost 1 (mild)
     """
     from portal.models import AIVocabularyEntry
 
@@ -446,6 +442,13 @@ async def get_deepgram_keywords(
 # ---------------------------------------------------------------------------
 
 
+def _escape_csv_injection(val: str) -> str:
+    """Prefix dangerous characters with a single quote to prevent spreadsheet formula injection."""
+    if val and val[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return f"'{val}"
+    return val
+
+
 def export_vocabulary_csv(entries: list["AIVocabularyEntry"]) -> str:
     """Serialize vocabulary entries to a CSV string for download."""
     output = io.StringIO()
@@ -456,12 +459,12 @@ def export_vocabulary_csv(entries: list["AIVocabularyEntry"]) -> str:
     ])
     for e in entries:
         writer.writerow([
-            e.source_term,
-            e.target_language,
-            e.target_term,
-            e.description or "",
+            _escape_csv_injection(e.source_term),
+            _escape_csv_injection(e.target_language),
+            _escape_csv_injection(e.target_term),
+            _escape_csv_injection(e.description or ""),
             str(e.case_sensitive).lower(),
-            e.match_type,
+            _escape_csv_injection(e.match_type),
             e.priority,
         ])
     return output.getvalue()

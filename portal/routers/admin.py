@@ -602,12 +602,6 @@ async def admin_upload_vocabulary(request: Request, event_id: int, room_id: int)
     content = (await csv_file.read()).decode("utf-8-sig")
     entries, warnings = parse_vocabulary_csv(content)
 
-    if not entries and warnings:
-        return JSONResponse(
-            {"imported": 0, "updated": 0, "warnings": warnings, "languages": []},
-            status_code=400,
-        )
-
     async with get_session() as session:
         room = await get_room_by_id(session, room_id)
         if not room or room.event_id != event_id:
@@ -619,7 +613,10 @@ async def admin_upload_vocabulary(request: Request, event_id: int, room_id: int)
         result.warnings.extend(warnings)
         await session.commit()
 
-    return safe_redirect(url=f"/admin/events/{event_id}/rooms/{room_id}/", status_code=status.HTTP_303_SEE_OTHER)
+    return safe_redirect(
+        url=f"/admin/events/{event_id}/rooms/{room_id}/?vocab_imported={result.imported}&vocab_updated={result.updated}&vocab_warnings={len(result.warnings)}",
+        status_code=status.HTTP_303_SEE_OTHER
+    )
 
 
 @router.get("/admin/events/{event_id}/rooms/{room_id}/ai-vocabulary/export", dependencies=[Depends(require_admin)])

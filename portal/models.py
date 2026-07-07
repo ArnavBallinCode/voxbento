@@ -26,7 +26,7 @@ import secrets
 from datetime import datetime, timezone
 
 import sqlalchemy as sa
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, validates
 
 from portal.booth_identity import make_mediamtx_path, validate_event_slug, validate_language_code
@@ -324,6 +324,14 @@ class AIVocabularyEntry(Base):
         Index("ix_ai_vocab_room_language", "room_id", "target_language"),
         Index("ix_ai_vocab_booth_language", "booth_id", "target_language"),
         Index("ix_ai_vocab_source_term", "source_term"),
+        UniqueConstraint(
+            "event_id",
+            "room_id",
+            "booth_id",
+            "source_term",
+            "target_language",
+            name="uq_ai_vocab_scope_term_lang",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

@@ -364,8 +364,8 @@ class TTSWorker:
                 target_lang_code=target_lang_code,
             ):
                 parts.append(chunk)
-        except Exception as e:
-            logger.error(f"[TTS] Translation failed for {lang_name}: {e}")
+        except Exception:
+            logger.exception("[TTS] Translation failed for %s", lang_name)
             return ""
         return "".join(parts).strip()
 

@@ -274,6 +274,37 @@
 
 {% if is_event_owner %}
 <div class="token-form-card" style="margin-bottom: 2rem;">
+  <div id="vocab-alert-container"></div>
+  <script>
+    document.addEventListener("DOMContentLoaded", function() {
+      const params = new URLSearchParams(window.location.search);
+      const imported = params.get("vocab_imported");
+      const updated = params.get("vocab_updated");
+      const warnings = params.get("vocab_warnings");
+      
+      if (imported !== null || updated !== null || warnings !== null) {
+        let msg = "";
+        if (imported) msg += `Imported ${imported} entries. `;
+        if (updated) msg += `Updated ${updated} entries. `;
+        if (warnings && parseInt(warnings) > 0) msg += `Encountered ${warnings} warning(s) (some rows may have been skipped).`;
+        if (!msg) msg = "Vocabulary upload processed.";
+        
+        const isError = (warnings && parseInt(warnings) > 0) || (imported === "0" && updated === "0");
+        const alertDiv = document.createElement("div");
+        alertDiv.style.padding = "1rem";
+        alertDiv.style.marginBottom = "1rem";
+        alertDiv.style.borderRadius = "4px";
+        alertDiv.style.backgroundColor = isError ? "#fff3cd" : "#d4edda";
+        alertDiv.style.color = isError ? "#856404" : "#155724";
+        alertDiv.style.border = `1px solid ${isError ? "#ffeeba" : "#c3e6cb"}`;
+        alertDiv.textContent = msg;
+        
+        document.getElementById("vocab-alert-container").appendChild(alertDiv);
+        
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    });
+  </script>
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
     <h3 style="margin: 0;">AI Vocabulary ({{ vocab_count }} entries)</h3>
     <div style="display: flex; gap: 0.5rem;">
