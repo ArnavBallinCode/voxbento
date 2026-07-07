@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
 
@@ -234,7 +235,7 @@ async def account_page(request: Request):
             "role": m.role,
             "created_at": m.created_at
         })
-        
-    unified_memberships.sort(key=lambda x: x["created_at"])
+
+    unified_memberships.sort(key=lambda x: x["created_at"] or datetime.min.replace(tzinfo=timezone.utc))
 
     return templates.TemplateResponse(request, "account.html", {"user": user, "memberships": unified_memberships})
