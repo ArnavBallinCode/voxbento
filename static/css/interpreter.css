@@ -110,3 +110,42 @@ progress.clean-progress::-moz-progress-bar {
   background-color: #3b82f6;
   border-radius: 9999px;
 }
+
+/* Mic / Handover Button State Colors */
+.header-btn--handover.state-grey {
+  background-color: #f3f4f6; /* gray-100 */
+  color: #6b7280; /* gray-500 */
+}
+.header-btn--handover.state-grey:not(:disabled):hover {
+  background-color: #e5e7eb; /* gray-200 */
+}
+
+.header-btn--handover.state-green {
+  background-color: #22c55e; /* green-500 */
+  color: #ffffff;
+}
+
+@keyframes flash-yellow-clean {
+  0%, 100% { background-color: #fef08a; color: #854d0e; } /* yellow-200 to yellow-800 */
+  50% { background-color: #fde047; color: #713f12; } /* yellow-300 to yellow-900 */
+}
+
+.header-btn--handover.state-flash-yellow {
+  animation: flash-yellow-clean 1s ease-in-out infinite;
+}
+
+.header-btn--mic.muted {
+  background-color: #1f2937; /* gray-800 */
+  color: #ffffff;
+}
+.header-btn--mic.muted:not(:disabled):hover {
+  background-color: #374151; /* gray-700 */
+}
+
+.header-btn--mic.unmuted {
+  background-color: #dcfce7; /* green-100 */
+  color: #15803d; /* green-700 */
+}
+.header-btn--mic.unmuted:not(:disabled):hover {
+  background-color: #bbf7d0; /* green-200 */
+}
