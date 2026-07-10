@@ -1405,42 +1405,42 @@ function renderHandoverButton() {
   const hasPartner = state.participants.filter(p => ['interpreter', 'room_coordinator', 'event_owner', 'super_admin'].includes(p.role)).length > 1
 
   // Remove all state classes
-  elements.handoverBtn.classList.remove('state-grey', 'state-green', 'state-flash-yellow')
+  elements.handoverBtn.className = 'header-btn header-btn--handover flex items-center gap-2 px-5 py-2 rounded-lg font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed'
 
   if (isActive) {
     elements.handoverLabel.textContent = 'Pass Mic'
 
     if (hState === 'idle') {
-      elements.handoverBtn.classList.add('state-grey')
+      elements.handoverBtn.classList.add('bg-gray-100', 'text-gray-500')
       elements.handoverBtn.disabled = !hasPartner
     } else if (hState === 'offered' && iAmInitiator) {
       // I (active) offered → green, frozen (can cancel)
-      elements.handoverBtn.classList.add('state-green')
+      elements.handoverBtn.classList.add('bg-green-500', 'text-white')
       elements.handoverBtn.disabled = false
     } else if (hState === 'requested' && !iAmInitiator) {
       // Partner (passive) requested → flash yellow, clickable to yield
-      elements.handoverBtn.classList.add('state-flash-yellow')
+      elements.handoverBtn.classList.add('animate-pulse', 'bg-yellow-300', 'text-yellow-900')
       elements.handoverBtn.disabled = false
     } else {
-      elements.handoverBtn.classList.add('state-grey')
+      elements.handoverBtn.classList.add('bg-gray-100', 'text-gray-500')
       elements.handoverBtn.disabled = true
     }
   } else {
     elements.handoverLabel.textContent = 'Take Over'
 
     if (hState === 'idle') {
-      elements.handoverBtn.classList.add('state-grey')
+      elements.handoverBtn.classList.add('bg-gray-100', 'text-gray-500')
       elements.handoverBtn.disabled = !hasPartner
     } else if (hState === 'requested' && iAmInitiator) {
       // I (passive) requested → green, frozen (can cancel)
-      elements.handoverBtn.classList.add('state-green')
+      elements.handoverBtn.classList.add('bg-green-500', 'text-white')
       elements.handoverBtn.disabled = false
     } else if (hState === 'offered' && !iAmInitiator) {
       // Partner (active) offered → flash yellow, clickable to accept
-      elements.handoverBtn.classList.add('state-flash-yellow')
+      elements.handoverBtn.classList.add('animate-pulse', 'bg-yellow-300', 'text-yellow-900')
       elements.handoverBtn.disabled = false
     } else {
-      elements.handoverBtn.classList.add('state-grey')
+      elements.handoverBtn.classList.add('bg-gray-100', 'text-gray-500')
       elements.handoverBtn.disabled = true
     }
   }
