@@ -689,6 +689,7 @@ async def revoke_invite_token(session: AsyncSession, token_str: str) -> InviteTo
 # Auth Tokens
 # ---------------------------------------------------------------------------
 
+
 async def create_auth_token(
     session: AsyncSession,
     *,

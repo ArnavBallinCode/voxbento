@@ -136,6 +136,7 @@ async def register_submit(request: Request):
 
                 # Send verification email
                 import secrets
+
                 token_val = secrets.token_hex(32)
                 await create_auth_token(
                     session,
@@ -231,7 +232,9 @@ async def user_login_submit(request: Request):
             status_code=status.HTTP_403_FORBIDDEN,
         )
 
-    jwt_token = create_user_token(user_id=user.id, email=user.email, display_name=user.display_name, is_admin=user.is_admin)
+    jwt_token = create_user_token(
+        user_id=user.id, email=user.email, display_name=user.display_name, is_admin=user.is_admin
+    )
     redirect_to = next_url if next_url else "/account"
     response = safe_redirect(url=redirect_to, status_code=status.HTTP_303_SEE_OTHER)
     response.set_cookie(
@@ -256,6 +259,7 @@ async def request_magic_link(request: Request):
         user = await get_user_by_email(session, email)
         if user:
             import secrets
+
             token_val = secrets.token_hex(32)
             await create_auth_token(
                 session,
@@ -309,6 +313,7 @@ async def forgot_password_request(request: Request):
         user = await get_user_by_email(session, email)
         if user and user.password_hash:
             import secrets
+
             token_val = secrets.token_hex(32)
             await create_auth_token(
                 session,
@@ -355,9 +360,7 @@ async def reset_password_submit(request: Request, token: str):
             )
             return response
         except ValueError as e:
-            return templates.TemplateResponse(
-                request, "reset_password.html", {"token": token, "error": str(e)}
-            )
+            return templates.TemplateResponse(request, "reset_password.html", {"token": token, "error": str(e)})
 
 
 @router.get("/logout")
@@ -387,33 +390,35 @@ async def account_page(request: Request):
 
     unified_memberships = []
     for m in event_memberships:
-        unified_memberships.append({
-            "context": m.event.display_name if m.event else '—',
-            "link": f"/admin/events/{m.event.id}/" if m.event else "#",
-            "type": "Event",
-            "role": m.role,
-            "created_at": m.created_at
-        })
+        unified_memberships.append(
+            {
+                "context": m.event.display_name if m.event else "—",
+                "link": f"/admin/events/{m.event.id}/" if m.event else "#",
+                "type": "Event",
+                "role": m.role,
+                "created_at": m.created_at,
+            }
+        )
     for m in room_memberships:
-        context_str = f"{m.room.event.display_name} - {m.room.display_name}" if m.room and m.room.event else (m.room.display_name if m.room else '—')
+        context_str = (
+            f"{m.room.event.display_name} - {m.room.display_name}"
+            if m.room and m.room.event
+            else (m.room.display_name if m.room else "—")
+        )
         link_str = f"/mission-control/{m.room.event.slug}/" if m.room and m.room.event else "#"
-        unified_memberships.append({
-            "context": context_str,
-            "link": link_str,
-            "type": "Room",
-            "role": m.role,
-            "created_at": m.created_at
-        })
+        unified_memberships.append(
+            {"context": context_str, "link": link_str, "type": "Room", "role": m.role, "created_at": m.created_at}
+        )
     for m in booth_memberships:
-        context_str = f"{m.booth.event.display_name} - {m.booth.room.display_name} - {m.booth.language_name}" if m.booth and m.booth.event and m.booth.room else '—'
+        context_str = (
+            f"{m.booth.event.display_name} - {m.booth.room.display_name} - {m.booth.language_name}"
+            if m.booth and m.booth.event and m.booth.room
+            else "—"
+        )
         link_str = f"/interpreter/{m.booth.event.slug}/{m.booth.language_code}" if m.booth and m.booth.event else "#"
-        unified_memberships.append({
-            "context": context_str,
-            "link": link_str,
-            "type": "Booth",
-            "role": m.role,
-            "created_at": m.created_at
-        })
+        unified_memberships.append(
+            {"context": context_str, "link": link_str, "type": "Booth", "role": m.role, "created_at": m.created_at}
+        )
 
     unified_memberships.sort(key=lambda x: x["created_at"] or datetime.min.replace(tzinfo=timezone.utc))
 
