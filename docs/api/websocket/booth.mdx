@@ -132,7 +132,7 @@ The examples below show the exact JSON structure for the most common messages.
   "active_interpreter_id": "user-abc123",
   "participants": [
     { "user_id": "user-abc123", "display_name": "Alice", "role": "interpreter" },
-    { "user_id": "user-def456", "display_name": "Bob",   "role": "coordinator" }
+    { "user_id": "user-def456", "display_name": "Bob",   "role": "room_coordinator" }
   ],
   "mic_active": true,
   "ingest_connected": true
@@ -292,7 +292,7 @@ Your token's server-assigned role gates which messages you can send. Attempting 
     Can join, leave, chat, and update mic/ingest state flags. Cannot set another interpreter as active.
   
 
-  ### coordinator
+  ### room_coordinator
 
     Can do everything an interpreter can, plus promote any booth participant to the active interpreter role.
   

@@ -43,6 +43,7 @@ The tables below list every REST and WebSocket endpoint exposed by the Voxbento 
 | --- | --- | --- |
 | `/ws/booth/{booth_id}` | Optional JWT via `?token=` query parameter | Real-time booth coordination — join, leave, chat, and state updates |
 | `/ws/captions/{booth_id}` | Open (no auth required) | Live caption feed for listeners |
+| `/ws/tts/{room_id}` | Open (no auth required) | Receives raw PCM 16-bit 24kHz binary audio for synthesized translated speech |
 
 ## The Captions WebSocket Broadcast
 
