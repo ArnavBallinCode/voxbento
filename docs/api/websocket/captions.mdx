@@ -36,6 +36,7 @@ After connecting, you will receive two types of server-pushed messages. No clien
 | --- | --- |
 | `booth:state` | Full booth state object (identical to the one sent on `/ws/booth/{booth_id}`). Delivered once immediately on connect and again whenever booth state changes. |
 | `caption` | A caption event containing a `status` field (`partial`, `final`, or `clear`) and, for non-clear events, a `text` field with the transcribed content. |
+| `translation` | A translated text of a final caption, containing a `language_code` field and a `text` field. |
 
 ## Caption Message Format
 
@@ -45,6 +46,7 @@ The three caption status values represent distinct moments in the transcription 
 { "type": "caption", "status": "partial", "text": "Good morning everyone, today we" }
 { "type": "caption", "status": "final",   "text": "Good morning everyone, today we will discuss the agenda." }
 { "type": "caption", "status": "clear" }
+{ "type": "translation", "language_code": "es", "text": "Buenos días a todos, hoy discutiremos la agenda." }
 ```
 
 ## Caption Status Reference
@@ -105,6 +107,17 @@ Captions are only produced when transcription is enabled for the booth by the ev
   **`status`** *(string)* — One of `"partial"`, `"final"`, or `"clear"`. Determines how your UI should handle the message.
 
   **`text`** *(string)* — The transcribed text. Present for `partial` and `final` status values. Omitted for `clear`.
+
+</details>
+
+<details>
+<summary>translation (server → client)</summary>
+
+**`type`** *(string)* — Always `"translation"`.
+
+  **`language_code`** *(string)* — The ISO 639-1 two-letter code for the target language (e.g., `"es"`).
+
+  **`text`** *(string)* — The translated text of the final caption.
 
 </details>
 
