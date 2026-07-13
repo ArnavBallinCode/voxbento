@@ -41,6 +41,7 @@ from portal.database import (
     delete_room,
     delete_user,
     get_booth_by_id,
+    get_booth_counts_for_rooms,
     get_event_by_id,
     get_event_by_slug,
     get_room_by_id,
@@ -426,10 +427,15 @@ async def admin_room_list(request: Request, event_id: int):
         if event is None:
             raise HTTPException(status_code=404, detail="Event not found.")
         rooms = await list_rooms_for_event(session, event_id)
+
+        # ⚡ Bolt Optimization: Replaced O(N) queries with single group-by query.
+        # This prevents N+1 database calls when calculating booth counts per room.
+        booth_counts = await get_booth_counts_for_rooms(session, event_id)
+
         room_data = []
         for room in rooms:
-            room_booths = await list_booths_for_room(session, room.id)
-            room_data.append({"room": room, "booth_count": len(room_booths)})
+            count = booth_counts.get(room.id, 0)
+            room_data.append({"room": room, "booth_count": count})
     return templates.TemplateResponse(request, "admin/room_list.html", {"event": event, "room_data": room_data})
 
 
