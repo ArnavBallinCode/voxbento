@@ -59,8 +59,7 @@ Jitsi Meet Floor Conference
         │
         ▼
    TTS Worker (tts/worker.py)
-   Reads 'final' translated segments → buffers punctuation → routes to TTS provider
-   (Deepgram Aura cloud WebSocket OR Supertonic self-hosted in-process ONNX)
+   Reads 'final' translated segments → buffers punctuation → calls Deepgram Aura API
         │
         ▼
    broadcast_tts() (WebSocket /ws/tts/{room_id}) -> Listener Web Audio API
@@ -84,9 +83,8 @@ Jitsi Meet Floor Conference
 | `portal/transcription/providers/elevenlabs.py` | `ElevenLabsProvider` — scribe_v2 |
 | `portal/translations/worker.py` | `start_translation_worker()`, LLM translation loop, multithreaded translation dispatch |
 | `portal/translations/constants.py` | Translation models enum mapped to Anthropic, OpenAI, Groq, Gemini, etc. |
-| `portal/tts/worker.py` | `TTSWorker`, buffers punctuation, chunks text, routes to a TTS provider, pushes raw PCM binary to `tts_manager` |
-| `portal/tts/providers/` | `TTSProvider` ABC + factory; `DeepgramTTSProvider` (Aura WebSocket) and `SupertonicTTSProvider` (in-process ONNX, 44.1k→24k resample) |
-| `portal/tts/constants.py` | `DEEPGRAM_VOICE_MAPPING` (language→Aura voice) plus Supertonic preset voices, language map, and supported languages |
+| `portal/tts/worker.py` | `TTSWorker`, buffers punctuation, chunks text, calls Deepgram Aura WebSocket API, pushes raw PCM binary to `tts_manager` |
+| `portal/tts/constants.py` | `TTS_VOICE_MAP` (language code to Deepgram voice ID mapping) |
 
 ---
 
@@ -96,7 +94,7 @@ Jitsi Meet Floor Conference
 |---|---|---|---|---|
 | `local` | `LocalProvider` | `tiny`, `base`, `small`, `medium`, `large-v2`, `large-v3` | None | CPU inference via `faster-whisper` (in thread pool) |
 | `openai` | `OpenAIProvider` | `whisper-1`, `gpt-4o-realtime-preview`, `gpt-4o-mini-realtime-preview` | `openai_api_key` | REST (whisper-1) or WebSocket realtime |
-| `deepgram` | `DeepgramProvider` | `nova-2` | `deepgram_api_key` | WebSocket streaming (with `numerals=true` for interpretation) |
+| `deepgram` | `DeepgramProvider` | `nova-2` | `deepgram_api_key` | WebSocket streaming |
 | `nvidia` | `NVIDIAProvider` | `parakeet-rnnt`, `parakeet-ctc` | `nvidia_api_key` | Riva gRPC |
 | `elevenlabs` | `ElevenLabsProvider` | `scribe_v2` | `elevenlabs_api_key` | — |
 
