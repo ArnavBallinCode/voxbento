@@ -117,6 +117,13 @@ class CaptionAggregator:
             import asyncio
 
             from portal.database import save_transcript_segment
+            from portal.tts.worker import enqueue_tts
+
+            # Queue TTS immediately. Supertonic rooms serialize synthesis per room
+            # to preserve final-arrival order; Deepgram rooms may overlap segments
+            # to preserve low-latency streaming. This runs synchronously before any
+            # await that could reorder concurrent finals.
+            enqueue_tts(self.room_id, final_text)
 
             async def _save_and_translate():
                 segment_id = await save_transcript_segment(booth_id, final_text, self.room_id)

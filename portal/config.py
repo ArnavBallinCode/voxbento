@@ -16,7 +16,7 @@ class Settings(BaseSettings):
 
     host: str = "127.0.0.1"
     port: int = 8000
-    debug: bool = Field(default=True)
+    debug: bool = Field(default=False)
     secret_key: str = "change-me"
     api_key_encryption_key: str | None = Field(default=None)
     booth_access_token: str = ""
@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     # paths with alwaysAvailable so WHEP readers survive publisher handoffs.
     mediamtx_api_base: str = "http://localhost:9997"
     mediamtx_rtsp_base: str = "rtsp://mediamtx:8554"
+    # Optional internal MediaMTX base URL. When empty, falls back to
+    # mediamtx_api_base. docker-compose sets this to http://mediamtx:8888.
+    mediamtx_internal_base: str = ""
     floor_bot_base: str = "http://floor-bot:8080"
 
     @property
@@ -68,8 +71,45 @@ class Settings(BaseSettings):
     def effective_jwt_secret(self) -> str:
         return self.jwt_secret or self.secret_key
 
+    def validate_production_secrets(self) -> None:
+        """Refuse to start with a known-weak default secret outside debug mode.
+
+        Called once at application startup. No-op in debug mode so local
+        development works without configuring a SECRET_KEY.
+        """
+        if self.debug:
+            return
+        weak_defaults = {"change-me", "", "secret", "your-secret-key"}
+        if self.effective_jwt_secret in weak_defaults:
+            raise RuntimeError(
+                "SECRET_KEY (or JWT_SECRET) is set to a known-weak default value. "
+                "Set a strong random value before running in production. "
+                "Generate one with: openssl rand -hex 32"
+            )
+
     # Transcription Settings
     nvidia_function_id: str = ""
+
+    # Supertonic TTS — optional sidecar URL for the Voice Builder import API.
+    # Leave empty to use in-process TTS (no sidecar needed).
+    supertonic_base_url: str = ""
+
+    # Supertonic synthesis quality/speed trade-off. Fewer diffusion steps =
+    # faster (lower real-time factor) at a small quality cost. 4 keeps CPU
+    # synthesis at/below real-time so audio never backs up; 8 is reference
+    # quality but slower than real-time on CPU.
+    supertonic_total_steps: int = 4
+    # ONNX Runtime intra-op threads for synthesis. 0 = let ONNX Runtime pick
+    # (uses all physical cores).
+    supertonic_intra_op_threads: int = 0
+
+    # Email Settings
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = "noreply@voxbento.com"
+    public_base_url: str = "https://voxbento.com"
 
 
 settings = Settings()
