@@ -57,7 +57,7 @@ Attendees receive sub-second audio via WHEP. All coordination flows through Fast
 | `mediamtx.yml` | MediaMTX config — WHIP/WHEP paths, RTSP, Control API |
 | `docker-compose.yml` | portal + mediamtx + jitsi-web/prosody/jicofo/jvb |
 | `Dockerfile` | Portal container (uv-based, runs alembic then uvicorn) |
-| `alembic/versions/` | 8 migrations (001–008) |
+| `alembic/versions/` | 14 migrations (001–014) |
 
 ---
 

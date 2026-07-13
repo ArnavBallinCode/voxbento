@@ -1,0 +1,65 @@
+---
+title: "System Architecture"
+sidebarTitle: "Architecture"
+description: "Overview of the Voxbento system architecture, including the FastAPI backend, MediaMTX WebRTC server, Jitsi Meet integration, and the transcription pipeline."
+---
+
+# Voxbento System Architecture
+
+Voxbento is designed around a decoupled, browser-first architecture. It uses WebRTC for low-latency audio transmission, WebSockets for real-time booth coordination, and a background transcription pipeline for live captions.
+
+## High-Level Component Diagram
+
+```
+[ Interpreter Browser ]
+  |-- (Iframe) --> [ Jitsi Meet ] (Monitors floor video/audio)
+  |-- (WebRTC/WHIP) --> [ MediaMTX ] (Ingests and transcodes audio)
+  |-- (WebSocket) --> [ FastAPI Portal ] (Coordinates booth state, roles, chat)
+
+[ Listener Browser ]
+  |-- (WebRTC/WHEP) <-- [ MediaMTX ] (Plays back translated audio)
+  |-- (WebSocket) <-- [ FastAPI Portal ] (Receives live captions & state)
+
+[ Floor Bot (Headless) ]
+  |-- (Joins Jitsi) --> [ Jitsi Meet ]
+  |-- (FFmpeg RTSP) --> [ MediaMTX ] (Provides floor audio for transcription)
+
+[ Background Workers ]
+  |-- (FFmpeg RTSP Pull) <-- [ MediaMTX ]
+  |-- (API Calls) --> [ Transcription Providers (OpenAI, Deepgram, etc.) ]
+  |-- (WebSocket Broadcast) --> [ FastAPI Portal ] (Distributes captions)
+```
+
+## Core Components
+
+### 1. FastAPI Portal
+The central coordination hub of Voxbento. It is written in Python (3.13+) and handles:
+- **Authentication & Authorization**: JWT-based auth and role resolution.
+- **Booth State Management**: Tracks active interpreters, participants, and chat history in-memory (`BoothRegistry`).
+- **REST API**: Provides endpoints for managing events, rooms, booths, and generating WHIP/WHEP URLs.
+- **WebSockets**: Manages real-time communication for booth coordination (`/ws/booth/{booth_id}`) and caption broadcasting (`/ws/captions/{booth_id}`).
+- **Template Rendering**: Serves Jinja2 templates for the user interface.
+
+### 2. MediaMTX
+A robust media server responsible for all WebRTC audio routing. Voxbento uses it strictly for audio transport; the Python backend is never in the audio path.
+- **WHIP (WebRTC HTTP Ingestion Protocol)**: Used by interpreters to publish audio from their browsers. MediaMTX enforces `overridePublisher: yes` to ensure only one interpreter can publish to a language channel at a time.
+- **WHEP (WebRTC HTTP Egress Protocol)**: Used by listeners to receive sub-second latency audio playback.
+- **RTSP**: Used internally to stream audio to the transcription workers.
+
+### 3. Jitsi Meet
+A self-hosted Jitsi instance provides the video and audio feed from the conference floor.
+- Interpreters view this feed via a receive-only iframe embedded in their booth UI.
+- The `floor-bot` captures audio from Jitsi and sends it to MediaMTX for transcription.
+
+### 4. Floor Bot
+A headless Chromium instance managed by a background thread. It joins the Jitsi meeting as a silent participant, captures the floor audio, and uses FFmpeg to stream it via RTSP to MediaMTX.
+
+### 5. Transcription Pipeline
+Background workers (`portal/transcription/worker.py`) pull audio from MediaMTX via RTSP using FFmpeg. They chunk the audio and send it to configured transcription providers (e.g., local faster-whisper, OpenAI, Deepgram, NVIDIA Riva). The resulting text is aggregated and broadcasted over WebSockets to listeners.
+
+## Key Design Principles
+
+- **Browser-First**: No installation required for interpreters or listeners. Everything runs in modern web browsers using standard APIs (WebRTC, WebSockets).
+- **Decoupled Media and Signaling**: MediaMTX handles all heavy lifting for audio transport. FastAPI only manages signaling and state, ensuring scalability and reliability.
+- **Stateless Media Ingest**: The active interpreter is enforced at the media layer by MediaMTX (`overridePublisher`), preventing accidental audio overlap even if the signaling server momentarily loses sync.
+- **Secure by Default**: All sensitive API keys are encrypted at rest using Fernet. WebRTC requires HTTPS in production.

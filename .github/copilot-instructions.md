@@ -18,7 +18,7 @@ A browser-first interpretation booth console.
 
 - Interpreters monitor the floor session via an embedded Jitsi iframe (self-hosted)
 - Interpreters broadcast audio via browser WebRTC → WHIP → MediaMTX
-- Attendees listen via `/listener-webrtc/{booth_id}` (WHEP WebRTC, primary) or `/listen/{booth_id}` (hls.js fallback)
+- Attendees listen via `/listener/{event_slug}` (WHEP WebRTC)
 - Coordination (booth state, roles, chat) is via native WebSocket on FastAPI
 
 **Frontend:** Jinja2 templates + vanilla ES module JavaScript in `templates/` and `static/js/`. No Vue, no React, no build step. The `src/` directory has been removed.
@@ -31,6 +31,6 @@ A browser-first interpretation booth console.
 4. Never route interpreter mic audio to `AudioContext.destination`.
 5. No jQuery, no inline `<script>` blocks.
 6. Do not change `uv.lock` unless you run `uv sync --python 3.13 --dev` and all tests pass.
-7. Use `eventyay.*` or `portal.*` imports for new code.
+7. Use `portal.*` imports for new code.
 
 Do not duplicate or override project rules in this file. Use `agents.md` as the single source of truth.

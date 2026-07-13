@@ -29,7 +29,7 @@ description: Use this skill to find files, understand module ownership, and loca
 | Listener WHEP client (JS) | `static/js/whep-listener.js` |
 | Admin JS | `static/js/admin.js` |
 | HTML templates | `templates/` (base, booth, listener, auth) + `templates/admin/` |
-| DB migrations | `alembic/versions/001_*.py` through `008_*.py` |
+| DB migrations | `alembic/versions/001_*.py` through `014_*.py` |
 | MediaMTX configuration | `mediamtx.yml` |
 | Docker services | `docker-compose.yml` |
 | Tests | `tests/` — see test file map below |
