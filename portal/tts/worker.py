@@ -1,27 +1,169 @@
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
-import re
+import time
 
 import httpx
-import websockets
 
 from portal.crypto import decrypt_val
 from portal.database import get_session
 from portal.models import Event, Room
-from portal.translations.constants import TranslationProviderEnum
-from portal.tts.constants import get_deepgram_voice_for_language
+from portal.translations.constants import OPENAI_COMPATIBLE_ENDPOINTS, TranslationProviderEnum
+from portal.translations.keys import get_translation_api_key
+from portal.tts.providers.base import TTSProviderEnum, get_tts_provider
 
 logger = logging.getLogger(__name__)
 
-# Sentence boundary regex
-SENTENCE_BOUNDARY = re.compile(r"([^.?!]+[.?!]+)")
+# Per-room TTS routing.
+#
+# Deepgram streams translated sentences to its WebSocket Speak API as soon as
+# each sentence is translated, so Deepgram rooms run fire-and-forget per segment
+# to preserve that low-latency streaming behaviour.
+#
+# Supertonic synthesizes a full clip per sentence on CPU (slower than realtime
+# when several segments overlap), so Supertonic rooms are funnelled through a
+# per-room ordered pipeline that translates eagerly but synthesizes in strict
+# arrival order, preventing audio from reordering.
+#
+# Routing is decided per room from its configured provider, so different rooms
+# can use Deepgram and Supertonic simultaneously.
+_room_pipelines: dict[int, "_RoomTTSPipeline"] = {}
+
+# Strong references to in-flight fire-and-forget tasks (routing + Deepgram
+# streaming), preventing them from being garbage collected before they finish.
+_inflight: set[asyncio.Task] = set()
+
+# Strong references to in-flight pipeline shutdown tasks, so cancelling a stale
+# room's consumer is not garbage collected before it finishes unwinding.
+_pipeline_shutdowns: set[asyncio.Task] = set()
+
+# Per-room TTS config cache: room_id -> (monotonic_expiry, cfg_or_None).
+#
+# A finalized caption segment arrives many times per minute per room, while the
+# room/event config (including Fernet-decrypted API keys) almost never changes
+# mid-session. Caching it behind a short TTL removes a DB round trip plus a key
+# decrypt per segment. A None result (TTS disabled) is cached too so disabled
+# rooms are not re-queried on every segment.
+_config_cache: dict[int, tuple[float, dict | None]] = {}
+_CONFIG_TTL_SECONDS = 300.0
+
+
+def invalidate_room_config(room_id: int) -> None:
+    """Drop a room's cached TTS config so the next segment reloads it.
+
+    Call after a room's TTS settings or API keys are edited so changes take
+    effect immediately instead of waiting for the TTL to expire.
+    """
+    _config_cache.pop(room_id, None)
+
+
+def remove_room_pipeline(room_id: int) -> None:
+    """Pop a room's Supertonic pipeline and schedule its consumer shutdown.
+
+    Called when a room that previously used Supertonic no longer has TTS enabled
+    (or was deleted), so its idle consumer task and queue are released instead
+    of leaking for the lifetime of the process. A no-op if the room has no
+    pipeline.
+    """
+    pipeline = _room_pipelines.pop(room_id, None)
+    if pipeline is None:
+        return
+    task = asyncio.create_task(pipeline.shutdown())
+    _pipeline_shutdowns.add(task)
+    task.add_done_callback(_pipeline_shutdowns.discard)
+
+
+def enqueue_tts(room_id: int, text: str) -> None:
+    """Queue a finalized segment for TTS synthesis.
+
+    Must be called from a running event loop. The room's configured TTS provider
+    decides the delivery strategy: Deepgram streams concurrently, Supertonic is
+    serialized per room to preserve order.
+    """
+    text = (text or "").strip()
+    if not text:
+        return
+    task = asyncio.create_task(_route(room_id, text))
+    _inflight.add(task)
+
+    def _done(t: asyncio.Task) -> None:
+        _inflight.discard(t)
+        try:
+            t.result()
+        except Exception:
+            logger.exception("[TTS] enqueue_tts task failed (room_id=%s)", room_id)
+
+    task.add_done_callback(_done)
+
+
+async def _route(room_id: int, text: str) -> None:
+    """Load the room config once and dispatch to the right provider strategy."""
+    from portal.websockets.manager import tts_manager
+
+    worker = TTSWorker(tts_manager.broadcast_audio)
+    cfg = await worker._load_config_cached(room_id)
+    if not cfg:
+        # Room is disabled or gone — release any stale Supertonic pipeline.
+        remove_room_pipeline(room_id)
+        return
+
+    if cfg["tts_provider_name"] == TTSProviderEnum.SUPERTONIC.value:
+        pipeline = _room_pipelines.get(room_id)
+        if pipeline is None:
+            pipeline = _RoomTTSPipeline(room_id)
+            _room_pipelines[room_id] = pipeline
+        pipeline.submit(cfg, text)
+    else:
+        # Deepgram (and any other streaming provider): stream live, concurrently.
+        await worker._stream_live(cfg, text)
+
+
+class _RoomTTSPipeline:
+    """Eager-translate, ordered-synthesize pipeline for one Supertonic room."""
+
+    def __init__(self, room_id: int):
+        from portal.websockets.manager import tts_manager
+
+        self.room_id = room_id
+        self.worker = TTSWorker(tts_manager.broadcast_audio)
+        self.queue: "asyncio.Queue[tuple[dict, asyncio.Task]]" = asyncio.Queue()
+        # Strong reference prevents the consumer task from being garbage collected.
+        self._consumer = asyncio.create_task(self._consume())
+
+    def submit(self, cfg: dict, text: str) -> None:
+        # Translate eagerly so LLM latency overlaps across segments; synthesis is
+        # still drained in arrival order by the consumer below.
+        prep = asyncio.create_task(self.worker._translate_all(cfg, text))
+        self.queue.put_nowait((cfg, prep))
+
+    async def _consume(self) -> None:
+        while True:
+            cfg, prep = await self.queue.get()
+            try:
+                items = await prep
+                if items:
+                    await self.worker._synthesize_buffered(cfg, items)
+            except Exception:
+                logger.exception("[TTS] Pipeline error for room %s", self.room_id)
+            finally:
+                self.queue.task_done()
+
+    async def shutdown(self) -> None:
+        """Cancel the consumer task and wait for it to unwind."""
+        self._consumer.cancel()
+        try:
+            await self._consumer
+        except asyncio.CancelledError:
+            pass
 
 
 class TTSWorker:
     """
-    Handles streaming translations and piping them to Deepgram TTS,
-    then broadcasting the audio chunks to connected WebSocket clients.
+    Handles streaming translations and piping them to a TTS provider
+    (Deepgram Aura or self-hosted Supertonic), then broadcasting the audio
+    chunks to connected WebSocket clients.
     """
 
     def __init__(self, broadcast_audio_callback):
@@ -29,7 +171,33 @@ class TTSWorker:
         self.broadcast_audio_callback = broadcast_audio_callback
 
     async def handle_tts(self, room_id: int, text: str):
-        """Called when a finalized STT segment is saved (Floor only for now)."""
+        """Synthesize and broadcast TTS for one finalized segment (Floor only).
+
+        Deepgram streams the live LLM translation straight to its Speak API;
+        Supertonic translates fully, then synthesizes each sentence in order.
+        """
+        cfg = await self._load_config_cached(room_id)
+        if not cfg:
+            return
+        if cfg["tts_provider_name"] == TTSProviderEnum.SUPERTONIC.value:
+            items = await self._translate_all(cfg, text)
+            if items:
+                await self._synthesize_buffered(cfg, items)
+        else:
+            await self._stream_live(cfg, text)
+
+    async def _load_config_cached(self, room_id: int) -> dict | None:
+        """Return the room's TTS config from cache, loading it on a miss or expiry."""
+        now = time.monotonic()
+        entry = _config_cache.get(room_id)
+        if entry is not None and entry[0] > now:
+            return entry[1]
+        cfg = await self._load_config(room_id)
+        _config_cache[room_id] = (now + _CONFIG_TTL_SECONDS, cfg)
+        return cfg
+
+    async def _load_config(self, room_id: int) -> dict | None:
+        """Load room/event TTS config and build the provider, or None if disabled."""
         from sqlalchemy import select
         from sqlalchemy.orm import selectinload
 
@@ -38,136 +206,126 @@ class TTSWorker:
                 select(Room).options(selectinload(Room.translation_languages)).where(Room.id == room_id)
             )
             if not room or not room.floor_tts_enabled or not room.floor_translation_enabled:
-                return
+                return None
 
             event = await session.scalar(select(Event).where(Event.id == room.event_id))
             if not event:
-                return
+                return None
 
             provider = room.floor_translation_provider
             model = room.floor_translation_model
-            enabled_langs = [lang for lang in room.translation_languages if lang.enabled]
+            langs = [(lang.language_code, lang.language_name) for lang in room.translation_languages if lang.enabled]
 
-            if not provider or not model or not enabled_langs:
-                return
+            if not provider or not model or not langs:
+                return None
 
             llm_api_key = self._get_translation_api_key(event, provider)
             if not llm_api_key and provider != TranslationProviderEnum.LOCAL.value:
-                logger.error(f"[TTS] Translation API key not found for provider {provider}")
-                return
+                logger.error("[TTS] Translation API key not found for provider %s", provider)
+                return None
 
-            dg_api_key = decrypt_val(event.encrypted_deepgram_api_key) if event.encrypted_deepgram_api_key else None
-            if not dg_api_key:
-                logger.error(f"[TTS] Deepgram API key not found for Event {event.id}")
-                return
+            tts_provider_name = room.floor_tts_provider or TTSProviderEnum.DEEPGRAM.value
+            tts_voice = room.floor_tts_voice or ""
 
-            # Execute TTS generation for all target languages concurrently
-            tasks = [
-                self._stream_llm_to_tts(
-                    room_id=room.id,
-                    provider=provider,
-                    model=model,
-                    llm_api_key=llm_api_key,
-                    dg_api_key=dg_api_key,
-                    lang_code=lang.language_code,
-                    lang_name=lang.language_name,
-                    text=text,
+            dg_api_key = None
+            if tts_provider_name == TTSProviderEnum.DEEPGRAM.value:
+                dg_api_key = decrypt_val(event.encrypted_deepgram_api_key) if event.encrypted_deepgram_api_key else None
+                if not dg_api_key:
+                    logger.error("[TTS] Deepgram API key not found for Event %s", event.id)
+                    return None
+
+            try:
+                tts_provider = get_tts_provider(tts_provider_name, deepgram_api_key=dg_api_key)
+            except Exception as e:
+                logger.error(f"[TTS] Failed to initialise TTS provider '{tts_provider_name}': {e}")
+                return None
+
+        return {
+            "room_id": room_id,
+            "provider": provider,
+            "model": model,
+            "llm_api_key": llm_api_key,
+            "langs": langs,
+            "tts_provider": tts_provider,
+            "tts_provider_name": tts_provider_name,
+            "voice": tts_voice,
+        }
+
+    async def _stream_live(self, cfg: dict, text: str) -> None:
+        """Stream the live LLM translation straight into the TTS provider.
+
+        Used for Deepgram so audio starts as soon as the first sentence is
+        translated. Languages run concurrently; segments are not serialized.
+        """
+        room_id = cfg["room_id"]
+        tts_provider = cfg["tts_provider"]
+        voice = cfg["voice"]
+
+        async def _one(lang_code: str, lang_name: str) -> None:
+            async def on_audio(audio_bytes: bytes, lc=lang_code) -> None:
+                await self.broadcast_audio_callback(room_id, lc, audio_bytes)
+
+            try:
+                await tts_provider.synthesize_stream(
+                    text_chunks=self._stream_llm(cfg["provider"], cfg["model"], cfg["llm_api_key"], text, lang_name),
+                    language_code=lang_code,
+                    voice=voice,
+                    on_audio=on_audio,
                 )
-                for lang in enabled_langs
-            ]
-            await asyncio.gather(*tasks)
+            except Exception:
+                logger.error("TTS stream failed for room (details omitted for security analyzer)")
+
+        await asyncio.gather(*[_one(code, name) for code, name in cfg["langs"]])
+
+    async def _translate_all(self, cfg: dict, text: str) -> list[tuple[str, str]]:
+        """Translate the segment into every enabled language, in parallel."""
+
+        async def _tr(lang_code: str, lang_name: str) -> tuple[str, str]:
+            return lang_code, await self._translate_full(
+                cfg["provider"], cfg["model"], cfg["llm_api_key"], text, lang_name
+            )
+
+        results = await asyncio.gather(*[_tr(code, name) for code, name in cfg["langs"]])
+        return [(code, translated) for code, translated in results if translated]
+
+    async def _synthesize_buffered(self, cfg: dict, items: list[tuple[str, str]]) -> None:
+        """Synthesize already-translated text per language (used for Supertonic)."""
+        room_id = cfg["room_id"]
+        tts_provider = cfg["tts_provider"]
+        voice = cfg["voice"]
+
+        async def _one(lang_code: str, translated: str) -> None:
+            async def _chunks(payload=translated):
+                yield payload
+
+            async def on_audio(audio_bytes: bytes, lc=lang_code) -> None:
+                await self.broadcast_audio_callback(room_id, lc, audio_bytes)
+
+            try:
+                await tts_provider.synthesize_stream(
+                    text_chunks=_chunks(),
+                    language_code=lang_code,
+                    voice=voice,
+                    on_audio=on_audio,
+                )
+            except Exception:
+                logger.error("TTS synthesis failed for room (details omitted for security analyzer)")
+
+        await asyncio.gather(*[_one(code, translated) for code, translated in items])
 
     def _get_translation_api_key(self, event: Event, provider: str) -> str | None:
-        key_map = {
-            TranslationProviderEnum.OPENAI.value: event.encrypted_translation_openai_api_key,
-            TranslationProviderEnum.OPENROUTER.value: event.encrypted_openrouter_api_key,
-            TranslationProviderEnum.GEMINI.value: event.encrypted_gemini_api_key,
-            TranslationProviderEnum.ANTHROPIC.value: event.encrypted_anthropic_api_key,
-            TranslationProviderEnum.GROQ.value: event.encrypted_groq_api_key,
-        }
-        encrypted = key_map.get(provider)
-        return decrypt_val(encrypted) if encrypted else None
+        return get_translation_api_key(event, provider)
 
-    async def _stream_llm_to_tts(
-        self,
-        room_id: int,
-        provider: str,
-        model: str,
-        llm_api_key: str,
-        dg_api_key: str,
-        lang_code: str,
-        lang_name: str,
-        text: str,
-    ):
-        dg_voice = get_deepgram_voice_for_language(lang_code)
-        # Using linear16 at 24000Hz. Can be adjusted based on requirements.
-        dg_url = f"wss://api.deepgram.com/v1/speak?model={dg_voice}&encoding=linear16&sample_rate=24000&container=none"
-
+    async def _translate_full(self, provider: str, model: str, api_key: str, text: str, lang_name: str) -> str:
+        """Collect the streaming LLM translation into a single string."""
+        parts: list[str] = []
         try:
-            # We connect to Deepgram WS first
-            async with websockets.connect(
-                dg_url, additional_headers={"Authorization": f"Token {dg_api_key}"}
-            ) as dg_socket:
-                # Start a background task to receive audio chunks and broadcast them
-                async def receive_audio():
-                    try:
-                        async for message in dg_socket:
-                            if isinstance(message, bytes):
-                                await self.broadcast_audio_callback(room_id, lang_code, message)
-                            elif isinstance(message, str):
-                                try:
-                                    msg_json = json.loads(message)
-                                    if msg_json.get("type") == "Error":
-                                        logger.error(f"[TTS] Deepgram Error: {msg_json}")
-                                except json.JSONDecodeError:
-                                    pass
-                    except websockets.exceptions.ConnectionClosed:
-                        pass
-                    except Exception as e:
-                        logger.error(f"[TTS] Receive error: {e}")
-
-                receive_task = asyncio.create_task(receive_audio())
-
-                # Now stream from LLM and send Speak requests
-                buffer = ""
-                async for chunk in self._stream_llm(provider, model, llm_api_key, text, lang_name):
-                    buffer += chunk
-
-                    # Send complete sentences to Deepgram
-                    while True:
-                        match = SENTENCE_BOUNDARY.search(buffer)
-                        if not match:
-                            break
-
-                        sentence = match.group(1).strip()
-                        split_idx = match.end()
-
-                        if sentence:
-                            await dg_socket.send(json.dumps({"type": "Speak", "text": sentence}))
-
-                        buffer = buffer[split_idx:].lstrip()
-
-                # Send any remaining text
-                remaining = buffer.strip()
-                if remaining:
-                    await dg_socket.send(json.dumps({"type": "Speak", "text": remaining}))
-
-                # Flush to tell Deepgram we are done generating for this segment
-                await dg_socket.send(json.dumps({"type": "Flush"}))
-
-                # Wait a short moment for remaining audio to arrive, then close
-                # Deepgram sends a 'Flushed' metadata message when done.
-                # The receive_audio task will handle that, but we'll just wait a couple seconds to be safe.
-                # Actually, the proper way is to wait for the 'Flushed' event.
-                # But to keep it simple, we await the receive_task to finish naturally if WS closes,
-                # or timeout after a few seconds.
-                try:
-                    await asyncio.wait_for(receive_task, timeout=5.0)
-                except asyncio.TimeoutError:
-                    pass
-
+            async for chunk in self._stream_llm(provider, model, api_key, text, lang_name):
+                parts.append(chunk)
         except Exception as e:
-            logger.error(f"[TTS] Error in TTS stream for room {room_id} lang {lang_code}: {e}")
+            logger.error(f"[TTS] Translation failed for {lang_name}: {e}")
+            return ""
+        return "".join(parts).strip()
 
     async def _stream_llm(self, provider: str, model: str, api_key: str, text: str, target_lang_name: str):
         """Yields text chunks as they arrive from the LLM."""
@@ -189,11 +347,7 @@ class TTSWorker:
                 yield full_text
             return
 
-        endpoint = "https://api.openai.com/v1/chat/completions"
-        if provider == TranslationProviderEnum.OPENROUTER.value:
-            endpoint = "https://openrouter.ai/api/v1/chat/completions"
-        elif provider == TranslationProviderEnum.GROQ.value:
-            endpoint = "https://api.groq.com/openai/v1/chat/completions"
+        endpoint = OPENAI_COMPATIBLE_ENDPOINTS[provider]
 
         async with httpx.AsyncClient(timeout=10.0) as client:
             async with client.stream(
