@@ -16,6 +16,7 @@ from portal.config import settings
 from portal.routers.admin import router as admin_router
 from portal.routers.api import router as api_router
 from portal.routers.auth import router as auth_router
+from portal.routers.demo import router as demo_router
 from portal.routers.interpreter import router as interpreter_router
 from portal.routers.listener import router as listener_router
 from portal.routers.public import router as public_router
@@ -33,8 +34,28 @@ async def lifespan(app: FastAPI):
     import httpx
 
     import portal.transcription as ts
+    from portal.tts import demo_gen as dg
+    from portal.tts.demo_gen import ensure_demo_generated
+
+    settings.validate_production_secrets()
 
     ts.shared_http_client = httpx.AsyncClient(timeout=10.0)
+
+    # Generate landing page demo audio in the background on first startup.
+    # Uses local Supertonic — no external API key needed.
+    async with dg._generation_lock:
+        dg._generating = True
+
+    async def _gen():
+        try:
+            await ensure_demo_generated()
+        finally:
+            dg._generating = False
+
+    import asyncio
+
+    dg.track_task(asyncio.create_task(_gen()))
+
     yield
     if ts.shared_http_client:
         await ts.shared_http_client.aclose()
@@ -63,6 +84,10 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         if exc.status_code == 404:
             return templates.TemplateResponse(
                 request, "404.html", {"request": request, "detail": exc.detail}, status_code=404
+            )
+        if exc.status_code == 429:
+            return templates.TemplateResponse(
+                request, "429.html", {"request": request, "detail": exc.detail}, status_code=429
             )
         if exc.status_code >= 500:
             return templates.TemplateResponse(
@@ -96,6 +121,8 @@ app.include_router(listener_router)
 app.include_router(api_router)
 
 app.include_router(admin_router)
+
+app.include_router(demo_router)
 
 app.include_router(ws_router)
 

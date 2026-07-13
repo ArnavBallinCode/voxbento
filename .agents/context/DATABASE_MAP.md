@@ -68,6 +68,8 @@ Cascade: deletes rooms + booths when event is deleted.
 | `floor_translation_model` | String(100) nullable | — |
 | `floor_source_language_code` | String(20) | Default `'en'` |
 | `floor_tts_enabled` | Boolean | Default False; controls whether TTS is generated for floor audio translations |
+| `floor_tts_provider` | String(20) | Default `'deepgram'`; TTS engine — `'deepgram'` (cloud) or `'supertonic'` (self-hosted ONNX) |
+| `floor_tts_voice` | String(50) | Default `'M1'`; Supertonic preset voice (M1–M5, F1–F5) |
 | `audio_delay_ms` | Integer | Default 0; optional listener-side WHEP playback delay for all sources in the room |
 | `created_at` | DateTime(tz) | UTC |
 
@@ -229,6 +231,7 @@ Tracks which languages the translation worker should generate for a given room o
 | 014 | `014_rbac_refactor.py` | `room_memberships` table, `events.listener_join_code` |
 | 015 | `015_add_floor_tts_enabled.py` | `rooms.floor_tts_enabled` |
 | 016 | `016_add_room_audio_delay.py` | `rooms.audio_delay_ms` |
+| 017 | `017_add_tts_provider_fields.py` | `rooms.floor_tts_provider`, `rooms.floor_tts_voice` |
 
 Run migrations: `uv run alembic upgrade head`
 
