@@ -16,30 +16,18 @@ conditions, run every verification command, and update your row when done.
 | [002](002-pagination-list-queries.md) | Add pagination to unbounded list query helpers | P1 | S | — | DONE |
 | [003](003-ruff-linter.md) | Add ruff linter and pre-commit hook | P1 | S | — | DONE |
 | [004](004-js-instructions-applyto.md) | Fix `js.instructions.md` applyTo glob | P1 | S | — | DONE |
-| [005](005-secret-key-startup-guard.md) | Add startup guard for weak default `secret_key` | P1 | S | — | DONE |
-| [006](006-env-example-drift.md) | Fix `.env.example` drift (dead var, missing vars, latent AttributeError) | P1 | S | — | DONE |
+| [005](005-secret-key-startup-guard.md) | Add startup guard for weak default `secret_key` | P1 | S | — | TODO |
+| [006](006-env-example-drift.md) | Fix `.env.example` drift (dead var, missing vars, latent AttributeError) | P1 | S | — | TODO |
 | [007](007-transcription-characterization-tests.md) | Add characterization tests for transcription providers and caption aggregator | P1 | M | — | DONE |
 | [008](008-admin-access-control-dedup.md) | Extract duplicated admin access-control logic into a shared helper | P2 | M | 007 | DONE |
 | [009](009-n1-booth-queries.md) | Fix N+1 queries in admin and home page route handlers | P2 | M | 007 | DONE |
-| [010](010-tts-config-cache.md) | Cache per-room TTS config to stop per-segment DB+decrypt | P2 | M | — | DONE |
-| [011](011-tts-pipeline-cleanup.md) | Stop leaking `_RoomTTSPipeline` consumer tasks | P2 | M | — | DONE |
-| [012](012-demo-generation-race.md) | Serialize demo regen + track background tasks | P3 | S | — | DONE |
-| [013](013-dedupe-translation-key.md) | De-duplicate translation API-key + LLM call helpers | P2 | S | — | DONE |
-| [014](014-route-tests.md) | Add route tests for `demo.py` and `listener.py` | P2 | M | 012 | TODO |
-| [015](015-debug-default-false.md) | Default `debug` False; gate SQL echo in prod | P2 | S | 005 | DONE |
-| [016](016-listener-rate-limit.md) | Rate-limit listener join-code validation | P3 | M | — | DONE |
 
 Status values: `TODO` | `IN PROGRESS` | `DONE` | `BLOCKED` (one-line reason) | `REJECTED` (one-line rationale)
-
-New plans 010–016 added 2026-06-29 against commit `b4a92d7` (deep audit of the `supertonictts` branch's TTS/demo subsystem). Published as issues #212–#218.
 
 ---
 
 ## Dependency notes
 
-- **014 after 012**: demo/listener route tests are cleaner once 012's lock + manifest status contract land (concurrent-regenerate test).
-- **015 with 005**: both touch `portal/config.py`; land sequentially to avoid conflicts.
-- **010–013, 016 independent**: new TTS/demo subsystem fixes, parallelizable.
 - **007 before 008 and 009**: plans 008 and 009 refactor `fastapi_app.py`
   route handlers and `portal/database.py`. The characterization tests in 007
   provide a safety net so regressions in the transcription pipeline are caught

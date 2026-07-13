@@ -1,10 +1,10 @@
 import asyncio
 import logging
 
+from portal.crypto import decrypt_val
 from portal.database import get_session
 from portal.models import DBBooth, Event, Room, TranscriptTranslation
-from portal.translations.constants import OPENAI_COMPATIBLE_ENDPOINTS, TranslationProviderEnum
-from portal.translations.keys import get_translation_api_key
+from portal.translations.constants import TranslationProviderEnum
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,15 @@ class TranslationWorker:
             await asyncio.gather(*tasks)
 
     def _get_translation_api_key(self, event: Event, provider: str) -> str | None:
-        return get_translation_api_key(event, provider)
+        key_map = {
+            TranslationProviderEnum.OPENAI.value: event.encrypted_translation_openai_api_key,
+            TranslationProviderEnum.OPENROUTER.value: event.encrypted_openrouter_api_key,
+            TranslationProviderEnum.GEMINI.value: event.encrypted_gemini_api_key,
+            TranslationProviderEnum.ANTHROPIC.value: event.encrypted_anthropic_api_key,
+            TranslationProviderEnum.GROQ.value: event.encrypted_groq_api_key,
+        }
+        encrypted = key_map.get(provider)
+        return decrypt_val(encrypted) if encrypted else None
 
     async def _translate_and_broadcast(
         self,
@@ -132,9 +140,33 @@ class TranslationWorker:
 
         timeout = httpx.Timeout(10.0)
         async with httpx.AsyncClient(timeout=timeout) as client:
-            if provider in OPENAI_COMPATIBLE_ENDPOINTS:
+            if provider == TranslationProviderEnum.OPENAI.value:
                 res = await client.post(
-                    OPENAI_COMPATIBLE_ENDPOINTS[provider],
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json={
+                        "model": model,
+                        "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": text}],
+                    },
+                )
+                res.raise_for_status()
+                return res.json()["choices"][0]["message"]["content"].strip()
+
+            elif provider == TranslationProviderEnum.OPENROUTER.value:
+                res = await client.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json={
+                        "model": model,
+                        "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": text}],
+                    },
+                )
+                res.raise_for_status()
+                return res.json()["choices"][0]["message"]["content"].strip()
+
+            elif provider == TranslationProviderEnum.GROQ.value:
+                res = await client.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
                     headers={"Authorization": f"Bearer {api_key}"},
                     json={
                         "model": model,
@@ -146,8 +178,7 @@ class TranslationWorker:
 
             elif provider == TranslationProviderEnum.GEMINI.value:
                 res = await client.post(
-                    f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-                    headers={"x-goog-api-key": api_key},
+                    f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}",
                     json={
                         "systemInstruction": {"parts": [{"text": system_prompt}]},
                         "contents": [{"parts": [{"text": text}]}],
