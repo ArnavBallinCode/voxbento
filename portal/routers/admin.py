@@ -28,6 +28,7 @@ from portal.booth_identity import make_booth_id, make_mediamtx_path, validate_la
 from portal.config import settings
 from portal.crypto import encrypt_val
 from portal.database import (
+    count_booths_for_rooms,
     count_events,
     count_users,
     create_auth_token,
@@ -426,10 +427,12 @@ async def admin_room_list(request: Request, event_id: int):
         if event is None:
             raise HTTPException(status_code=404, detail="Event not found.")
         rooms = await list_rooms_for_event(session, event_id)
+        room_ids = [room.id for room in rooms]
+        booth_counts = await count_booths_for_rooms(session, room_ids)
+
         room_data = []
         for room in rooms:
-            room_booths = await list_booths_for_room(session, room.id)
-            room_data.append({"room": room, "booth_count": len(room_booths)})
+            room_data.append({"room": room, "booth_count": booth_counts.get(room.id, 0)})
     return templates.TemplateResponse(request, "admin/room_list.html", {"event": event, "room_data": room_data})
 
 
