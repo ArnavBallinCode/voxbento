@@ -10,13 +10,13 @@ These endpoints let you programmatically create booths and list all active booth
 
 Use this endpoint to create an interpretation booth for an event. Voxbento registers the booth in its live state registry so listeners can connect immediately.
 
-```text
+```
 POST /api/events/{event_slug}/booths
 ```
 
 ### Authentication
 
-A Bearer token is required. See the [Authentication guide](/api/authentication) for details on obtaining a token.
+A Bearer token is required. See the [Authentication guide](../authentication.mdx) for details on obtaining a token.
 
 ### Path Parameters
 
@@ -75,7 +75,7 @@ A successful creation returns HTTP `201 Created` with the booth state object, in
 
 Use this endpoint to retrieve all active booths currently registered for an event. The response includes both WHIP and WHEP URLs for each booth.
 
-```text
+```
 GET /api/events/{event_slug}/booths
 ```
 
@@ -138,7 +138,7 @@ curl https://voxbento.com/api/events/pycon2026/booths \
 
 **`event_slug`** *(string)* — The event slug echoed from the request path.
 
-**`booths`** *(array)* — An array of booth state objects. Each object has the same shape as the response from [GET booth state](/api/booths/state).
+**`booths`** *(array)* — An array of booth state objects. Each object has the same shape as the response from [GET booth state](./state.mdx).
 
   <details>
 <summary>Booth object fields</summary>
