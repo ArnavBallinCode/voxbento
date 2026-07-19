@@ -21,6 +21,7 @@ const sidebars: SidebarsConfig = {
           type: 'category',
           label: 'Admin Guide',
           items: [
+            'admin/dashboard-guide',
             'admin/events-and-rooms',
             'admin/booths',
             'admin/members-and-roles',
@@ -32,6 +33,7 @@ const sidebars: SidebarsConfig = {
           type: 'category',
           label: 'Interpreter Guide',
           items: [
+            'interpreter/interface-guide',
             'interpreter/joining-a-booth',
             'interpreter/going-live',
             'interpreter/handoff',
@@ -66,7 +68,7 @@ const sidebars: SidebarsConfig = {
         {
           type: 'category',
           label: 'Overview',
-          items: ['api/overview', 'api/authentication'],
+          items: ['api/overview', 'api/authentication', 'api/playback-resilience'],
         },
         {
           type: 'category',
@@ -76,7 +78,7 @@ const sidebars: SidebarsConfig = {
         {
           type: 'category',
           label: 'Real-Time',
-          items: ['api/websocket/booth', 'api/websocket/captions'],
+          items: ['api/websocket/booth', 'api/websocket/captions', 'api/websocket/coordination'],
         },
       ],
     },
