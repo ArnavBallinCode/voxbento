@@ -19,7 +19,7 @@ Here is how audio travels from the speaker on stage to a listener's headphones, 
 The presenter or speaker joins a self-hosted Jitsi Meet session. This session carries the event's floor audio — the source language that interpreters listen to and translate.
 
     Voxbento embeds the relevant Jitsi session as an iframe directly inside each interpreter's booth page. The interpreter monitors floor audio and video from within the same browser tab where they will broadcast their translation, which keeps the workflow contained and the latency low.
-  ### Interpreter audio: mic capture and WebRTC publish
+### Interpreter audio: mic capture and WebRTC publish
 
 When the interpreter clicks **Go Live**, the browser calls `navigator.mediaDevices.getUserMedia` to capture microphone input. Before the audio leaves the browser, the browser's built-in DSP stack applies:
 
@@ -32,7 +32,7 @@ When the interpreter clicks **Go Live**, the browser calls `navigator.mediaDevic
     :::info
 The audio path goes directly from your browser to MediaMTX and then to listeners — Voxbento's coordination portal is only involved in booth state, role checks, and captions, and never relays interpreter microphone data.
 :::
-  ### MediaMTX: ingest and remux
+### MediaMTX: ingest and remux
 
 MediaMTX terminates the WebRTC connection from the interpreter's browser, decodes the audio, and makes it available on a named path that corresponds to the booth's identity:
 
@@ -51,7 +51,7 @@ MediaMTX terminates the WebRTC connection from the interpreter's browser, decode
     ```
 
     MediaMTX holds these paths open even when no interpreter is currently publishing, so listener connections are never dropped between handoffs.
-  ### Listener delivery: WHEP (primary) and HLS (fallback)
+### Listener delivery: WHEP (primary) and HLS (fallback)
 
 Listeners connect to the WHEP endpoint for their chosen language. WHEP (WebRTC HTTP Egress Protocol) is the mirror of WHIP — it negotiates a WebRTC session from the server side and streams audio to the listener's browser with sub-second latency.
 
@@ -122,12 +122,12 @@ Voxbento has three participant roles that are active during a live event:
 Manages the booth. Assigns which interpreter is active, initiates handoffs, and monitors participant state. Room coordinators can see the full participant roster and internal booth chat. They cannot publish audio themselves.
   
 
-  ### Interpreter
+### Interpreter
 
     Monitors floor audio via the Jitsi iframe and publishes translated audio to MediaMTX via WHIP when they are the active interpreter. Only the active interpreter can go live — all others are held in standby.
   
 
-  ### Listener
+### Listener
 
     Receives the interpreted audio stream from MediaMTX via WHEP or HLS. Listeners connect to the event's public listener page and choose a language — no login required by default.
   
