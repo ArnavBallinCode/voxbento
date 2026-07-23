@@ -12,19 +12,19 @@ Before deploying, confirm that your server meets the following requirements:
 
 ### Docker & Docker Compose
 
-    Install the latest stable versions of Docker Engine and the Docker Compose plugin. Voxbento uses Compose v2 syntax (`docker compose`, not `docker-compose`).
+Install the latest stable versions of Docker Engine and the Docker Compose plugin. Voxbento uses Compose v2 syntax (`docker compose`, not `docker-compose`).
   
-  ### Public IP or Domain
+### Public IP or Domain
 
-    WebRTC requires that media endpoints be reachable from attendee browsers. Your server needs a public IP address, and optionally a domain name for TLS.
+WebRTC requires that media endpoints be reachable from attendee browsers. Your server needs a public IP address, and optionally a domain name for TLS.
   
-  ### Open Ports
+### Open Ports
 
-    Ensure the following ports are open in your firewall and any cloud security groups before starting services.
+Ensure the following ports are open in your firewall and any cloud security groups before starting services.
   
-  ### Server Resources
+### Server Resources
 
-    Recommended minimum: 2 vCPUs, 4 GB RAM. Jitsi and MediaMTX together are the most resource-intensive components.
+Recommended minimum: 2 vCPUs, 4 GB RAM. Jitsi and MediaMTX together are the most resource-intensive components.
   
 
 ### Required Open Ports
@@ -43,74 +43,74 @@ Before deploying, confirm that your server meets the following requirements:
 
 Download the Voxbento source code and enter the project directory:
 
-    ```bash
-    git clone https://github.com/fossasia/voxbento.git
-    cd voxbento
-    ```
+```bash
+git clone https://github.com/fossasia/voxbento.git
+cd voxbento
+```
 
-  ### Create your environment file
+### Create your environment file
 
 Copy the example environment file to create your local configuration:
 
-    ```bash
-    cp .env.example .env
-    ```
+```bash
+cp .env.example .env
+```
 
-  ### Set required environment variables
+### Set required environment variables
 
 Open `.env` in a text editor and configure at minimum the following four variables before starting any service:
 
-    ```bash
-    # Strong password for /admin/login
-    ADMIN_PASSWORD=your-strong-admin-password
+```bash
+# Strong password for /admin/login
+ADMIN_PASSWORD=your-strong-admin-password
 
-    # JWT signing key — generate with: openssl rand -hex 32
-    SECRET_KEY=your-64-char-random-string
+# JWT signing key — generate with: openssl rand -hex 32
+SECRET_KEY=your-64-char-random-string
 
-    # API key encryption — generate with: openssl rand -hex 32
-    API_KEY_ENCRYPTION_KEY=your-32-char-minimum-key
+# API key encryption — generate with: openssl rand -hex 32
+API_KEY_ENCRYPTION_KEY=your-32-char-minimum-key
 
-    # Your server's public IP — required for WebRTC ICE
-    # Linux:  hostname -I | awk '{print $1}'
-    # macOS:  ipconfig getifaddr en0
-    DOCKER_HOST_ADDRESS=203.0.113.10
-    ```
+# Your server's public IP — required for WebRTC ICE
+# Linux:  hostname -I | awk '{print $1}'
+# macOS:  ipconfig getifaddr en0
+DOCKER_HOST_ADDRESS=203.0.113.10
+```
 
-    Without `DOCKER_HOST_ADDRESS`, WebRTC ICE candidates will not be reachable from attendee browsers outside the local machine.
+Without `DOCKER_HOST_ADDRESS`, WebRTC ICE candidates will not be reachable from attendee browsers outside the local machine.
 
-  ### Start all services
+### Start all services
 
 Build images and start the full stack in the foreground:
 
-    ```bash
-    docker compose up --build
-    ```
+```bash
+docker compose up --build
+```
 
-    To run in the background (detached mode), add the `-d` flag:
+To run in the background (detached mode), add the `-d` flag:
 
-    ```bash
-    docker compose up --build -d
-    ```
+```bash
+docker compose up --build -d
+```
 
-  ### Verify the portal is running
+### Verify the portal is running
 
 Open your browser and navigate to your server's address on port 8000:
 
-    ```
-    http://your-server-ip:8000
-    ```
+```
+http://your-server-ip:8000
+```
 
-    You should see the Voxbento home page. All three services are running when this page loads.
+You should see the Voxbento home page. All three services are running when this page loads.
 
-  ### Access the admin panel
+### Access the admin panel
 
 Log in to the admin panel to create events, rooms, and booths:
 
-    ```
-    http://your-server-ip:8000/admin/login
-    ```
+```
+http://your-server-ip:8000/admin/login
+```
 
-    Enter the `ADMIN_PASSWORD` you set in `.env`.
+Enter the `ADMIN_PASSWORD` you set in `.env`.
 
 ## Health Check
 
@@ -164,11 +164,11 @@ WebRTC **requires HTTPS** in production browsers — Chrome and Firefox will not
 
   ```caddy
   your-domain.com {
-      reverse_proxy localhost:8000
+  reverse_proxy localhost:8000
   }
 
   jitsi.your-domain.com {
-      reverse_proxy localhost:8080
+  reverse_proxy localhost:8080
   }
   ```
 

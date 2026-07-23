@@ -37,16 +37,16 @@ Only a **`super_admin`** can create or delete top-level events. If you are an **
 ### Open the Events list
 
 From the dashboard, click **Events** in the admin navigation, or go directly to `/admin/events/`.
-  ### Fill in the event details
+### Fill in the event details
 
 Enter a **slug** and a **display name** in the creation form.
 
-    - **Slug** — URL-safe identifier: lowercase alphanumeric characters and hyphens only, maximum 64 characters. For example: `pycon2026`, `summit-2026`, `open-source-day`. Choose it carefully — the slug appears in every booth URL and invite link you share.
-    - **Display name** — the human-readable label shown on the home page and in the dashboard.
-  ### Submit
+- **Slug** — URL-safe identifier: lowercase alphanumeric characters and hyphens only, maximum 64 characters. For example: `pycon2026`, `summit-2026`, `open-source-day`. Choose it carefully — the slug appears in every booth URL and invite link you share.
+- **Display name** — the human-readable label shown on the home page and in the dashboard.
+### Submit
 
 Click **Create Event**. You are redirected to the new event's detail page.
-  ### Add rooms
+### Add rooms
 
 From the event detail page, proceed to create rooms as described in the next section.
 
@@ -65,13 +65,13 @@ Rooms represent physical or logical spaces within your event — typically one r
 ### Open the event
 
 Navigate to `/admin/events/` and click the event you want to add a room to.
-  ### Go to Rooms
+### Go to Rooms
 
 Click **Rooms** on the event detail page, or navigate to `/admin/events/{event_id}/rooms/`.
-  ### Enter the room name
+### Enter the room name
 
 Type the room name into the **Add Room** form — for example, `Main Stage` or `Track B`.
-  ### Submit
+### Submit
 
 Click **Add Room**. Voxbento automatically generates a Jitsi Meet URL for the room based on your configured `JITSI_DOMAIN`.
 
@@ -82,10 +82,10 @@ After creation you can update a room's Jitsi URL or set its relay booth ID. This
 ### Open the room
 
 From the event detail page, click the room you want to edit.
-  ### Edit room settings
+### Edit room settings
 
 On the room detail page, update the **Jitsi URL** field to a custom meeting link, or set the **Relay Booth ID** to specify which booth should act as the relay source.
-  ### Save
+### Save
 
 Click **Save** on the room detail page to apply your changes.
 

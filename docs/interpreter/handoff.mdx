@@ -14,19 +14,19 @@ When a room_coordinator or active interpreter triggers a handoff, Voxbento immed
 
 ### Coordinators
 
-    Anyone with the `room_coordinator` role can set any interpreter in the roster as the active publisher at any time. This is the primary handoff mechanism during structured shifts.
+Anyone with the `room_coordinator` role can set any interpreter in the roster as the active publisher at any time. This is the primary handoff mechanism during structured shifts.
   
-  ### Active Interpreter
+### Active Interpreter
 
-    The currently active interpreter can voluntarily hand off to a backup interpreter in the roster, even without a room_coordinator present.
+The currently active interpreter can voluntarily hand off to a backup interpreter in the roster, even without a room_coordinator present.
   
-  ### Event Owners
+### Event Owners
 
-    Event admins have all room_coordinator permissions and can manage handoffs across every booth in their event.
+Event admins have all room_coordinator permissions and can manage handoffs across every booth in their event.
   
-  ### Super Admins
+### Super Admins
 
-    Super admins have global handoff rights across every event and booth in the Voxbento instance.
+Super admins have global handoff rights across every event and booth in the Voxbento instance.
   
 
 ## Steps to Hand Off (Coordinator Perspective)
@@ -36,13 +36,13 @@ As a coordinator, you initiate the handoff from the participant roster panel ins
 ### Locate the incoming interpreter in the roster
 
 Open the **Participant Roster** panel. You'll see all connected participants with their role labels. Find the backup interpreter you want to promote — they should already be joined and in an idle state.
-  ### Click Set Active
+### Click Set Active
 
 Click **Set Active** next to the interpreter's name. Voxbento immediately designates them as the active interpreter and broadcasts the updated roster to everyone in the booth.
-  ### Old stream is replaced
+### Old stream is replaced
 
 Within approximately one to two seconds, the media relay switches to the new publisher and stops forwarding the old stream. The outgoing interpreter sees their Audio Status change to **Idle**.
-  ### New interpreter begins speaking
+### New interpreter begins speaking
 
 Signal the incoming interpreter (via chat or a pre-agreed cue) to click **UNMUTE** and begin. Listeners hear the transition as a brief natural pause.
 
@@ -53,10 +53,10 @@ Smooth handoffs depend on the incoming interpreter being ready before the room_c
 ### Join the booth before your shift starts
 
 Open the booth URL and join as a participant well ahead of your scheduled slot. Stay muted — do not click **UNMUTE** yet. This ensures you're visible in the coordinator's roster.
-  ### Watch for your Go Live button to activate
+### Watch for your Go Live button to activate
 
 When the room_coordinator designates you as the active interpreter, the top-left indicator will change to **STANDBY** (or **ON AIR** if you are unmuted).
-  ### Click Go Live immediately
+### Click Go Live immediately
 
 Click **UNMUTE** as soon as you are ready. Every second of delay is a second of silence for listeners. Speak your first word within one to two seconds of clicking.
 

@@ -55,8 +55,8 @@ curl -X POST https://voxbento.com/api/auth/token \
 import httpx
 
 response = httpx.post(
-    "https://voxbento.com/api/auth/token",
-    json={"token": "your-booth-access-token"},
+"https://voxbento.com/api/auth/token",
+json={"token": "your-booth-access-token"},
 )
 token = response.json()["access_token"]
 ```
