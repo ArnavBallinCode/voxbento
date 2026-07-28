@@ -172,7 +172,7 @@ async def run_capture():
                 "-rtsp_transport", "tcp",
                 f"{mediamtx_rtsp_base}/{event_slug}/floor",
                 env=env,
-                stdout=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,
             )
 
@@ -193,6 +193,10 @@ async def run_capture():
 
             rc = ffmpeg_proc.returncode
             print(f"ffmpeg exited with code {rc}", flush=True)
+
+            if rc == 0:
+                print("ffmpeg exited cleanly", flush=True)
+                break
 
             if attempt < max_retries:
                 print(f"Retrying ffmpeg in {retry_delay}s...", flush=True)
