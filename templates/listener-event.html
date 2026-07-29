@@ -108,6 +108,7 @@
               <option value="original">Original</option>
               <option value="translated">Translated</option>
               <option value="side-by-side">Side-by-Side</option>
+              <option value="stacked">Stacked</option>
             </select>
           </div>
           <div class="flex flex-col gap-1 hidden" id="translation-lang-group">
@@ -436,11 +437,17 @@
 
   function updateCaptionLayout() {
     var mode = captionModeSelect.value;
+    var contentArea = document.getElementById('captions-content-area');
     var colOrig = document.getElementById('captions-col-original');
     var colTrans = document.getElementById('captions-col-translated');
     var transGroup = document.getElementById('translation-lang-group');
 
-    colTrans.classList.remove('captions-col-translated--solo', 'captions-col-translated--side');
+    contentArea.classList.remove('captions-content-area--stacked');
+    colTrans.classList.remove(
+      'captions-col-translated--solo',
+      'captions-col-translated--side',
+      'captions-col-translated--stacked'
+    );
 
     if (mode === 'original') {
       colOrig.classList.remove('hidden');
@@ -455,6 +462,12 @@
       colOrig.classList.remove('hidden');
       colTrans.classList.remove('hidden');
       colTrans.classList.add('captions-col-translated--side');
+      transGroup.classList.remove('hidden');
+    } else if (mode === 'stacked') {
+      contentArea.classList.add('captions-content-area--stacked');
+      colOrig.classList.remove('hidden');
+      colTrans.classList.remove('hidden');
+      colTrans.classList.add('captions-col-translated--stacked');
       transGroup.classList.remove('hidden');
     }
   }
