@@ -34,6 +34,7 @@ async def setup_db():
     yield
     await dispose()
 
+
 @pytest.fixture
 async def seed_event():
     """Seed an event, room, and booth."""
@@ -60,9 +61,7 @@ def _client():
     return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
 
-
 class TestListenerRoutes:
-
     @pytest.mark.anyio
     async def test_missing_event_returns_404(self):
         async with _client() as c:
@@ -81,7 +80,6 @@ class TestListenerRoutes:
         assert b"Join Event" in resp.content
         assert b"Enter the join code" in resp.content
 
-
     @pytest.mark.anyio
     async def test_invalid_join_code_shows_error(self, seed_event):
         event, _, _ = seed_event
@@ -97,7 +95,6 @@ class TestListenerRoutes:
 
         assert resp.status_code == 200
         assert b"Invalid join code." in resp.content
-
 
     @pytest.mark.anyio
     async def test_valid_join_code_sets_cookie(self, seed_event):
@@ -115,18 +112,14 @@ class TestListenerRoutes:
         assert resp.status_code == 200
         assert "listener_code_testcon" in resp.headers["set-cookie"]
 
-
     @pytest.mark.anyio
     async def test_audio_delay_requires_listener_access(self, seed_event):
         event, room, _ = seed_event
 
         async with _client() as c:
-            resp = await c.get(
-                f"/listener/{event.slug}/rooms/{room.id}/audio-delay"
-            )
+            resp = await c.get(f"/listener/{event.slug}/rooms/{room.id}/audio-delay")
 
         assert resp.status_code == 403
-
 
     @pytest.mark.anyio
     async def test_audio_delay_unknown_room_returns_404(self, seed_event):
@@ -139,10 +132,6 @@ class TestListenerRoutes:
             db_event.listener_join_code = "ROOM42"
 
         async with _client() as c:
-            resp = await c.get(
-                f"/listener/{event.slug}/rooms/9999/audio-delay?code=ROOM42"
-            )
+            resp = await c.get(f"/listener/{event.slug}/rooms/9999/audio-delay?code=ROOM42")
 
         assert resp.status_code == 404
-
-

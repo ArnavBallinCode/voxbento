@@ -22,6 +22,7 @@ PROVIDERS = {
 for p in OPENAI_COMPATIBLE_ENDPOINTS.keys():
     PROVIDERS[p] = openai_provider
 
+
 class TranslationWorker:
     """
     Handles fetching translations asynchronously for a given canonical segment.
@@ -56,7 +57,9 @@ class TranslationWorker:
                     select(Room).options(selectinload(Room.translation_languages)).where(Room.id == room_id)
                 )
                 if not room or not room.floor_translation_enabled:
-                    logger.error(f"[{booth_id_str}] handle_translation abort: floor_translation_enabled is false for room {room_id}")
+                    logger.error(
+                        f"[{booth_id_str}] handle_translation abort: floor_translation_enabled is false for room {room_id}"
+                    )
                     return
                 provider = room.floor_translation_provider
                 model = room.floor_translation_model
@@ -76,7 +79,9 @@ class TranslationWorker:
                 room = await session.scalar(select(Room).where(Room.id == room_id))
 
             if not provider or not model or not enabled_langs or not room:
-                logger.error(f"[{booth_id_str}] handle_translation abort: missing config. provider={provider}, model={model}, langs={enabled_langs}")
+                logger.error(
+                    f"[{booth_id_str}] handle_translation abort: missing config. provider={provider}, model={model}, langs={enabled_langs}"
+                )
                 return
 
             event = await session.scalar(select(Event).where(Event.id == room.event_id))
@@ -144,7 +149,9 @@ class TranslationWorker:
         except Exception as e:
             logger.error(f"[{booth_id_str}] Translation failed for {lang_code}: {e}")
 
-    async def _call_llm(self, provider: str, model: str, api_key: str | None, text: str, target_lang_name: str) -> str | None:
+    async def _call_llm(
+        self, provider: str, model: str, api_key: str | None, text: str, target_lang_name: str
+    ) -> str | None:
         provider_instance = PROVIDERS.get(provider)
         if not provider_instance:
             logger.error(f"Translation provider {provider} not supported.")
@@ -156,5 +163,5 @@ class TranslationWorker:
             target_lang_name=target_lang_name,
             target_lang_code="",  # Not explicitly passed from current DB schema
             model=model,
-            api_key=api_key
+            api_key=api_key,
         )
