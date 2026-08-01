@@ -15,6 +15,7 @@ class OpenAIProvider(TranslationProvider):
         text: str,
         target_lang_name: str,
         target_lang_code: str,
+        source_lang_name: str,
         model: str,
         api_key: str | None,
     ) -> str | None:
@@ -26,7 +27,7 @@ class OpenAIProvider(TranslationProvider):
             logger.error(f"Endpoint not found for provider {provider_name}")
             return None
 
-        system_prompt = f"You are a professional interpreter. Translate the following text into {target_lang_name}. Output ONLY the translated text, nothing else."
+        system_prompt = f"You are a professional interpreter. Translate the following {source_lang_name} text into {target_lang_name}. Output ONLY the translated text, nothing else."
         timeout = httpx.Timeout(10.0)
 
         import portal.globals as pg

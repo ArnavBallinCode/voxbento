@@ -759,10 +759,10 @@ async def admin_edit_room(request: Request, event_id: int, room_id: int):
                 if display_name:
                     room.display_name = display_name
                 room.jitsi_url = jitsi_url if jitsi_url else None
+                room.audio_delay_ms = audio_delay_ms
 
             if not form_section or form_section == "relay":
                 room.relay_booth_id = relay_booth_id
-                room.audio_delay_ms = audio_delay_ms
 
             if not form_section or form_section == "transcription":
                 room.floor_transcription_enabled = floor_transcription_enabled

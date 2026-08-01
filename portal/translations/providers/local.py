@@ -176,21 +176,30 @@ class LocalProvider(TranslationProvider):
         text: str,
         target_lang_name: str,
         target_lang_code: str,
+        source_lang_name: str,
         model: str,
         api_key: str | None,
     ) -> str | None:
         target_lang_token = NLLB_LANGUAGE_MAP.get(target_lang_name)
+        source_lang_token = NLLB_LANGUAGE_MAP.get(source_lang_name)
         if not target_lang_token:
             logger.error(f"Target language {target_lang_name} not found in NLLB_LANGUAGE_MAP")
             return None
+        if not source_lang_token:
+            logger.error(f"Source language {source_lang_name} not found in NLLB_LANGUAGE_MAP")
+            return None
 
-        return await asyncio.to_thread(self._run_inference, text, target_lang_token, model)
+        return await asyncio.to_thread(self._run_inference, text, source_lang_token, target_lang_token, model)
 
-    def _run_inference(self, text: str, target_lang_token: str, model_size: str) -> str | None:
+    def _run_inference(self, text: str, source_lang_token: str, target_lang_token: str, model_size: str) -> str | None:
 
         try:
             model, tokenizer = get_model_and_tokenizer(model_size)
             source = tokenizer.convert_ids_to_tokens(tokenizer.encode(text))
+
+            # The NLLB tokenizer hardcodes eng_Latn as the first token based on how we initialized it.
+            # We must replace it with the actual source language token for the model to translate correctly.
+            source[0] = source_lang_token
             results = model.translate_batch([source], target_prefix=[[target_lang_token]])
             target = results[0].hypotheses[0][1:]
             translated_text = tokenizer.decode(tokenizer.convert_tokens_to_ids(target))

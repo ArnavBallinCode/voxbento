@@ -9,6 +9,7 @@ class TranslationProvider(ABC):
         text: str,
         target_lang_name: str,
         target_lang_code: str,
+        source_lang_name: str,
         model: str,
         api_key: str | None,
     ) -> str | None:

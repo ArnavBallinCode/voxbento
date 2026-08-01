@@ -76,11 +76,13 @@ class CaptionAggregator:
             sentence = match.group(1).strip()
             split_idx = match.end()
 
+            remainder = state.current_utterance[split_idx:].strip()
+
             if sentence:
                 await self.handle_final(booth_id, sentence)
                 has_finalized = True
 
-            state.current_utterance = state.current_utterance[split_idx:].strip()
+            state.current_utterance = remainder
 
         state.current_word_count = len(state.current_utterance.split()) if state.current_utterance else 0
         if state.current_utterance:

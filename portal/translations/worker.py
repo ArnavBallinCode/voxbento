@@ -64,6 +64,7 @@ class TranslationWorker:
                 provider = room.floor_translation_provider
                 model = room.floor_translation_model
                 enabled_langs = [lang for lang in room.translation_languages if lang.enabled]
+                source_lang_code = room.floor_language_code
             else:
                 # Booth translation
                 booth = await session.scalar(
@@ -77,6 +78,7 @@ class TranslationWorker:
                 model = booth.translation_model
                 enabled_langs = [lang for lang in booth.translation_languages if lang.enabled]
                 room = await session.scalar(select(Room).where(Room.id == room_id))
+                source_lang_code = booth.language_code
 
             if not provider or not model or not enabled_langs or not room:
                 logger.error(
@@ -93,6 +95,11 @@ class TranslationWorker:
                 logger.error(f"[{booth_id_str}] Translation API key not found for provider {provider}")
                 return
 
+            import pycountry
+
+            source_lang_obj = pycountry.languages.get(alpha_2=source_lang_code) if source_lang_code else None
+            source_lang_name = source_lang_obj.name if source_lang_obj else (source_lang_code or "English")
+
             # Execute translation for all target languages concurrently
             tasks = [
                 self._translate_and_broadcast(
@@ -103,6 +110,7 @@ class TranslationWorker:
                     api_key,
                     lang.language_code,
                     lang.language_name,
+                    source_lang_name,
                     segment_id,
                     text,
                     booth_id_str,
@@ -124,12 +132,13 @@ class TranslationWorker:
         api_key: str,
         lang_code: str,
         lang_name: str,
+        source_lang_name: str,
         segment_id: int,
         text: str,
         booth_id_str: str,
     ):
         try:
-            translated_text = await self._call_llm(provider, model, api_key, text, lang_name)
+            translated_text = await self._call_llm(provider, model, api_key, text, lang_name, source_lang_name)
             if not translated_text:
                 return
 
@@ -150,7 +159,7 @@ class TranslationWorker:
             logger.error(f"[{booth_id_str}] Translation failed for {lang_code}: {e}")
 
     async def _call_llm(
-        self, provider: str, model: str, api_key: str | None, text: str, target_lang_name: str
+        self, provider: str, model: str, api_key: str | None, text: str, target_lang_name: str, source_lang_name: str
     ) -> str | None:
         provider_instance = PROVIDERS.get(provider)
         if not provider_instance:
@@ -162,6 +171,7 @@ class TranslationWorker:
             text=text,
             target_lang_name=target_lang_name,
             target_lang_code="",  # Not explicitly passed from current DB schema
+            source_lang_name=source_lang_name,
             model=model,
             api_key=api_key,
         )
