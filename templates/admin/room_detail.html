@@ -22,7 +22,9 @@
 
 <!-- Room Settings Form -->
 {% if is_event_owner %}
-<form method="post" action="/admin/events/{{ event.id }}/rooms/{{ room.id }}/edit" class="token-form">
+
+  <form method="post" action="/admin/events/{{ event.id }}/rooms/{{ room.id }}/edit" class="token-form">
+  <input type="hidden" name="form_section" value="general">
   <div class="token-form-card" style="margin-bottom: 1.5rem;">
     <h3>Room Settings</h3>
     <div class="form-row">
@@ -45,7 +47,10 @@
     <p class="form-help" style="margin-top: 0.5rem; font-size: 0.85rem; color: #666;">Interpreters in all booths for this room will automatically join this Jitsi URL for floor monitoring.</p>
     <p class="form-help" style="margin-top: 0.25rem; font-size: 0.85rem; color: #666;">Applies a listener-side delay to all audio sources in this room. Use this when livestream video, captions, or external media are delayed and need audio synchronization.</p>
   </div>
+</form>
 
+<form method="post" action="/admin/events/{{ event.id }}/rooms/{{ room.id }}/edit" class="token-form">
+  <input type="hidden" name="form_section" value="relay">
   <div class="token-form-card" style="margin-bottom: 2rem;">
     <h3>Relay Settings</h3>
     <div class="form-row">
@@ -64,6 +69,7 @@
     </div>
     <p class="form-help" style="margin-top: 0.5rem; font-size: 0.85rem; color: #666;">Designate a booth to act as the relay source for interpreters in other booths.</p>
   </div>
+</form>
 
   <div class="token-form-card" style="margin-bottom: 2rem;">
     <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -75,6 +81,8 @@
     </div>
   </div>
 
+<form method="post" action="/admin/events/{{ event.id }}/rooms/{{ room.id }}/edit" class="token-form">
+  <input type="hidden" name="form_section" value="transcription">
   <div class="token-form-card" style="margin-bottom: 2rem;">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
       <h3 style="margin: 0;">Floor Audio Transcription</h3>
@@ -135,10 +143,20 @@
     </div>
     <p class="form-help" style="margin-top: 0.5rem; font-size: 0.85rem; color: #666;">If enabled, listeners can select "Floor Audio" to see captions of the original floor audio. Use the Start/Stop buttons after saving to control the bot.</p>
   </div>
+</form>
 
+<form id="floor_translation_form" method="post" action="/admin/events/{{ event.id }}/rooms/{{ room.id }}/edit" class="token-form">
+  <input type="hidden" name="form_section" value="translation">
   <div class="token-form-card" style="margin-bottom: 2rem;">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
       <h3 style="margin: 0;">Floor Audio Translation</h3>
+      <div id="nllb_download_progress_container" style="display: none; align-items: center; gap: 0.75rem;">
+        <span id="nllb_download_speed" style="font-size: 0.8rem; color: #666;">-- MB/s</span>
+        <div style="width: 100px; height: 8px; background: #eee; border-radius: 4px; overflow: hidden; position: relative;">
+          <div id="nllb_download_bar" style="position: absolute; top: 0; left: 0; height: 100%; width: 0%; background: #0056b3; transition: width 0.3s ease;"></div>
+        </div>
+        <span id="nllb_download_percent" style="font-size: 0.85rem; font-weight: 600; color: #0056b3; min-width: 40px;">0%</span>
+      </div>
     </div>
     
     <div class="form-row">
@@ -191,7 +209,10 @@
       </div>
     </div>
   </div>
+</form>
 
+<form method="post" action="/admin/events/{{ event.id }}/rooms/{{ room.id }}/edit" class="token-form">
+  <input type="hidden" name="form_section" value="tts">
   <div class="token-form-card" style="margin-bottom: 2rem;">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
       <h3 style="margin: 0;">Floor Audio TTS (Direct Push)</h3>
@@ -299,6 +320,80 @@
     transProviderSelect.addEventListener('change', loadTranslationModels);
     if (transProviderSelect.value) {
       loadTranslationModels();
+    }
+
+    const roomSettingsForm = document.getElementById('floor_translation_form');
+    if (roomSettingsForm) {
+      roomSettingsForm.addEventListener('submit', async function(e) {
+        const transProvider = document.getElementById('floor_translation_provider').value;
+        const transModel = document.getElementById('floor_translation_model').value || 'nllb-200-distilled-600M';
+        
+        if (transProvider === 'local') {
+          e.preventDefault();
+          try {
+            const res = await fetch(`/admin/models/download_pogress?model=${encodeURIComponent(transModel)}`);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.status === 'completed') {
+                roomSettingsForm.submit();
+                return;
+              }
+            }
+          } catch(err) {}
+          
+          document.getElementById('nllb_download_modal').style.display = 'flex';
+        }
+      });
+
+      document.getElementById('nllb_proceed_btn').addEventListener('click', async function() {
+        document.getElementById('nllb_download_modal').style.display = 'none';
+        
+        const formData = new FormData(roomSettingsForm);
+        const actionUrl = roomSettingsForm.getAttribute('action');
+        
+        try {
+          await fetch(actionUrl, {
+            method: 'POST',
+            body: formData,
+            redirect: 'follow'
+          });
+          
+          const transModel = document.getElementById('floor_translation_model').value || 'nllb-200-distilled-600M';
+          await fetch('/admin/models/triggere_download', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({model: transModel})
+          });
+          
+          document.getElementById('nllb_download_progress_container').style.display = 'flex';
+          
+          const interval = setInterval(async () => {
+            const res = await fetch(`/admin/models/download_pogress?model=${encodeURIComponent(transModel)}`);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.status === 'downloading' || data.n > 0) {
+                const pct = data.total > 0 ? Math.round((data.n / data.total) * 100) : 0;
+                const speedMB = data.rate ? (data.rate / (1024 * 1024)).toFixed(1) : '0.0';
+                document.getElementById('nllb_download_bar').style.width = pct + '%';
+                document.getElementById('nllb_download_percent').textContent = pct + '%';
+                document.getElementById('nllb_download_speed').textContent = speedMB + ' MB/s';
+              }
+              if (data.status === 'completed') {
+                clearInterval(interval);
+                document.getElementById('nllb_download_progress_container').style.display = 'none';
+                document.getElementById('nllb_success_modal').style.display = 'flex';
+              } else if (data.status === 'error') {
+                clearInterval(interval);
+                alert("Failed to download local model.");
+                window.location.reload();
+              }
+            }
+          }, 1000);
+        } catch (err) {
+          console.error("Failed to save or trigger download", err);
+          window.location.reload();
+        }
+      });
     }
 
     // TTS provider → toggle Supertonic voice picker + provider help text
@@ -699,4 +794,28 @@ document.addEventListener('DOMContentLoaded', function() {
   </form>
 </div>
 {% endif %}
+
+<div id="nllb_download_modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; align-items: center; justify-content: center;">
+  <div style="background: white; padding: 2rem; border-radius: 8px; max-width: 400px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+    <h3 style="margin-top: 0;">Local Offline Model Selected</h3>
+    <p style="color: #666; margin-bottom: 1.5rem;">You selected a local offline model. It will take time to load the model. Do you want to continue?</p>
+    <div style="display: flex; gap: 1rem; justify-content: center;">
+      <button type="button" class="btn btn-secondary" onclick="document.getElementById('nllb_download_modal').style.display='none'">Cancel</button>
+      <button type="button" class="btn btn-primary" id="nllb_proceed_btn">Proceed</button>
+    </div>
+  </div>
+</div>
+
+<div id="nllb_success_modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; align-items: center; justify-content: center;">
+  <div style="background: white; padding: 2.5rem 2rem; border-radius: 12px; max-width: 400px; text-align: center; box-shadow: 0 8px 24px rgba(0,0,0,0.2);">
+    <div style="width: 48px; height: 48px; border-radius: 50%; background: #e6f4ea; color: #1e8e3e; display: flex; align-items: center; justify-content: center; font-size: 24px; margin: 0 auto 1rem auto;">
+      ✓
+    </div>
+    <h3 style="margin-top: 0; color: #1e8e3e;">Model Ready</h3>
+    <p style="color: #5f6368; margin-bottom: 1.5rem; line-height: 1.5;">The local translation model is fully loaded and ready to use. Your real-time translations will now process entirely on this device.</p>
+    <div style="display: flex; justify-content: center;">
+      <button type="button" class="btn btn-primary" style="padding: 0.5rem 2rem; border-radius: 6px;" onclick="window.location.reload()">Got it</button>
+    </div>
+  </div>
+</div>
 {% endblock %}

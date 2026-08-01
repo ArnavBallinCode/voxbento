@@ -15,6 +15,7 @@ class CaptionState:
 
 class CaptionAggregator:
     def __init__(self, broadcast_callback, room_id: int | None = None):
+        logger.info(f"CaptionAggregator initialized with room_id={room_id}")
         self.broadcast_callback = broadcast_callback
         self.room_id = room_id
         self.states: dict[str, CaptionState] = {}
@@ -76,7 +77,7 @@ class CaptionAggregator:
             split_idx = match.end()
 
             if sentence:
-                await self.broadcast_callback(booth_id, {"type": "caption", "status": "final", "text": sentence})
+                await self.handle_final(booth_id, sentence)
                 has_finalized = True
 
             state.current_utterance = state.current_utterance[split_idx:].strip()
@@ -126,12 +127,15 @@ class CaptionAggregator:
             enqueue_tts(self.room_id, final_text)
 
             async def _save_and_translate():
-                segment_id = await save_transcript_segment(booth_id, final_text, self.room_id)
-                if segment_id is not None:
-                    from portal.translations.worker import TranslationWorker
+                try:
+                    segment_id = await save_transcript_segment(booth_id, final_text, self.room_id)
+                    if segment_id is not None:
+                        from portal.translations.worker import TranslationWorker
 
-                    worker = TranslationWorker(self.broadcast_callback)
-                    await worker.handle_translation(self.room_id, segment_id, final_text, booth_id)
+                        worker = TranslationWorker(self.broadcast_callback)
+                        await worker.handle_translation(self.room_id, segment_id, final_text, booth_id)
+                except Exception as e:
+                    logger.error(f"[{booth_id}] _save_and_translate failed: {e}", exc_info=True)
 
             asyncio.create_task(_save_and_translate())
 

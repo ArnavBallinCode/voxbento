@@ -724,6 +724,7 @@ async def admin_room_transcripts(request: Request, event_id: int, room_id: int):
 @router.post("/admin/events/{event_id}/rooms/{room_id}/edit", dependencies=[Depends(require_admin)])
 async def admin_edit_room(request: Request, event_id: int, room_id: int):
     form = await request.form()
+    form_section = form.get("form_section", "").strip()    
     display_name = form.get("display_name", "").strip()
     jitsi_url = form.get("jitsi_url", "").strip()
     relay_booth_id_str = form.get("relay_booth_id", "").strip()
@@ -747,36 +748,46 @@ async def admin_edit_room(request: Request, event_id: int, room_id: int):
     async with get_session() as session:
         room = await get_room_by_id(session, room_id)
         if room and room.event_id == event_id:
-            if display_name:
-                room.display_name = display_name
-            room.jitsi_url = jitsi_url if jitsi_url else None
-            room.relay_booth_id = relay_booth_id
-            room.audio_delay_ms = audio_delay_ms
-            room.floor_transcription_enabled = floor_transcription_enabled
-            room.floor_transcription_provider = floor_transcription_provider
-            room.floor_transcription_model = floor_transcription_model
-            room.floor_language_code = floor_language_code
-            room.floor_translation_enabled = floor_translation_enabled
-            room.floor_translation_provider = floor_translation_provider
-            room.floor_translation_model = floor_translation_model
-            room.floor_tts_enabled = floor_tts_enabled
-            room.floor_tts_provider = floor_tts_provider
-            room.floor_tts_voice = floor_tts_voice
-            existing_langs = {lang.language_code: lang for lang in room.translation_languages}
-            requested_codes = set(floor_translation_languages)
-            for code, lang in existing_langs.items():
-                if code not in requested_codes:
-                    lang.enabled = False
-            for code in requested_codes:
-                if code in existing_langs:
-                    existing_langs[code].enabled = True
-                else:
-                    lang_obj = pycountry.languages.get(alpha_2=code)
-                    lang_name = lang_obj.name if lang_obj else code
-                    new_lang = RoomTranslationLanguage(
-                        room_id=room_id, language_code=code, language_name=lang_name, enabled=True
-                    )
-                    session.add(new_lang)
+            if not form_section or form_section == "general":
+                if display_name:
+                    room.display_name = display_name
+                room.jitsi_url = jitsi_url if jitsi_url else None
+            
+            if not form_section or form_section == "relay":
+                room.relay_booth_id = relay_booth_id
+                room.audio_delay_ms = audio_delay_ms
+            
+            if not form_section or form_section == "transcription":
+                room.floor_transcription_enabled = floor_transcription_enabled
+                room.floor_transcription_provider = floor_transcription_provider
+                room.floor_transcription_model = floor_transcription_model
+                room.floor_language_code = floor_language_code
+            
+            if not form_section or form_section == "translation":
+                room.floor_translation_enabled = floor_translation_enabled
+                room.floor_translation_provider = floor_translation_provider
+                room.floor_translation_model = floor_translation_model
+                
+                existing_langs = {lang.language_code: lang for lang in room.translation_languages}
+                requested_codes = set(floor_translation_languages)
+                for code, lang in existing_langs.items():
+                    if code not in requested_codes:
+                        lang.enabled = False
+                for code in requested_codes:
+                    if code in existing_langs:
+                        existing_langs[code].enabled = True
+                    else:
+                        lang_obj = pycountry.languages.get(alpha_2=code)
+                        lang_name = lang_obj.name if lang_obj else code
+                        new_lang = RoomTranslationLanguage(
+                            room_id=room_id, language_code=code, language_name=lang_name, enabled=True
+                        )
+                        session.add(new_lang)
+            
+            if not form_section or form_section == "tts":
+                room.floor_tts_enabled = floor_tts_enabled
+                room.floor_tts_provider = floor_tts_provider
+                room.floor_tts_voice = floor_tts_voice
             await session.commit()
     return safe_redirect(url=f"/admin/events/{event_id}/rooms/{room_id}/", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -1521,3 +1532,19 @@ async def api_admin_get_transcripts(
             result = await session.execute(stmt)
             segments = result.scalars().all()
             return [{"id": s.id, "text": s.text, "created_at": s.created_at.isoformat()} for s in segments]
+
+@router.post("/admin/models/triggere_download", dependencies=[Depends(require_admin)])
+async def api_trigger_download(request: Request):
+    from portal.translations.providers.local import trigger_download
+    data = await request.json()
+    model = data.get("model", "nllb-200-distilled-600M")
+    
+    import asyncio
+    asyncio.get_event_loop().run_in_executor(None, trigger_download, model)
+    return {"status": "started"}
+
+@router.get("/admin/models/download_pogress", dependencies=[Depends(require_admin)])
+async def api_download_progress(model: str = Query("nllb-200-distilled-600M")):
+    from portal.translations.providers.local import get_download_progress
+    progress = get_download_progress(model)
+    return progress
