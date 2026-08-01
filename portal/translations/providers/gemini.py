@@ -23,18 +23,21 @@ class GeminiProvider(TranslationProvider):
         system_prompt = f"You are a professional interpreter. Translate the following text into {target_lang_name}. Output ONLY the translated text, nothing else."
         timeout = httpx.Timeout(10.0)
 
+        import portal.globals as pg
+
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                res = await client.post(
-                    f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-                    headers={"x-goog-api-key": api_key},
-                    json={
-                        "systemInstruction": {"parts": [{"text": system_prompt}]},
-                        "contents": [{"parts": [{"text": text}]}],
-                    },
-                )
-                res.raise_for_status()
-                return res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+            client = pg.get_http_client()
+            res = await client.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                headers={"x-goog-api-key": api_key},
+                json={
+                    "systemInstruction": {"parts": [{"text": system_prompt}]},
+                    "contents": [{"parts": [{"text": text}]}],
+                },
+                timeout=timeout,
+            )
+            res.raise_for_status()
+            return res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
         except Exception as e:
             logger.error(f"Gemini translation failed for {target_lang_name}: {e}")
             return None
