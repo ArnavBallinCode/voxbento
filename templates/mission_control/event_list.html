@@ -3,31 +3,34 @@
 {% block title %}Mission Control Events | Voxbento{% endblock %}
 
 {% block content %}
-<div class="container mc-container mc-container--list">
-  <div class="mc-header">
-    <h2>Mission Control</h2>
+<div class="admin-main admin-main--flush-top">
+  <div class="hub-header">
+    <div>
+      <h1>Mission Control</h1>
+      <p>Monitor and control every live booth in real time. Pick an event to open its dashboard.</p>
+    </div>
   </div>
-  
-  <p class="mc-intro">
-    Select an event to open the Mission Control dashboard. You can monitor and control all active booths in real-time.
-  </p>
 
   {% if events %}
-  <div class="mc-grid mc-grid--cards">
+  <div class="card-grid">
     {% for ev in events %}
-    <div class="card mc-card">
-      <h3>{{ ev.display_name }}</h3>
-      <p class="mc-card-meta">Slug: {{ ev.slug }}</p>
-      <a href="/mission-control/{{ ev.slug }}/" class="btn btn-primary mc-card-action">
-        Open Dashboard
-      </a>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">{{ ev.display_name }}</span>
+        <span class="badge badge-slug">{{ ev.slug }}</span>
+      </div>
+      <div class="card-actions card-actions--flush">
+        <a href="/mission-control/{{ ev.slug }}/" class="btn btn-primary btn-block">Open dashboard &rarr;</a>
+      </div>
     </div>
     {% endfor %}
   </div>
     {% include 'admin/pagination.html' %}
-{% else %}
-  <div class="card mc-empty">
-    <p>You are not assigned as a Room Coordinator or Admin to any events.</p>
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-state-icon" aria-hidden="true">🛰️</div>
+    <h2 class="empty-state-title">Nothing to control yet</h2>
+    <p>You aren't assigned as a Room Coordinator or Event Owner on any events.</p>
   </div>
   {% endif %}
 </div>
