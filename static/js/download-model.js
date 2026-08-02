@@ -74,5 +74,19 @@ export function initLocalModelDownloader() {
         }
       });
     }
+    
+    const cancelBtn = document.getElementById('nllb_cancel_btn');
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', function() {
+        document.getElementById('nllb_download_modal').style.display = 'none';
+      });
+    }
+
+    const gotItBtn = document.getElementById('nllb_success_got_it_btn');
+    if (gotItBtn) {
+      gotItBtn.addEventListener('click', function() {
+        window.location.reload();
+      });
+    }
   }
 }

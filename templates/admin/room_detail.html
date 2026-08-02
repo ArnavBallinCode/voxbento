@@ -726,7 +726,7 @@ document.addEventListener('DOMContentLoaded', function() {
     <h3 style="margin-top: 0;">Local Offline Model Selected</h3>
     <p style="color: #666; margin-bottom: 1.5rem;">You selected a local offline model. It will take time to load the model. Do you want to continue?</p>
     <div style="display: flex; gap: 1rem; justify-content: center;">
-      <button type="button" class="btn btn-secondary" onclick="document.getElementById('nllb_download_modal').style.display='none'">Cancel</button>
+      <button type="button" class="btn btn-secondary" id="nllb_cancel_btn">Cancel</button>
       <button type="button" class="btn btn-primary" id="nllb_proceed_btn">Proceed</button>
     </div>
   </div>
@@ -740,7 +740,7 @@ document.addEventListener('DOMContentLoaded', function() {
     <h3 style="margin-top: 0; color: #1e8e3e;">Model Ready</h3>
     <p style="color: #5f6368; margin-bottom: 1.5rem; line-height: 1.5;">The local translation model is fully loaded and ready to use. Your real-time translations will now process entirely on this device.</p>
     <div style="display: flex; justify-content: center;">
-      <button type="button" class="btn btn-primary" style="padding: 0.5rem 2rem; border-radius: 6px;" onclick="window.location.reload()">Got it</button>
+      <button type="button" class="btn btn-primary" id="nllb_success_got_it_btn" style="padding: 0.5rem 2rem; border-radius: 6px;">Got it</button>
     </div>
   </div>
 </div>

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from .anthropic import AnthropicProvider
 from .base import TranslationProvider
 from .gemini import GeminiProvider
