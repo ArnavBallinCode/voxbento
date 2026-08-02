@@ -75,7 +75,7 @@ def get_download_progress(model_size: str):
             hf_repo_id = "JustFrederik/nllb-200-distilled-600M-ct2-int8"
 
         snapshot_download(repo_id=hf_repo_id, local_files_only=True)
-        return {"status": "downloaded", "progress": 1.0}
+        return {"status": "completed", "n": 1, "total": 1, "rate": 0}
     except Exception:
         return {}
 

@@ -1566,20 +1566,27 @@ async def api_admin_get_transcripts(
             return [{"id": s.id, "text": s.text, "created_at": s.created_at.isoformat()} for s in segments]
 
 
-@router.post("/admin/models/triggere_download", dependencies=[Depends(require_admin)])
+@router.post("/admin/models/trigger_download", dependencies=[Depends(require_admin)])
 async def api_trigger_download(request: Request):
     from portal.translations.providers.local import trigger_download
 
     data = await request.json()
     model = data.get("model", "nllb-200-distilled-600M")
 
+    from portal.translations.constants import TRANSLATION_MODELS, TranslationProviderEnum
+
+    supported_local_models = TRANSLATION_MODELS.get(TranslationProviderEnum.LOCAL.value, [])
+
+    if model not in supported_local_models:
+        raise HTTPException(status_code=400, detail=f"Unsupported local model: {model}")
+
     import asyncio
 
-    asyncio.get_event_loop().run_in_executor(None, trigger_download, model)
+    asyncio.get_running_loop().run_in_executor(None, trigger_download, model)
     return {"status": "started"}
 
 
-@router.get("/admin/models/download_pogress", dependencies=[Depends(require_admin)])
+@router.get("/admin/models/download_progress", dependencies=[Depends(require_admin)])
 async def api_download_progress(model: str = Query("nllb-200-distilled-600M")):
     from portal.translations.providers.local import get_download_progress
 

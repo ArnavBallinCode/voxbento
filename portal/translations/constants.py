@@ -54,7 +54,7 @@ NLLB_LANGUAGE_MAP: Dict[str, str] = {
     "Danish": "dan_Latn",
     "German": "deu_Latn",
     "Dzongkha": "dzo_Tibt",
-    "Modern Greek (1453-)": "ell_Grek",
+    "Greek, Modern (1453-)": "ell_Grek",
     "English": "eng_Latn",
     "Esperanto": "epo_Latn",
     "Estonian": "est_Latn",

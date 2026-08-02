@@ -44,7 +44,9 @@ class TranslationWorker:
                 logger.error(f"[{booth_id_str}] handle_translation abort: segment {segment_id} not found")
                 return
 
-            logger.error(f"[{booth_id_str}] handle_translation triggered for segment {segment_id}: '{text}'")
+            logger.debug(
+                "[%s] handle_translation triggered for segment %s (len=%s)", booth_id_str, segment_id, len(text)
+            )
 
             provider = None
             model = None
@@ -159,7 +161,13 @@ class TranslationWorker:
             logger.error(f"[{booth_id_str}] Translation failed for {lang_code}: {e}")
 
     async def _call_llm(
-        self, provider: str, model: str, api_key: str | None, text: str, target_lang_name: str, source_lang_name: str
+        self,
+        provider: str,
+        model: str,
+        api_key: str | None,
+        text: str,
+        target_lang_name: str,
+        source_lang_name: str = "English",
     ) -> str | None:
         provider_instance = PROVIDERS.get(provider)
         if not provider_instance:
