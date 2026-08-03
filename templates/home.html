@@ -6,35 +6,10 @@
     <title>VoxBento — Real-Time AI Interpretation for Global Events</title>
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', path='img/favicon.ico') }}" />
     
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Custom CSS for animations and overrides -->
+    <!-- Design Tokens & Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', path='css/tokens.css') }}?v={{ js_version }}" />
     <link rel="stylesheet" href="{{ url_for('static', path='css/landing.css') }}?v={{ js_version }}" />
     <link rel="stylesheet" href="{{ url_for('static', path='css/home.css') }}?v={{ js_version }}" />
-    
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                    },
-                    colors: {
-                        brand: {
-                            50: '#eff6ff',
-                            100: '#dbeafe',
-                            400: '#60a5fa',
-                            500: '#3b82f6',
-                            600: '#2563eb',
-                            700: '#1d4ed8',
-                            900: '#1e3a8a',
-                        }
-                    }
-                }
-            }
-        }
-    </script>
 </head>
 <body class="bg-[#eef2f6] text-[#0d0f10] antialiased overflow-x-hidden selection:bg-brand-500 selection:text-white">
 
