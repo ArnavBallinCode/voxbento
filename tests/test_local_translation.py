@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-import pytest
 from unittest.mock import patch
 
+import pytest
+
 from portal.translations.providers.local import LocalProvider
+
 
 @pytest.mark.anyio
 async def test_local_provider_translate_success():
@@ -16,15 +18,11 @@ async def test_local_provider_translate_success():
             target_lang_code="fr",
             source_lang_name="English",
             model="nllb-200-distilled-600M",
-            api_key=None
+            api_key=None,
         )
         assert result == "Bonjour"
-        mock_inference.assert_called_once_with(
-            "Hello",
-            "eng_Latn",
-            "fra_Latn",
-            "nllb-200-distilled-600M"
-        )
+        mock_inference.assert_called_once_with("Hello", "eng_Latn", "fra_Latn", "nllb-200-distilled-600M")
+
 
 @pytest.mark.anyio
 async def test_local_provider_translate_invalid_language():
@@ -36,6 +34,6 @@ async def test_local_provider_translate_invalid_language():
         target_lang_code="xx",
         source_lang_name="English",
         model="nllb-200-distilled-600M",
-        api_key=None
+        api_key=None,
     )
     assert result is None
