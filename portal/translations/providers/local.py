@@ -135,7 +135,7 @@ def get_model_and_tokenizer(model_size: str):
                 with _progress_lock:
                     _download_progress[model_size] = {"status": "completed"}
 
-            tokenizer = transformers.AutoTokenizer.from_pretrained(local_model_path, src_lang="eng_Latn", revision="main")
+            tokenizer = transformers.AutoTokenizer.from_pretrained(local_model_path, src_lang="eng_Latn", revision="main")  # nosec
             model = ctranslate2.Translator(local_model_path, device="cpu", compute_type="int8")
 
             _loaded_models[model_size] = ModelEntry(model=model, tokenizer=tokenizer, last_used=time.time())
