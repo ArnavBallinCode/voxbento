@@ -50,10 +50,12 @@ def trigger_download(model_size: str):
         from huggingface_hub import snapshot_download
 
         hf_repo_id = model_size
+        rev = "main"
         if model_size == "nllb-200-distilled-600M":
             hf_repo_id = "JustFrederik/nllb-200-distilled-600M-ct2-int8"
+            rev = "302d78f00e6fdb50a1064059df7c392b735e9d05"
 
-        snapshot_download(repo_id=hf_repo_id, tqdm_class=ScopedTqdm)
+        snapshot_download(repo_id=hf_repo_id, revision=rev, tqdm_class=ScopedTqdm)
         with _progress_lock:
             _download_progress[model_size]["status"] = "completed"
     except Exception as e:
@@ -73,10 +75,12 @@ def get_download_progress(model_size: str):
         from huggingface_hub import snapshot_download
 
         hf_repo_id = model_size
+        rev = "main"
         if model_size == "nllb-200-distilled-600M":
             hf_repo_id = "JustFrederik/nllb-200-distilled-600M-ct2-int8"
+            rev = "302d78f00e6fdb50a1064059df7c392b735e9d05"
 
-        snapshot_download(repo_id=hf_repo_id, local_files_only=True)
+        snapshot_download(repo_id=hf_repo_id, revision=rev, local_files_only=True)
         return {"status": "completed", "n": 1, "total": 1, "rate": 0}
     except Exception:
         return {}
@@ -113,9 +117,11 @@ def get_model_and_tokenizer(model_size: str):
                     with _progress_lock:
                         _download_progress[model_size] = {"n": 0, "total": 100, "rate": 0, "status": "downloading"}
                     hf_repo_id = model_size
+                    rev = "main"
                     if model_size == "nllb-200-distilled-600M":
                         hf_repo_id = "JustFrederik/nllb-200-distilled-600M-ct2-int8"
-                    local_model_path = snapshot_download(repo_id=hf_repo_id, tqdm_class=ScopedTqdm)
+                        rev = "302d78f00e6fdb50a1064059df7c392b735e9d05"
+                    local_model_path = snapshot_download(repo_id=hf_repo_id, revision=rev, tqdm_class=ScopedTqdm)
                     with _progress_lock:
                         _download_progress[model_size]["status"] = "completed"
                     logger.info(f"Successfully downloaded {model_size} to {local_model_path}")
@@ -129,7 +135,7 @@ def get_model_and_tokenizer(model_size: str):
                 with _progress_lock:
                     _download_progress[model_size] = {"status": "completed"}
 
-            tokenizer = transformers.AutoTokenizer.from_pretrained(local_model_path, src_lang="eng_Latn")
+            tokenizer = transformers.AutoTokenizer.from_pretrained(local_model_path, src_lang="eng_Latn", revision="main")
             model = ctranslate2.Translator(local_model_path, device="cpu", compute_type="int8")
 
             _loaded_models[model_size] = ModelEntry(model=model, tokenizer=tokenizer, last_used=time.time())
