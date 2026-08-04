@@ -3,6 +3,8 @@
  * Loaded as an ES module — no jQuery, no inline scripts.
  */
 
+import { initLocalModelDownloader } from './download-model.js';
+
 function copyToClipboard(targetId) {
   const el = document.getElementById(targetId);
   if (!el) return;
@@ -25,6 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
   initCustomModal();
+  initLocalModelDownloader();
 });
 
 const FUNNY_WARNINGS = [
