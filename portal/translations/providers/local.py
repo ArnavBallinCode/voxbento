@@ -7,6 +7,7 @@ import os
 import threading
 import time
 from dataclasses import dataclass
+from typing import Any
 
 from tqdm.auto import tqdm
 
@@ -88,8 +89,8 @@ def get_download_progress(model_size: str):
 
 @dataclass
 class ModelEntry:
-    model: any
-    tokenizer: any
+    model: Any
+    tokenizer: Any
     last_used: float
 
 

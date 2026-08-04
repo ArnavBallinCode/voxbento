@@ -4,6 +4,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ModelEntry:
-    model: any
+    model: Any
     last_used: float
 
 
