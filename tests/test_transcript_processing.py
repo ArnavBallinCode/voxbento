@@ -4,6 +4,7 @@ import pytest
 
 from portal.transcript_processing import is_valid_transcript
 
+
 def test_valid_transcripts():
     assert is_valid_transcript("Hello world.")
     assert is_valid_transcript("This is a normal sentence with 123 numbers.")
