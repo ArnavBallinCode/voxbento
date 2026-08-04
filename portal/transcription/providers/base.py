@@ -6,6 +6,7 @@ import wave
 from dataclasses import dataclass
 
 from portal.models import Event
+from portal.transcript_processing import is_valid_transcript
 from portal.transcription.constants import ProviderEnum
 
 logger = logging.getLogger(__name__)
@@ -145,8 +146,12 @@ class TranscriptionProvider:
                     booth_state.consecutive_drops = 0
 
                     if text:
-                        logger.debug(f"[{booth_id}] Transcribed: {text}")
-                        await aggregator.handle_chunk(booth_id, text)
+                        if is_valid_transcript(text):
+                            logger.debug(f"[{booth_id}] Transcribed: {text}")
+                            await aggregator.handle_chunk(booth_id, text)
+                        else:
+                            logger.debug(f"[{booth_id}] Rejected hallucination: {text}")
+                            await aggregator.handle_clear(booth_id)
                     else:
                         await aggregator.handle_clear(booth_id)
                 except Exception as e:
