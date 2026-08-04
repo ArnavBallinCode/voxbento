@@ -42,7 +42,7 @@ def is_valid_transcript(text: str) -> bool:
 
     # Normalize by replacing all punctuation with spaces and collapsing whitespace
     normalized = " ".join(text_stripped.lower().translate(_punct_translator).split())
-    
+
     # Reject known hallucination phrases (exact match, case insensitive, punctuation stripped)
     if normalized in KNOWN_HALLUCINATIONS:
         return False
