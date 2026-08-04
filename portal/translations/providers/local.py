@@ -7,7 +7,11 @@ import os
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import ctranslate2
+    from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
 from tqdm.auto import tqdm
 
@@ -89,8 +93,8 @@ def get_download_progress(model_size: str):
 
 @dataclass
 class ModelEntry:
-    model: Any
-    tokenizer: Any
+    model: ctranslate2.Translator
+    tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast
     last_used: float
 
 
