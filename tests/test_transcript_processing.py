@@ -28,10 +28,13 @@ def test_known_hallucinations():
     assert not is_valid_transcript("Thank you!")
     assert not is_valid_transcript("  Thanks for watching...  ")
     assert not is_valid_transcript("subscribe")
+    assert not is_valid_transcript("amara.org")
 
 def test_repeating_hallucinations():
     assert not is_valid_transcript("click click click")
     assert not is_valid_transcript("cough cough cough cough")
+    assert not is_valid_transcript("Click. Click.")
+    assert not is_valid_transcript("click, click, click")
 
 def test_long_words():
     # 41 characters word
