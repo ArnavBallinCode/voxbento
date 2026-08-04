@@ -99,7 +99,23 @@ class ModelEntry:
 
 
 _loaded_models = {}
+_active_translations_per_model = {}
 _model_lock = threading.Lock()
+
+
+def increment_model_ref(model_size: str):
+    with _model_lock:
+        _active_translations_per_model[model_size] = _active_translations_per_model.get(model_size, 0) + 1
+
+
+def decrement_model_ref(model_size: str):
+    with _model_lock:
+        if _active_translations_per_model.get(model_size, 0) <= 0:
+            logger.warning(f"Reference count underflow for {model_size}! This indicates a bug in tracking.")
+            _active_translations_per_model[model_size] = 0
+        else:
+            _active_translations_per_model[model_size] -= 1
+
 
 
 def get_model_and_tokenizer(model_size: str):
@@ -157,7 +173,8 @@ async def eviction_loop():
         to_delete = []
         with _model_lock:
             for size, entry in _loaded_models.items():
-                if (now - entry.last_used) > 3600:  # 1 hour idle
+                refs = _active_translations_per_model.get(size, 0)
+                if refs == 0 and (now - entry.last_used) > 3600:  # 1 hour idle
                     to_delete.append(size)
             for size in to_delete:
                 logger.info(f"Evicting idle NLLB model: {size}")
@@ -205,7 +222,7 @@ class LocalProvider(TranslationProvider):
         return await asyncio.to_thread(self._run_inference, text, source_lang_token, target_lang_token, model)
 
     def _run_inference(self, text: str, source_lang_token: str, target_lang_token: str, model_size: str) -> str | None:
-
+        increment_model_ref(model_size)
         try:
             model, tokenizer = get_model_and_tokenizer(model_size)
             source = tokenizer.convert_ids_to_tokens(tokenizer.encode(text))
@@ -221,3 +238,5 @@ class LocalProvider(TranslationProvider):
         except Exception as e:
             logger.error(f"NLLB local translation failed: {e}")
             return None
+        finally:
+            decrement_model_ref(model_size)
