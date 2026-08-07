@@ -12,6 +12,7 @@ from pathlib import Path
 import pycountry
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, status
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 from sqlalchemy import update
 
 from portal.auth import (
@@ -20,6 +21,7 @@ from portal.auth import (
     get_admin_flags,
     get_current_user,
     require_admin,
+    require_event_owner,
     require_super_admin,
     require_user,
 )
@@ -29,6 +31,7 @@ from portal.crypto import encrypt_val
 from portal.database import (
     count_events,
     count_users,
+    create_api_key,
     create_auth_token,
     create_booth,
     create_event,
@@ -39,6 +42,7 @@ from portal.database import (
     delete_event,
     delete_room,
     delete_user,
+    get_api_keys_for_event,
     get_booth_by_id,
     get_event_by_id,
     get_event_by_slug,
@@ -61,6 +65,7 @@ from portal.database import (
     remove_booth_membership,
     remove_event_membership,
     remove_room_membership,
+    revoke_api_key,
     revoke_invite_token,
     set_booth_membership,
     set_event_membership,
@@ -93,6 +98,7 @@ async def _send_admin_invite(session, user: User, role_name: str, context_name: 
     await create_auth_token(session, jti=token_val, user_id=user.id, token_type="magic_link")
     invite_url = f"{settings.public_base_url}/auth/magic/{token_val}?next={urllib.parse.quote(target_url)}"
     await send_role_invite_email(user.email, invite_url, role_name, context_name)
+
 
 router = APIRouter()
 
@@ -389,7 +395,9 @@ async def admin_setup_rooms(request: Request, event_id: int):
         if event is None:
             raise HTTPException(status_code=404, detail="Event not found.")
         rooms = await list_rooms_for_event(session, event_id)
-    return templates.TemplateResponse(request, "admin/wizard_rooms.html", {"event": event, "rooms": rooms, **admin_flags})
+    return templates.TemplateResponse(
+        request, "admin/wizard_rooms.html", {"event": event, "rooms": rooms, **admin_flags}
+    )
 
 
 @router.post("/admin/events/{event_id}/setup/rooms", dependencies=[Depends(require_admin)])
@@ -420,7 +428,13 @@ async def admin_setup_booths(request: Request, event_id: int):
     return templates.TemplateResponse(
         request,
         "admin/wizard_booths.html",
-        {"event": event, "rooms": rooms, "booths_by_room": booths_by_room, "common_languages": COMMON_LANGUAGES, **admin_flags},
+        {
+            "event": event,
+            "rooms": rooms,
+            "booths_by_room": booths_by_room,
+            "common_languages": COMMON_LANGUAGES,
+            **admin_flags,
+        },
     )
 
 
@@ -482,9 +496,7 @@ async def admin_setup_add_invite(request: Request, event_id: int):
         async with get_session() as session:
             user = await get_user_by_email(session, email)
             if not user:
-                user = await create_user(
-                    session, email=email, display_name=email.split("@")[0], email_verified=False
-                )
+                user = await create_user(session, email=email, display_name=email.split("@")[0], email_verified=False)
             try:
                 await set_event_membership(session, user_id=user.id, event_id=event_id, role=role)
             except ValueError:
@@ -724,6 +736,7 @@ async def admin_room_transcripts(request: Request, event_id: int, room_id: int):
 @router.post("/admin/events/{event_id}/rooms/{room_id}/edit", dependencies=[Depends(require_admin)])
 async def admin_edit_room(request: Request, event_id: int, room_id: int):
     form = await request.form()
+    form_section = form.get("form_section", "").strip()
     display_name = form.get("display_name", "").strip()
     jitsi_url = form.get("jitsi_url", "").strip()
     relay_booth_id_str = form.get("relay_booth_id", "").strip()
@@ -747,36 +760,46 @@ async def admin_edit_room(request: Request, event_id: int, room_id: int):
     async with get_session() as session:
         room = await get_room_by_id(session, room_id)
         if room and room.event_id == event_id:
-            if display_name:
-                room.display_name = display_name
-            room.jitsi_url = jitsi_url if jitsi_url else None
-            room.relay_booth_id = relay_booth_id
-            room.audio_delay_ms = audio_delay_ms
-            room.floor_transcription_enabled = floor_transcription_enabled
-            room.floor_transcription_provider = floor_transcription_provider
-            room.floor_transcription_model = floor_transcription_model
-            room.floor_language_code = floor_language_code
-            room.floor_translation_enabled = floor_translation_enabled
-            room.floor_translation_provider = floor_translation_provider
-            room.floor_translation_model = floor_translation_model
-            room.floor_tts_enabled = floor_tts_enabled
-            room.floor_tts_provider = floor_tts_provider
-            room.floor_tts_voice = floor_tts_voice
-            existing_langs = {lang.language_code: lang for lang in room.translation_languages}
-            requested_codes = set(floor_translation_languages)
-            for code, lang in existing_langs.items():
-                if code not in requested_codes:
-                    lang.enabled = False
-            for code in requested_codes:
-                if code in existing_langs:
-                    existing_langs[code].enabled = True
-                else:
-                    lang_obj = pycountry.languages.get(alpha_2=code)
-                    lang_name = lang_obj.name if lang_obj else code
-                    new_lang = RoomTranslationLanguage(
-                        room_id=room_id, language_code=code, language_name=lang_name, enabled=True
-                    )
-                    session.add(new_lang)
+            if not form_section or form_section == "general":
+                if display_name:
+                    room.display_name = display_name
+                room.jitsi_url = jitsi_url if jitsi_url else None
+                room.audio_delay_ms = audio_delay_ms
+
+            if not form_section or form_section == "relay":
+                room.relay_booth_id = relay_booth_id
+
+            if not form_section or form_section == "transcription":
+                room.floor_transcription_enabled = floor_transcription_enabled
+                room.floor_transcription_provider = floor_transcription_provider
+                room.floor_transcription_model = floor_transcription_model
+                room.floor_language_code = floor_language_code
+
+            if not form_section or form_section == "translation":
+                room.floor_translation_enabled = floor_translation_enabled
+                room.floor_translation_provider = floor_translation_provider
+                room.floor_translation_model = floor_translation_model
+
+                existing_langs = {lang.language_code: lang for lang in room.translation_languages}
+                requested_codes = set(floor_translation_languages)
+                for code, lang in existing_langs.items():
+                    if code not in requested_codes:
+                        lang.enabled = False
+                for code in requested_codes:
+                    if code in existing_langs:
+                        existing_langs[code].enabled = True
+                    else:
+                        lang_obj = pycountry.languages.get(alpha_2=code)
+                        lang_name = lang_obj.name if lang_obj else code
+                        new_lang = RoomTranslationLanguage(
+                            room_id=room_id, language_code=code, language_name=lang_name, enabled=True
+                        )
+                        session.add(new_lang)
+
+            if not form_section or form_section == "tts":
+                room.floor_tts_enabled = floor_tts_enabled
+                room.floor_tts_provider = floor_tts_provider
+                room.floor_tts_voice = floor_tts_voice
             await session.commit()
     return safe_redirect(url=f"/admin/events/{event_id}/rooms/{room_id}/", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -798,6 +821,55 @@ def parse_audio_delay_ms(value: object) -> int:
     if delay_ms < 0 or delay_ms > MAX_AUDIO_DELAY_MS:
         raise HTTPException(status_code=400, detail="Audio synchronization delay must be between 0 and 10000 ms.")
     return delay_ms
+
+
+class APIKeyCreateRequest(BaseModel):
+    name: str
+
+@router.get("/admin/api/events/{event_id}/api-keys", dependencies=[Depends(require_event_owner)])
+async def admin_list_api_keys(request: Request, event_id: int):
+    async with get_session() as session:
+        keys = await get_api_keys_for_event(session, event_id)
+        return [{"id": k.id, "name": k.name, "preview": k.preview, "created_at": k.created_at.isoformat(), "active": k.active} for k in keys]
+
+
+@router.post("/admin/api/events/{event_id}/api-keys", dependencies=[Depends(require_event_owner)])
+async def admin_create_api_key(request: Request, event_id: int, data: APIKeyCreateRequest):
+    if not data.name or not data.name.strip():
+        raise HTTPException(status_code=400, detail="API Key name cannot be blank.")
+
+    async with get_session() as session:
+        from sqlalchemy import select
+
+        from portal.models import EventAPIKey
+
+        # Check if active key with same name exists for this event
+        stmt = select(EventAPIKey).where(
+            EventAPIKey.event_id == event_id,
+            EventAPIKey.name == data.name.strip(),
+            EventAPIKey.active
+        )
+        existing = await session.execute(stmt)
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail=f"An active API Key named '{data.name.strip()}' already exists.")
+
+        api_key, raw_key = await create_api_key(session, event_id, data.name.strip())
+        return {
+            "id": api_key.id,
+            "name": api_key.name,
+            "preview": api_key.preview,
+            "created_at": api_key.created_at.isoformat(),
+            "raw_key": raw_key
+        }
+
+
+@router.delete("/admin/api/events/{event_id}/api-keys/{key_id}", dependencies=[Depends(require_event_owner)])
+async def admin_delete_api_key(request: Request, event_id: int, key_id: int):
+    async with get_session() as session:
+        success = await revoke_api_key(session, key_id, event_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="API Key not found or already revoked")
+        return {"success": True}
 
 
 @router.post("/api/rooms/{room_id}/floor-transcription/start", dependencies=[Depends(require_admin)])
@@ -1024,9 +1096,7 @@ async def admin_add_room_member(request: Request, event_id: int, room_id: int):
             user = await get_user_by_email(session, email)
             if not user:
                 display_name = email.split("@")[0]
-                user = await create_user(
-                    session, email=email, display_name=display_name, email_verified=False
-                )
+                user = await create_user(session, email=email, display_name=display_name, email_verified=False)
 
             uid = user.id
             if role:
@@ -1037,7 +1107,9 @@ async def admin_add_room_member(request: Request, event_id: int, room_id: int):
                     room = await get_room_by_id(session, room_id)
                     if event and room:
                         target_url = "/account"
-                        await _send_admin_invite(session, user, role, f"room ({room.display_name}) for {event.display_name}", target_url)
+                        await _send_admin_invite(
+                            session, user, role, f"room ({room.display_name}) for {event.display_name}", target_url
+                        )
                 except ValueError:
                     return safe_redirect(
                         url=f"/admin/events/{event_id}/rooms/{room_id}/?error=invalid_role",
@@ -1065,9 +1137,13 @@ async def admin_invite_room_member(request: Request, event_id: int, room_id: int
                 room = await get_room_by_id(session, room_id)
                 if user and event and room:
                     target_url = "/account"
-                    await _send_admin_invite(session, user, m.role, f"room ({room.display_name}) for {event.display_name}", target_url)
+                    await _send_admin_invite(
+                        session, user, m.role, f"room ({room.display_name}) for {event.display_name}", target_url
+                    )
                 break
-    return safe_redirect(url=f"/admin/events/{event_id}/rooms/{room_id}/?success=invite_sent", status_code=status.HTTP_303_SEE_OTHER)
+    return safe_redirect(
+        url=f"/admin/events/{event_id}/rooms/{room_id}/?success=invite_sent", status_code=status.HTTP_303_SEE_OTHER
+    )
 
 
 @router.post(
@@ -1091,9 +1167,7 @@ async def admin_add_booth_member(request: Request, event_id: int, room_id: int, 
             user = await get_user_by_email(session, email)
             if not user:
                 display_name = email.split("@")[0]
-                user = await create_user(
-                    session, email=email, display_name=display_name, email_verified=False
-                )
+                user = await create_user(session, email=email, display_name=display_name, email_verified=False)
 
             uid = user.id
             if role:
@@ -1104,7 +1178,9 @@ async def admin_add_booth_member(request: Request, event_id: int, room_id: int, 
                     booth = await get_booth_by_id(session, booth_id)
                     if event and booth:
                         target_url = "/interpreter"
-                        await _send_admin_invite(session, user, role, f"booth ({booth.language_code}) for {event.display_name}", target_url)
+                        await _send_admin_invite(
+                            session, user, role, f"booth ({booth.language_code}) for {event.display_name}", target_url
+                        )
                 except ValueError:
                     return safe_redirect(
                         url=f"/admin/events/{event_id}/rooms/{room_id}/booths/{booth_id}/?error=invalid_role",
@@ -1135,10 +1211,13 @@ async def admin_invite_booth_member(request: Request, event_id: int, room_id: in
                 booth = await get_booth_by_id(session, booth_id)
                 if user and event and booth:
                     target_url = "/interpreter"
-                    await _send_admin_invite(session, user, m.role, f"booth ({booth.language_code}) for {event.display_name}", target_url)
+                    await _send_admin_invite(
+                        session, user, m.role, f"booth ({booth.language_code}) for {event.display_name}", target_url
+                    )
                 break
     return safe_redirect(
-        url=f"/admin/events/{event_id}/rooms/{room_id}/booths/{booth_id}/?success=invite_sent", status_code=status.HTTP_303_SEE_OTHER
+        url=f"/admin/events/{event_id}/rooms/{room_id}/booths/{booth_id}/?success=invite_sent",
+        status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
@@ -1315,7 +1394,16 @@ async def admin_user_list(request: Request, page: int = 1):
         users = await list_users(session, limit=limit, offset=offset)
     total_pages = max(1, math.ceil(total_users / limit))
     return templates.TemplateResponse(
-        request, "admin/user_list.html", {"users": users, "page": page, "total_pages": total_pages, "is_super_admin": True, "is_event_owner": True, "is_room_coordinator": True}
+        request,
+        "admin/user_list.html",
+        {
+            "users": users,
+            "page": page,
+            "total_pages": total_pages,
+            "is_super_admin": True,
+            "is_event_owner": True,
+            "is_room_coordinator": True,
+        },
     )
 
 
@@ -1345,7 +1433,16 @@ async def admin_user_detail(request: Request, user_id: int):
         memberships = await list_memberships_for_user(session, user_id)
         event_owner_map = {m.event_id: m for m in memberships if m.role == "event_owner"}
     return templates.TemplateResponse(
-        request, "admin/user_detail.html", {"user_detail": user, "events": events, "event_owner_map": event_owner_map, "is_super_admin": True, "is_event_owner": True, "is_room_coordinator": True}
+        request,
+        "admin/user_detail.html",
+        {
+            "user_detail": user,
+            "events": events,
+            "event_owner_map": event_owner_map,
+            "is_super_admin": True,
+            "is_event_owner": True,
+            "is_room_coordinator": True,
+        },
     )
 
 
@@ -1402,9 +1499,7 @@ async def admin_add_event_member(request: Request, event_id: int):
             user = await get_user_by_email(session, email)
             if not user:
                 display_name = email.split("@")[0]
-                user = await create_user(
-                    session, email=email, display_name=display_name, email_verified=False
-                )
+                user = await create_user(session, email=email, display_name=display_name, email_verified=False)
 
             uid = user.id
             if role:
@@ -1441,7 +1536,9 @@ async def admin_invite_event_member(request: Request, event_id: int, membership_
                     target_url = "/account"
                     await _send_admin_invite(session, user, m.role, f"event {event.display_name}", target_url)
                 break
-    return safe_redirect(url=f"/admin/events/{event_id}/members/?success=invite_sent", status_code=status.HTTP_303_SEE_OTHER)
+    return safe_redirect(
+        url=f"/admin/events/{event_id}/members/?success=invite_sent", status_code=status.HTTP_303_SEE_OTHER
+    )
 
 
 @router.post("/admin/events/{event_id}/members/{membership_id}/delete", dependencies=[Depends(require_admin)])
@@ -1521,3 +1618,31 @@ async def api_admin_get_transcripts(
             result = await session.execute(stmt)
             segments = result.scalars().all()
             return [{"id": s.id, "text": s.text, "created_at": s.created_at.isoformat()} for s in segments]
+
+
+@router.post("/admin/models/trigger_download", dependencies=[Depends(require_admin)])
+async def api_trigger_download(request: Request):
+    from portal.translations.providers.local import trigger_download
+
+    data = await request.json()
+    model = data.get("model", "nllb-200-distilled-600M")
+
+    from portal.translations.constants import TRANSLATION_MODELS, TranslationProviderEnum
+
+    supported_local_models = TRANSLATION_MODELS.get(TranslationProviderEnum.LOCAL.value, [])
+
+    if model not in supported_local_models:
+        raise HTTPException(status_code=400, detail=f"Unsupported local model: {model}")
+
+    import asyncio
+
+    asyncio.get_running_loop().run_in_executor(None, trigger_download, model)
+    return {"status": "started"}
+
+
+@router.get("/admin/models/download_progress", dependencies=[Depends(require_admin)])
+async def api_download_progress(model: str = Query("nllb-200-distilled-600M")):
+    from portal.translations.providers.local import get_download_progress
+
+    progress = get_download_progress(model)
+    return progress

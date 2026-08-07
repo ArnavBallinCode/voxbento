@@ -216,7 +216,7 @@
           <option value="anthropic/claude-3-haiku" data-trans-provider="openrouter" {% if booth.translation_model == 'anthropic/claude-3-haiku' %}selected{% endif %}>OpenRouter: Claude 3 Haiku</option>
           <option value="meta-llama/llama-3-8b-instruct" data-trans-provider="openrouter" {% if booth.translation_model == 'meta-llama/llama-3-8b-instruct' %}selected{% endif %}>OpenRouter: LLaMA 3 8B</option>
           <option value="google/gemma-7b-it" data-trans-provider="openrouter" {% if booth.translation_model == 'google/gemma-7b-it' %}selected{% endif %}>OpenRouter: Gemma 7B</option>
-          <option value="local-model" data-trans-provider="local" {% if booth.translation_model == 'local-model' %}selected{% endif %}>Local: default model</option>
+          <option value="nllb-200-distilled-600M" data-trans-provider="local" {% if booth.translation_model == 'nllb-200-distilled-600M' %}selected{% endif %}>Local: NLLB 200 (600M)</option>
         </select>
       </div>
     </div>

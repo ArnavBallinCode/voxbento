@@ -104,7 +104,7 @@ async def run_capture():
                 "--use-fake-device-for-media-stream",
                 "--disable-gesture-requirement-for-media-playback",
                 "--ignore-certificate-errors",
-                "--unsafely-treat-insecure-origin-as-secure=https://jitsi-web",
+                "--unsafely-treat-insecure-origin-as-secure=http://jitsi-web,http://jitsi-web:80,https://jitsi-web",
                 "--autoplay-policy=no-user-gesture-required",
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
