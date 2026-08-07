@@ -730,3 +730,206 @@ class TestAPIKeyCRUD:
             # Verify that plain SHA256 does NOT match the stored hash
             plain_sha256 = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
             assert verified_key.key_hash != plain_sha256
+
+
+class TestListenerTokenAPI:
+    @pytest.mark.anyio
+    async def test_provision_listener_token_success(self, setup_db):
+        from httpx import AsyncClient
+        from sqlalchemy import select
+
+        from portal.database import UsageMetric, create_api_key, create_event, get_session
+
+        async with get_session() as session:
+            event = await create_event(session, slug="api-test-event", display_name="API Test Event")
+            api_key, raw_key = await create_api_key(session, event.id, "Test Key")
+
+        async with _client() as client:
+            response = await client.post(
+                "/api/v1/tokens/listener",
+                headers={"Authorization": f"Bearer {raw_key}"}
+            )
+            assert response.status_code == 201
+            data = response.json()
+            assert "token" in data
+            assert isinstance(data["token"], str)
+
+        # Verify usage metric was logged
+        async with get_session() as session:
+            stmt = select(UsageMetric).where(
+                UsageMetric.event_id == event.id,
+                UsageMetric.metric_name == "listener_token_issued"
+            )
+            result = await session.execute(stmt)
+            metric = result.scalar_one_or_none()
+            assert metric is not None
+            assert metric.value == 1
+
+    @pytest.mark.anyio
+    async def test_provision_listener_token_invalid_key(self, setup_db):
+        from httpx import AsyncClient
+
+        from portal.database import create_api_key, create_event, get_session
+        async with get_session() as session:
+            event = await create_event(session, slug="api-test-event-invalid", display_name="API Test Event Invalid")
+            api_key, raw_key = await create_api_key(session, event.id, "Test Key")
+
+            # Revoke the key
+            api_key.active = False
+            await session.commit()
+
+        async with _client() as client:
+            # Test revoked key
+            response1 = await client.post(
+                "/api/v1/tokens/listener",
+                headers={"Authorization": f"Bearer {raw_key}"}
+            )
+            assert response1.status_code == 401
+            assert response1.json() == {"detail": "Invalid API Key"}
+
+            # Test fake key
+            response2 = await client.post(
+                "/api/v1/tokens/listener",
+                headers={"Authorization": "Bearer vb_fakekeythatdoesntexist"}
+            )
+            assert response2.status_code == 401
+            assert response2.json() == {"detail": "Invalid API Key"}
+
+            # Response bodies must be identical for revoked and non-existent keys
+            assert response1.json() == response2.json()
+
+    @pytest.mark.anyio
+    async def test_provision_listener_token_missing_header(self, setup_db):
+        from httpx import AsyncClient
+        async with _client() as client:
+            response = await client.post("/api/v1/tokens/listener")
+            assert response.status_code == 401
+            assert response.json() == {"detail": "Missing or invalid Bearer token"}
+
+            response = await client.post(
+                "/api/v1/tokens/listener",
+                headers={"Authorization": "Basic something"}
+            )
+            assert response.status_code == 401
+            assert response.json() == {"detail": "Missing or invalid Bearer token"}
+
+    @pytest.mark.anyio
+    async def test_provision_listener_token_rate_limit(self, setup_db):
+        from portal.rate_limit import _rates
+        _rates.clear()
+        from httpx import AsyncClient
+
+        from portal.database import create_api_key, create_event, get_session
+        async with get_session() as session:
+            event = await create_event(session, slug="api-test-event-rate", display_name="API Test Event Rate")
+            api_key, raw_key = await create_api_key(session, event.id, "Test Key Rate")
+
+        async with _client() as client:
+            # Hit the endpoint 60 times, should all be 201 (since max_requests=60)
+            for _ in range(60):
+                response = await client.post(
+                    "/api/v1/tokens/listener",
+                    headers={"Authorization": f"Bearer {raw_key}"}
+                )
+                assert response.status_code == 201
+
+            # The 61st request should be rate limited
+            response = await client.post(
+                "/api/v1/tokens/listener",
+                headers={"Authorization": f"Bearer {raw_key}"}
+            )
+            assert response.status_code == 429
+            assert response.json() == {"detail": "Too many requests"}
+
+    @pytest.mark.anyio
+    async def test_listener_token_cross_event_ws_captions_rejected(self, setup_db):
+        """A listener JWT scoped to event-a must not be accepted on event-b's captions WS
+        """
+        import os
+
+        from httpx import ASGITransport, AsyncClient
+        from starlette.testclient import TestClient
+
+        from portal.auth import create_listener_token
+        from portal.config import settings
+
+        os.environ["BOOTH_ACCESS_TOKEN"] = "test-booth-token"
+        settings.booth_access_token = "test-booth-token"
+
+        try:
+            # Mint a listener token scoped to event-a
+            token_event_a = create_listener_token(event_slug="event-a")
+
+            from fastapi_app import app as fastapi_app
+
+            tc = TestClient(app=fastapi_app)
+            from starlette.websockets import WebSocketDisconnect
+            booth_id_event_b = "event-b-english"
+            with pytest.raises(WebSocketDisconnect) as exc_info:
+                with tc.websocket_connect(
+                    f"/ws/captions/{booth_id_event_b}?token={token_event_a}",
+                ) as ws:
+                    ws.receive_text()
+            assert exc_info.value.code == 4003
+        finally:
+            os.environ["BOOTH_ACCESS_TOKEN"] = ""
+            settings.booth_access_token = ""
+
+    @pytest.mark.anyio
+    async def test_listener_token_correct_event_ws_captions_accepted(self, setup_db):
+        """A listener JWT scoped to event-a is accepted on event-a's captions WS."""
+        import os
+
+        from starlette.testclient import TestClient
+
+        from portal.auth import create_listener_token
+        from portal.config import settings
+
+        os.environ["BOOTH_ACCESS_TOKEN"] = "test-booth-token"
+        settings.booth_access_token = "test-booth-token"
+
+        try:
+            token_event_a = create_listener_token(event_slug="event-a")
+
+            from fastapi_app import app as fastapi_app
+
+            tc = TestClient(app=fastapi_app)
+            booth_id_event_a = "event-a-english"
+            with tc.websocket_connect(
+                f"/ws/captions/{booth_id_event_a}?token={token_event_a}",
+            ) as ws:
+                # Connection accepted — no exception raised, just disconnect cleanly
+                ws.close()
+        finally:
+            os.environ["BOOTH_ACCESS_TOKEN"] = ""
+            settings.booth_access_token = ""
+
+    @pytest.mark.anyio
+    async def test_listener_token_rejected_from_booth_management_ws(self, setup_db):
+        """Listener tokens must be rejected from /ws/booth/{booth_id} entirely."""
+        import os
+
+        from starlette.testclient import TestClient
+
+        from portal.auth import create_listener_token
+        from portal.config import settings
+
+        os.environ["BOOTH_ACCESS_TOKEN"] = "test-booth-token"
+        settings.booth_access_token = "test-booth-token"
+
+        try:
+            token = create_listener_token(event_slug="event-a")
+
+            from fastapi_app import app as fastapi_app
+
+            tc = TestClient(app=fastapi_app)
+            from starlette.websockets import WebSocketDisconnect
+            with pytest.raises(WebSocketDisconnect) as exc_info:
+                with tc.websocket_connect(
+                    f"/ws/booth/event-a-english?token={token}",
+                ) as ws:
+                    ws.receive_text()
+            assert exc_info.value.code == 4003
+        finally:
+            os.environ["BOOTH_ACCESS_TOKEN"] = ""
+            settings.booth_access_token = ""
