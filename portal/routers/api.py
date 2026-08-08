@@ -66,7 +66,17 @@ async def create_event_booth(
             room_id=body.room_id,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        if "already exists" in str(exc):
+            booth_id = make_booth_id(event_slug, body.language_code)
+            mtx_path = make_mediamtx_path(event_slug, body.language_code)
+            state = await booths.snapshot(
+                booth_id=booth_id,
+                language=body.language or body.language_code.upper(),
+                channel_id=mtx_path,
+                room_id=body.room_id,
+            )
+        else:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     mediamtx_path = state["mediamtx_path"]
     await _ensure_mediamtx_path(mediamtx_path)
     state["whip_url"] = f"{settings.mediamtx_whip_base}/{mediamtx_path}/whip"
@@ -88,10 +98,17 @@ async def create_event_booth(
                 select(Room).where(Room.event_id == event.id, Room.eventyay_room_id == str(body.room_id))
             )
             room = room_query.scalar_one_or_none()
+            display_name = body.room_name or f"Room {body.room_id}"
             if not room:
-                room = Room(event_id=event.id, display_name=f"Room {body.room_id}", eventyay_room_id=str(body.room_id))
+                room = Room(
+                    event_id=event.id,
+                    display_name=display_name,
+                    eventyay_room_id=str(body.room_id),
+                )
                 session.add(room)
-                await session.flush()
+            elif room.display_name != display_name:
+                room.display_name = display_name
+            await session.flush()
             db_room_id = room.id
 
         # 3. Get or Create DBBooth
@@ -118,7 +135,7 @@ async def create_event_booth(
         )
         await session.commit()
 
-        state["interpreter_invite_url"] = f"{settings.public_base_url}/auth/magic/{invite.token}"
+        state["interpreter_invite_url"] = f"{settings.public_base_url}/join/{invite.token}"
 
     state["caption_url"] = f"wss://{settings.public_base_url.replace('https://', '').replace('http://', '')}/ws/captions/{state['booth_id']}"
     return state
