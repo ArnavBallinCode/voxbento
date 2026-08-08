@@ -121,7 +121,7 @@ async def create_event_booth(
                 event_id=event.id,
                 room_id=db_room_id,
                 language_code=body.language_code,
-                language_name=body.language or body.language_code.upper()
+                language_name=body.language or body.language_code.upper(),
             )
             session.add(db_booth)
             await session.flush()
@@ -137,8 +137,51 @@ async def create_event_booth(
 
         state["interpreter_invite_url"] = f"{settings.public_base_url}/join/{invite.token}"
 
-    state["caption_url"] = f"wss://{settings.public_base_url.replace('https://', '').replace('http://', '')}/ws/captions/{state['booth_id']}"
+    state["caption_url"] = (
+        f"wss://{settings.public_base_url.replace('https://', '').replace('http://', '')}/ws/captions/{state['booth_id']}"
+    )
     return state
+
+
+@router.delete(
+    "/events/{event_slug}/rooms/{eventyay_room_id}/booths/{language_code}", status_code=status.HTTP_204_NO_CONTENT
+)
+async def delete_event_booth(
+    event_slug: str,
+    eventyay_room_id: str,
+    language_code: str,
+    token: str = Query(""),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+):
+    """Delete a booth provisioned via API."""
+    _require_access(credentials, token)
+
+    async with get_session() as session:
+        # Find the event
+        event_query = await session.execute(select(Event).where(Event.slug == event_slug))
+        event = event_query.scalar_one_or_none()
+        if not event:
+            raise HTTPException(status_code=404, detail="Event not found")
+
+        # Find the room
+        room_query = await session.execute(
+            select(Room).where(Room.event_id == event.id, Room.eventyay_room_id == eventyay_room_id)
+        )
+        room = room_query.scalar_one_or_none()
+        if not room:
+            raise HTTPException(status_code=404, detail="Room not found")
+
+        # Find the booth
+        booth_query = await session.execute(
+            select(DBBooth).where(
+                DBBooth.event_id == event.id, DBBooth.room_id == room.id, DBBooth.language_code == language_code
+            )
+        )
+        booth = booth_query.scalar_one_or_none()
+
+        if booth:
+            await session.delete(booth)
+            await session.commit()
 
 
 @router.get("/events/{event_slug}/booths")
