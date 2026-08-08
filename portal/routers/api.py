@@ -98,10 +98,17 @@ async def create_event_booth(
                 select(Room).where(Room.event_id == event.id, Room.eventyay_room_id == str(body.room_id))
             )
             room = room_query.scalar_one_or_none()
+            display_name = body.room_name or f"Room {body.room_id}"
             if not room:
-                room = Room(event_id=event.id, display_name=f"Room {body.room_id}", eventyay_room_id=str(body.room_id))
+                room = Room(
+                    event_id=event.id,
+                    display_name=display_name,
+                    eventyay_room_id=str(body.room_id),
+                )
                 session.add(room)
-                await session.flush()
+            elif room.display_name != display_name:
+                room.display_name = display_name
+            await session.flush()
             db_room_id = room.id
 
         # 3. Get or Create DBBooth
