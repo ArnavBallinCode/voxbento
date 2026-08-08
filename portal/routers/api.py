@@ -66,7 +66,17 @@ async def create_event_booth(
             room_id=body.room_id,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        if "already exists" in str(exc):
+            booth_id = make_booth_id(event_slug, body.language_code)
+            mtx_path = make_mediamtx_path(event_slug, body.language_code)
+            state = await booths.snapshot(
+                booth_id=booth_id,
+                language=body.language or body.language_code.upper(),
+                channel_id=mtx_path,
+                room_id=body.room_id,
+            )
+        else:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     mediamtx_path = state["mediamtx_path"]
     await _ensure_mediamtx_path(mediamtx_path)
     state["whip_url"] = f"{settings.mediamtx_whip_base}/{mediamtx_path}/whip"
