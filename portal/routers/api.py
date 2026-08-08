@@ -128,7 +128,7 @@ async def create_event_booth(
         )
         await session.commit()
 
-        state["interpreter_invite_url"] = f"{settings.public_base_url}/auth/magic/{invite.token}"
+        state["interpreter_invite_url"] = f"{settings.public_base_url}/join/{invite.token}"
 
     state["caption_url"] = f"wss://{settings.public_base_url.replace('https://', '').replace('http://', '')}/ws/captions/{state['booth_id']}"
     return state
