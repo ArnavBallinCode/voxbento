@@ -1542,5 +1542,5 @@ def test_home_page_renders_without_tailwind_cdn():
     assert res.status_code == 200
     assert "cdn.tailwindcss.com" not in res.text
     assert "/static/css/tokens.css" in res.text
-    assert "/static/css/home.css" in res.text
+    assert "/static/css/utilities.css" in res.text
 
