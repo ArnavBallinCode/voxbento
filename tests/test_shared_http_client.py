@@ -42,7 +42,7 @@ class TestTranslationWorkerUsesSharedClient:
 
         worker = TranslationWorker(broadcast_callback=None)
         with patch("httpx.AsyncClient", side_effect=AssertionError("must not create a new AsyncClient")):
-            result = await worker._call_llm("openai", "gpt-4o-mini", "sk-test", "Hello", "French")
+            result = await worker._call_llm("openai", "gpt-4o-mini", "sk-test", "Hello", "French", "English")
 
         assert result == "Bonjour"
         mock_client.post.assert_called_once()

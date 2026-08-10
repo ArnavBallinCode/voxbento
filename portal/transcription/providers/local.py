@@ -1,9 +1,15 @@
+from __future__ import annotations
+
 import asyncio
 import gc
 import logging
 import threading
 import time
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from faster_whisper import WhisperModel
 
 import numpy as np
 
@@ -14,13 +20,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ModelEntry:
-    model: any
+    model: WhisperModel
     last_used: float
 
 
 _loaded_models = {}
 _active_booths_per_model = {}
 _model_lock = threading.Lock()
+_load_lock = threading.Lock()
 
 
 def increment_model_ref(model_size: str):
@@ -36,15 +43,24 @@ def decrement_model_ref(model_size: str):
 
 def get_model(model_size: str):
     with _model_lock:
-        if model_size not in _loaded_models:
-            logger.info(f"Loading faster-whisper model: {model_size}")
-            from faster_whisper import WhisperModel
-
-            model = WhisperModel(model_size, device="cpu", compute_type="int8")
-            _loaded_models[model_size] = ModelEntry(model=model, last_used=time.time())
-        else:
+        if model_size in _loaded_models:
             _loaded_models[model_size].last_used = time.time()
-        return _loaded_models[model_size].model
+            return _loaded_models[model_size].model
+
+    with _load_lock:
+        # Double-check inside the load lock
+        with _model_lock:
+            if model_size in _loaded_models:
+                _loaded_models[model_size].last_used = time.time()
+                return _loaded_models[model_size].model
+
+        logger.info(f"Loading faster-whisper model: {model_size}")
+        from faster_whisper import WhisperModel
+
+        model = WhisperModel(model_size, device="cpu", compute_type="int8")
+        with _model_lock:
+            _loaded_models[model_size] = ModelEntry(model=model, last_used=time.time())
+            return _loaded_models[model_size].model
 
 
 async def eviction_loop():
@@ -108,7 +124,15 @@ class LocalProvider(TranscriptionProvider):
     ) -> str:
         model = get_model(model_size)
         segments, _ = model.transcribe(
-            audio_data, beam_size=5, vad_filter=True, language=language_code, word_timestamps=True
+            audio_data,
+            beam_size=5,
+            vad_filter=True,
+            language=language_code,
+            word_timestamps=True,
+            compression_ratio_threshold=2.4,
+            no_speech_threshold=0.6,
+            log_prob_threshold=-1.0,
+            condition_on_previous_text=False,
         )
 
         valid_words = []

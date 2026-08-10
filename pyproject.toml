@@ -25,6 +25,8 @@ dependencies = [
     "langcodes>=3.5.1",
     "pycountry>=26.2.16",
     "fastapi-mail>=1.4.2",
+    "ctranslate2>=4.5.0",
+    "transformers>=4.40.0",
 ]
 
 [project.optional-dependencies]
