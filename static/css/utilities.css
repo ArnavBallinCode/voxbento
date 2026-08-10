@@ -916,3 +916,21 @@ a {
   .lg\:gap-12 { gap: 3rem; }
   .lg\:my-2 { margin-top: 0.5rem; margin-bottom: 0.5rem; }
 }
+
+/* Classes missing from utilities.css needed by listener-event.html */
+.bg-\[\#eef2f6\] { background-color: #eef2f6; }
+.text-\[\#0d0f10\] { color: #0d0f10; }
+.drop-shadow-\[2px_2px_0px_rgba\(13\,15\,16\,0\.1\)\] { filter: drop-shadow(2px 2px 0px rgba(13,15,16,0.1)); }
+.border-\[3px\] { border-width: 3px; }
+.border-\[\#0d0f10\] { border-color: #0d0f10; }
+.border-\[\#0d0f10\]\/10 { border-color: rgba(13, 15, 16, 0.1); }
+.shadow-\[8px_8px_0px_\#0d0f10\] { box-shadow: 8px 8px 0px #0d0f10; }
+.shadow-\[4px_4px_0px_\#0d0f10\] { box-shadow: 4px 4px 0px #0d0f10; }
+.hover\:shadow-\[4px_4px_0px_\#0d0f10\]:hover { box-shadow: 4px 4px 0px #0d0f10; }
+.hover\:shadow-\[4px_4px_0px_\#2563eb\]:hover { box-shadow: 4px 4px 0px #2563eb; }
+.text-\[10px\] { font-size: 10px; }
+.h-\[40vh\] { height: 40vh; }
+.min-h-\[300px\] { min-height: 300px; }
+.min-h-\[1\.5em\] { min-height: 1.5em; }
+.translate-y-\[-10px\] { transform: translateY(-10px); }
+.z-\[100\] { z-index: 100; }

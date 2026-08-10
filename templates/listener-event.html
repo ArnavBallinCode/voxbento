@@ -701,6 +701,7 @@ function upgradeSelects() {
                 optionsDiv.classList.remove('opacity-0', 'invisible', 'translate-y-[-10px]');
                 arrow.querySelector('svg').style.transform = 'rotate(180deg)';
                 isOpen = true; // Ensure state is correct
+                wrapper.style.zIndex = '50';
             } else {
                 close();
             }
@@ -710,6 +711,7 @@ function upgradeSelects() {
             optionsDiv.classList.add('opacity-0', 'invisible', 'translate-y-[-10px]');
             arrow.querySelector('svg').style.transform = 'rotate(0deg)';
             isOpen = false;
+            wrapper.style.zIndex = '';
         }
 
         selectedDiv.onclick = (e) => {
