@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -56,13 +57,29 @@ async def lifespan(app: FastAPI):
 
     dg.track_task(asyncio.create_task(_gen()))
 
+    logging.getLogger("uvicorn.access").addFilter(_UvicornTokenRedactor())
     yield
     if pg.shared_http_client:
         await pg.shared_http_client.aclose()
 
 
-app = FastAPI(title="Voxbento", version="1.0.0", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+class _UvicornTokenRedactor(logging.Filter):
+    import re as _re
+    _TOKEN_RE = _re.compile(r"(?i)((?:^|&|\?)token=)[^&\s]*")
 
+    def filter(self, record):
+        try:
+            message = record.getMessage()
+        except Exception:
+            return True
+
+        if "token=" in message and ("/embed/" in message or "/ws/" in message):
+            record.msg = self._TOKEN_RE.sub(r"\1[REDACTED]", message)
+            record.args = ()
+        return True
+
+
+app = FastAPI(title="Voxbento", version="1.0.0", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
 @app.get("/docs", include_in_schema=False)
 async def custom_swagger_ui_html(request: Request, _=Depends(require_admin)):
