@@ -200,6 +200,8 @@ async def embed_listener(
     font: str = Query("inter"),
     captions: bool = Query(False),
     custom_css_url: str | None = Query(None, alias="customCssUrl"),
+    headless: bool = Query(False),
+    target_lang: str | None = Query(None, alias="targetLang"),
 ):
     """Serve a standalone, iframe-safe listener embed.
 
@@ -224,35 +226,38 @@ async def embed_listener(
     # Explicit claim checks — .get() only, never bare key access
     if payload.get("role") != "listener":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Token is not a listener token.")
+    if payload.get("purpose") != "embed":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Token must be an embed token.")
     if payload.get("event_slug") != event_slug:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Token is not valid for this event.")
 
     # ── Resolve booth ─────────────────────────────────────────────────────
-    from portal.database import list_booths_for_event
+    from portal.database import list_booths_for_event, list_rooms_for_event
 
     async with get_session() as session:
         ev = await get_event_by_slug(session, event_slug)
         if not ev:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found.")
 
-        if language_code.lower() != "floor":
+        if language_code.lower() == "floor":
+            rooms = await list_rooms_for_event(session, ev.id)
+            audio_delay_ms = rooms[0].audio_delay_ms if rooms else 0
+            channel_id = f"{ev.slug}/floor"
+            booth_id = f"{ev.slug}-floor"
+        else:
             db_booths = await list_booths_for_event(session, ev.id)
-
-    if language_code.lower() == "floor":
-        channel_id = f"{ev.slug}/floor"
-        booth_id = f"{ev.slug}-floor"
-    else:
-        booth = next(
-            (b for b in db_booths if b.language_code.lower() == language_code.lower()),
-            None,
-        )
-        if booth is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No booth for language '{language_code}' in event '{event_slug}'.",
+            booth = next(
+                (b for b in db_booths if b.language_code.lower() == language_code.lower()),
+                None,
             )
-        channel_id = booth.mediamtx_path
-        booth_id = f"{ev.slug}-{language_code.lower()}"
+            if booth is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"No booth for language '{language_code}' in event '{event_slug}'.",
+                )
+            audio_delay_ms = booth.room.audio_delay_ms if booth.room else 0
+            channel_id = booth.mediamtx_path
+            booth_id = f"{ev.slug}-{language_code.lower()}"
     whep_url = f"{settings.mediamtx_whip_base}/{channel_id}/whep"
     host = settings.public_base_url.replace("https://", "").replace("http://", "")
     caption_url = f"wss://{host}/ws/captions/{booth_id}"
@@ -267,13 +272,20 @@ async def embed_listener(
         safe_custom_css = custom_css_url
 
     # ── Security headers ─────────────────────────────────────────────────
-    if settings.embed_allowed_origins.strip():
-        origins = " ".join(
-            o.strip() for o in settings.embed_allowed_origins.split(",") if o.strip()
-        )
+    allowed_origins_list = [
+        o.strip() for o in settings.embed_allowed_origins.split(",") if o.strip()
+    ]
+
+    if allowed_origins_list:
+        origins = " ".join(allowed_origins_list)
         frame_ancestors = f"frame-ancestors {origins}"
     else:
         frame_ancestors = "frame-ancestors *"
+
+    if len(allowed_origins_list) == 1:
+        postmessage_target_origin = allowed_origins_list[0]
+    else:
+        postmessage_target_origin = "*"
 
     response_headers = {
         "Cache-Control": "no-store, private",
@@ -292,8 +304,12 @@ async def embed_listener(
         "font_family": safe_font.capitalize(),
         "captions_enabled": captions,
         "custom_css_url": safe_custom_css,
-        "target_lang_code": language_code.lower(),
+        "target_lang_code": target_lang.lower() if target_lang else language_code.lower(),
         "js_version": _JS_CACHE_BUST,
+        "headless": headless,
+        "postmessage_target_origin": postmessage_target_origin,
+        "allowed_origins_list": allowed_origins_list,
+        "audio_delay_ms": audio_delay_ms,
     }
 
     return templates.TemplateResponse(
