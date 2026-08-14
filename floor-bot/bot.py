@@ -89,6 +89,7 @@ async def run_capture():
     pw = None
     browser = None
     ffmpeg_proc = None
+    user_data_dir = None
 
     try:
         await asyncio.sleep(2)
@@ -96,7 +97,6 @@ async def run_capture():
         env = os.environ.copy()
         env["PULSE_SERVER"] = f"unix:{pulse_socket}"
 
-        user_data_dir = None
         pw = await async_playwright().start()
 
         user_data_dir = f"/tmp/chromium-data-{event_slug}-{room_id}"
@@ -241,7 +241,7 @@ async def run_capture():
                 os.remove(pulse_socket)
             except OSError:
                 pass
-        
+
         import shutil
         if user_data_dir and os.path.exists(user_data_dir):
             try:
