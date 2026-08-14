@@ -459,11 +459,11 @@ async def admin_setup_add_booth(request: Request, event_id: int):
                 )
         except Exception as e:
             logger.warning(f"Error creating booth in setup wizard: {e}")
-            
+
     redirect_url = f"/admin/events/{event_id}/setup/booths"
     if room_id_str:
         redirect_url += f"?room_id={room_id_str}"
-        
+
     return safe_redirect(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
 
 
