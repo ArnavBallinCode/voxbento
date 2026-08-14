@@ -96,9 +96,14 @@ async def run_capture():
         env = os.environ.copy()
         env["PULSE_SERVER"] = f"unix:{pulse_socket}"
 
+        user_data_dir = None
         pw = await async_playwright().start()
 
-        browser = await pw.chromium.launch(
+        user_data_dir = f"/tmp/chromium-data-{event_slug}-{room_id}"
+        os.makedirs(user_data_dir, exist_ok=True)
+
+        context = await pw.chromium.launch_persistent_context(
+            user_data_dir=user_data_dir,
             headless=True,
             env=env,
             ignore_default_args=["--mute-audio"],
@@ -112,15 +117,15 @@ async def run_capture():
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage"
-            ]
-        )
-
-        context = await browser.new_context(
+            ],
             permissions=["microphone", "camera"],
             ignore_https_errors=True
         )
 
-        page = await context.new_page()
+        browser = context  # Aliased for the existing cleanup logic
+
+        pages = context.pages
+        page = pages[0] if pages else await context.new_page()
         page.on("console", lambda m: print(f"Browser: {m.text}"))
         page.on("pageerror", lambda err: print(f"Browser Error: {err}"))
 
@@ -234,6 +239,13 @@ async def run_capture():
         if os.path.exists(pulse_socket):
             try:
                 os.remove(pulse_socket)
+            except OSError:
+                pass
+        
+        import shutil
+        if user_data_dir and os.path.exists(user_data_dir):
+            try:
+                shutil.rmtree(user_data_dir)
             except OSError:
                 pass
 
