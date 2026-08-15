@@ -87,27 +87,27 @@ class TTSConnectionManager:
     def __init__(self) -> None:
         self._rooms: dict[str, set[WebSocket]] = {}
 
-    def _get_key(self, room_id: int, language_code: str) -> str:
-        return f"{room_id}-{language_code}"
+    def _get_key(self, room_id: int, language_code: str, booth_id: str) -> str:
+        return f"{room_id}-{language_code}-{booth_id}"
 
-    def add(self, ws: WebSocket, room_id: int, language_code: str) -> None:
-        key = self._get_key(room_id, language_code)
+    def add(self, ws: WebSocket, room_id: int, language_code: str, booth_id: str) -> None:
+        key = self._get_key(room_id, language_code, booth_id)
         self._rooms.setdefault(key, set()).add(ws)
 
-    def remove(self, ws: WebSocket, room_id: int, language_code: str) -> None:
-        key = self._get_key(room_id, language_code)
+    def remove(self, ws: WebSocket, room_id: int, language_code: str, booth_id: str) -> None:
+        key = self._get_key(room_id, language_code, booth_id)
         room = self._rooms.get(key, set())
         room.discard(ws)
         if not room:
             self._rooms.pop(key, None)
 
-    def has_listeners(self, room_id: int, language_code: str) -> bool:
-        key = self._get_key(room_id, language_code)
+    def has_listeners(self, room_id: int, language_code: str, booth_id: str) -> bool:
+        key = self._get_key(room_id, language_code, booth_id)
         return bool(self._rooms.get(key, set()))
 
 
-    async def broadcast_bundle(self, room_id: int, language_code: str, audio_bytes: bytes, segment_id: str, seq: int, caption: str = "", translation: str = "", error: str | None = None) -> None:
-        key = self._get_key(room_id, language_code)
+    async def broadcast_bundle(self, room_id: int, language_code: str, booth_id: str, audio_bytes: bytes, segment_id: str, seq: int, caption: str = "", translation: str = "", error: str | None = None) -> None:
+        key = self._get_key(room_id, language_code, booth_id)
         header = {
             "segment_id": segment_id,
             "seq": seq,
@@ -126,9 +126,8 @@ class TTSConnectionManager:
             except Exception:
                 dead.append(ws)
         if dead:
-            room_id_str, lc = key.split("-", 1)
             for ws in dead:
-                self.remove(ws, int(room_id_str), lc)
+                self.remove(ws, room_id, language_code, booth_id)
 
 
 manager = ConnectionManager()

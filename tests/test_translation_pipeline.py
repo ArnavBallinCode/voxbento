@@ -92,13 +92,13 @@ async def test_language_independence(db_data, mock_broadcast):
 
                 # Check Spanish bundle
                 es_call = next(c for c in calls if c.args[1] == "es")
-                assert es_call.args[6] == "Hola mundo" # translation
-                assert es_call.args[7] is None # error is None
+                assert es_call.args[7] == "Hola mundo" # translation
+                assert es_call.args[8] is None # error is None
 
                 # Check French bundle
                 fr_call = next(c for c in calls if c.args[1] == "fr")
-                assert fr_call.args[6] == "Bonjour le monde"
-                assert fr_call.args[7] is None
+                assert fr_call.args[7] == "Bonjour le monde"
+                assert fr_call.args[8] is None
 
 
 @pytest.mark.anyio
@@ -137,16 +137,16 @@ async def test_pipeline_failure_degrades_gracefully(db_data, mock_broadcast):
 
                     # Check Spanish bundle (pipeline_failed)
                     es_call = next(c for c in calls if c.args[1] == "es")
-                    assert es_call.args[2] == b"" # no audio
-                    assert es_call.args[7] == "pipeline_failed"
+                    assert es_call.args[3] == b"" # no audio
+                    assert es_call.args[8] == "pipeline_failed"
 
                     # Check French bundle (tts_timeout)
                     fr_calls = [c for c in calls if c.args[1] == "fr"]
                     assert len(fr_calls) == 2
                     fr_call = fr_calls[-1]
-                    assert fr_call.args[2] == b"" # no audio
-                    assert fr_call.args[6] == "Bonjour le monde" # text still there
-                    assert fr_call.args[7] == "tts_timeout"
+                    assert fr_call.args[3] == b"" # no audio
+                    assert fr_call.args[7] == "Bonjour le monde" # text still there
+                    assert fr_call.args[8] == "tts_timeout"
 
 
 @pytest.mark.anyio
@@ -165,7 +165,7 @@ async def test_source_language_bypass(db_data, mock_broadcast):
 
         # English should be bypassed instantly with empty audio and text==text
         en_call = next(c for c in mock_bundle.call_args_list if c.args[1] == "en")
-        assert en_call.args[2] == b"" # no audio
-        assert en_call.args[5] == "Hello world" # original text
-        assert en_call.args[6] == "Hello world" # translation == original text
-        assert en_call.args[7] is None # no error
+        assert en_call.args[3] == b"" # no audio
+        assert en_call.args[6] == "Hello world" # original text
+        assert en_call.args[7] == "Hello world" # translation == original text
+        assert en_call.args[8] is None # no error

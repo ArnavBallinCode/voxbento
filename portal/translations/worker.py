@@ -117,11 +117,11 @@ class TranslationWorker:
                     # on the base room. We just need to mark it done for anyone who might have connected
                     # specifically to the source-language target websocket.
                     tasks.append(tts_manager.broadcast_bundle(
-                        room.id, lang.language_code, b"", uuid_segment_id, seq, text, text, None
+                        room.id, lang.language_code, booth_id_str, b"", uuid_segment_id, seq, text, text, None
                     ))
                 else:
                     # Lazy translation: only translate if someone is actually listening!
-                    if not tts_manager.has_listeners(room.id, lang.language_code):
+                    if not tts_manager.has_listeners(room.id, lang.language_code, booth_id_str):
                         continue
 
                     tasks.append(self._translate_and_broadcast(
@@ -170,7 +170,7 @@ class TranslationWorker:
 
         if q_depth >= 15:
             logger.warning(f"[{booth_id_str}] Queue full for {lang_code}. Dropping segment {seq}.")
-            await tts_manager.broadcast_bundle(room.id, lang_code, b"", uuid_segment_id, seq, text, "", "pipeline_failed")
+            await tts_manager.broadcast_bundle(room.id, lang_code, booth_id_str, b"", uuid_segment_id, seq, text, "", "pipeline_failed")
             return
 
         LANGUAGE_QUEUES[lang_code] += 1
@@ -190,7 +190,7 @@ class TranslationWorker:
                     translated_text = None
 
                 if not translated_text:
-                    await tts_manager.broadcast_bundle(room.id, lang_code, b"", uuid_segment_id, seq, text, "", "pipeline_failed")
+                    await tts_manager.broadcast_bundle(room.id, lang_code, booth_id_str, b"", uuid_segment_id, seq, text, "", "pipeline_failed")
                     return
 
                 # Save to DB using an independent session to avoid concurrent transaction crashes
@@ -202,7 +202,7 @@ class TranslationWorker:
                     await local_session.commit()
 
                 # Broadcast Stage 1 (Text Ready) immediately with empty audio
-                await tts_manager.broadcast_bundle(room.id, lang_code, b"", uuid_segment_id, seq, text, translated_text, None)
+                await tts_manager.broadcast_bundle(room.id, lang_code, booth_id_str, b"", uuid_segment_id, seq, text, translated_text, None)
 
             # Decrement queue early so slow TTS doesn't cause new incoming segments to be dropped
             LANGUAGE_QUEUES[lang_code] -= 1
@@ -226,11 +226,11 @@ class TranslationWorker:
                 error = "tts_error"
 
             # Broadcast Stage 2 (Audio Ready)
-            await tts_manager.broadcast_bundle(room.id, lang_code, audio_bytes, uuid_segment_id, seq, text, translated_text, error)
+            await tts_manager.broadcast_bundle(room.id, lang_code, booth_id_str, audio_bytes, uuid_segment_id, seq, text, translated_text, error)
 
         except Exception as e:
             logger.error(f"[{booth_id_str}] Translation failed for {lang_code}: {e}")
-            await tts_manager.broadcast_bundle(room.id, lang_code, b"", uuid_segment_id, seq, text, "", "pipeline_failed")
+            await tts_manager.broadcast_bundle(room.id, lang_code, booth_id_str, b"", uuid_segment_id, seq, text, "", "pipeline_failed")
         finally:
             if not queue_decremented:
                 LANGUAGE_QUEUES[lang_code] -= 1

@@ -211,7 +211,7 @@
   var pendingAudioDelayMs = 0;
   var pendingTtsLang = null;   // TTS language to start once live
   var pendingRoomId = null;
-  var segmentStore = {};
+  var segmentStore = Object.create(null);
   var expectedSeq = 1;
   var isSegmentPlaying = false;
   var fallbackQueueTimer = null;
@@ -244,7 +244,7 @@
         clearTimeout(fallbackQueueTimer);
         fallbackQueueTimer = null;
     }
-    segmentStore = {};
+    segmentStore = Object.create(null);
     expectedSeq = 1;
     isSegmentPlaying = false;
 
@@ -260,7 +260,7 @@
     setStatus('Waiting for selection...', 'waiting');
   }
 
-  function startTtsWs(roomId, langCode, audioDelayMs) {
+  function startTtsWs(roomId, langCode, boothId, audioDelayMs) {
     stopTtsWs();
     if (!audioCtx) {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -270,7 +270,7 @@
     }
     
     var wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    var wsUrl = wsProto + '//' + window.location.host + '/ws/tts/' + roomId + '/' + langCode;
+    var wsUrl = wsProto + '//' + window.location.host + '/ws/tts/' + roomId + '/' + langCode + '/' + boothId;
     console.log("Connecting TTS WS to:", wsUrl);
     ttsWs = new WebSocket(wsUrl);
     ttsWs.binaryType = 'arraybuffer';
@@ -410,7 +410,9 @@
             var srcDiv = document.createElement('div');
             srcDiv.id = 'src-' + data.segment_id;
             srcDiv.className = 'text-[#0d0f10] caption-src-text';
-            srcDiv.innerHTML = '<span class="font-extrabold">[' + srcLangName + ']</span> : ' + data.text;
+            srcDiv.innerHTML = '<span class="font-extrabold lang-label"></span> : <span class="untrusted-text"></span>';
+            srcDiv.querySelector('.lang-label').textContent = '[' + srcLangName + ']';
+            srcDiv.querySelector('.untrusted-text').textContent = data.text;
             
             if (mode === 'translated') {
                srcDiv.style.display = 'none';
@@ -422,7 +424,9 @@
           } else {
             var srcDiv = existingBlock.querySelector('.caption-src-text');
             if (srcDiv) {
-                srcDiv.innerHTML = '<span class="font-extrabold">[' + srcLangName + ']</span> : ' + data.text;
+                srcDiv.innerHTML = '<span class="font-extrabold lang-label"></span> : <span class="untrusted-text"></span>';
+                srcDiv.querySelector('.lang-label').textContent = '[' + srcLangName + ']';
+                srcDiv.querySelector('.untrusted-text').textContent = data.text;
             }
           }
         }
@@ -440,7 +444,9 @@
         
         var tDiv = document.createElement('div');
         tDiv.className = 'text-brand-600 translation-text caption-tgt-text';
-        tDiv.innerHTML = '<span class="font-extrabold">[' + tgtLangName + ']</span> : ' + data.text;
+        tDiv.innerHTML = '<span class="font-extrabold lang-label"></span> : <span class="untrusted-text"></span>';
+        tDiv.querySelector('.lang-label').textContent = '[' + tgtLangName + ']';
+        tDiv.querySelector('.untrusted-text').textContent = data.text;
         
         if (mode === 'original') {
              tDiv.style.display = 'none';
@@ -450,7 +456,9 @@
         if (block) {
             var existingTDiv = block.querySelector('.translation-text');
             if (existingTDiv) {
-                existingTDiv.innerHTML = '<span class="font-extrabold">[' + tgtLangName + ']</span> : ' + data.text;
+                existingTDiv.innerHTML = '<span class="font-extrabold lang-label"></span> : <span class="untrusted-text"></span>';
+                existingTDiv.querySelector('.lang-label').textContent = '[' + tgtLangName + ']';
+                existingTDiv.querySelector('.untrusted-text').textContent = data.text;
             } else {
                 block.appendChild(tDiv);
             }
@@ -590,10 +598,12 @@
             var plang = pendingTtsLang;
             var prid = pendingRoomId;
             var ttsDelayMs = pendingAudioDelayMs;
+            var pBoothId = pendingBoothId;
             pendingTtsLang = null;
             pendingAudioDelayMs = 0;
             pendingRoomId = null;
-            startTtsWs(prid, plang, ttsDelayMs);
+            pendingBoothId = null;
+            startTtsWs(prid, plang, pBoothId, ttsDelayMs);
             setStatus('Live (TTS Audio)', 'live');
           }
         }
@@ -918,7 +928,7 @@
     var wantsTtsAudio = ttsSyncEnabled && Boolean(targetLangValue) && canSyncTts;
 
     if (wantsTranslationText || wantsTtsAudio) {
-      startTtsWs(roomId, targetLangValue, selectedAudioDelayMs);
+      startTtsWs(roomId, targetLangValue, boothObjId, selectedAudioDelayMs);
       
       if (wantsTtsAudio) {
         audioEl.muted = true;
