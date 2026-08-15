@@ -45,7 +45,7 @@ def trigger_supertonic_download():
     def _do_download():
         import tqdm
         import tqdm.auto
-        
+
         class SupertonicDownloadTqdm(tqdm.tqdm):
             def update(self, n=1):
                 super().update(n)

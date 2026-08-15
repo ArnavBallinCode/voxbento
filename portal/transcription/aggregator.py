@@ -68,7 +68,7 @@ class CaptionAggregator:
         import re
 
         has_finalized = False
-        
+
         # Find ALL sentence boundaries in the current utterance
         matches = list(re.finditer(r"([^.?!]*[.?!]+)(?:\s+|$)", state.current_utterance))
         if matches:
@@ -78,15 +78,15 @@ class CaptionAggregator:
                 if len(candidate_text.split()) >= 10:
                     split_point = match.end()
                     break
-            
+
             if split_point is not None:
                 sentence = state.current_utterance[:split_point].strip()
                 remainder = state.current_utterance[split_point:].strip()
-                
+
                 if sentence:
                     await self.handle_final(booth_id, sentence)
                     has_finalized = True
-                
+
                 state.current_utterance = remainder
 
         state.current_word_count = len(state.current_utterance.split()) if state.current_utterance else 0
@@ -128,6 +128,7 @@ class CaptionAggregator:
 
         if self.room_id is not None:
             import asyncio
+
             from portal.database import save_transcript_segment
 
             async def _save_and_translate():

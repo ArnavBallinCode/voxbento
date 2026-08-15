@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import time
 from collections.abc import AsyncIterator
@@ -6,7 +5,6 @@ from collections.abc import AsyncIterator
 from portal.crypto import decrypt_val
 from portal.database import get_session
 from portal.models import Event, Room
-from portal.translations.constants import TranslationProviderEnum
 from portal.tts.providers.base import TTSProviderEnum, get_tts_provider
 
 logger = logging.getLogger(__name__)
@@ -67,23 +65,23 @@ async def synthesize(room_id: int, text: str, language_code: str) -> bytes | Non
     cfg = await _load_config_cached(room_id)
     if not cfg:
         return None
-        
+
     tts_provider = cfg["tts_provider"]
     voice = cfg["voice"]
-    
+
     chunks = []
-    
+
     async def _on_audio(chunk: bytes) -> None:
         chunks.append(chunk)
-        
+
     async def _text_iterator() -> AsyncIterator[str]:
         yield text
-        
+
     await tts_provider.synthesize_stream(
         text_chunks=_text_iterator(),
         language_code=language_code,
         voice=voice,
         on_audio=_on_audio
     )
-    
+
     return b"".join(chunks)

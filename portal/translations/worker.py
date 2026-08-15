@@ -5,16 +5,15 @@ import logging
 
 from portal.database import get_session
 from portal.models import DBBooth, Event, Room, TranscriptTranslation
-
-LANGUAGE_SEMAPHORES: dict[str, asyncio.Semaphore] = {}
-LANGUAGE_QUEUES: dict[str, int] = {}
-
 from portal.translations.constants import OPENAI_COMPATIBLE_ENDPOINTS, TranslationProviderEnum
 from portal.translations.keys import get_translation_api_key
 from portal.translations.providers.anthropic import AnthropicProvider
 from portal.translations.providers.gemini import GeminiProvider
 from portal.translations.providers.local import LocalProvider
 from portal.translations.providers.openai import OpenAIProvider
+
+LANGUAGE_SEMAPHORES: dict[str, asyncio.Semaphore] = {}
+LANGUAGE_QUEUES: dict[str, int] = {}
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +114,7 @@ class TranslationWorker:
             for lang in enabled_langs:
                 if lang.language_code == source_lang_code:
                     # Target == Source: bypass translation/TTS entirely. It was already broadcast instantly
-                    # on the base room. We just need to mark it done for anyone who might have connected 
+                    # on the base room. We just need to mark it done for anyone who might have connected
                     # specifically to the source-language target websocket.
                     tasks.append(tts_manager.broadcast_bundle(
                         room.id, lang.language_code, b"", uuid_segment_id, seq, text, text, None
@@ -124,7 +123,7 @@ class TranslationWorker:
                     # Lazy translation: only translate if someone is actually listening!
                     if not tts_manager.has_listeners(room.id, lang.language_code):
                         continue
-                        
+
                     tasks.append(self._translate_and_broadcast(
                         event,
                         room,
@@ -165,17 +164,17 @@ class TranslationWorker:
         seq: int,
     ):
         from portal.websockets.manager import tts_manager
-        
+
         sem = LANGUAGE_SEMAPHORES.setdefault(lang_code, asyncio.Semaphore(2))
         q_depth = LANGUAGE_QUEUES.setdefault(lang_code, 0)
-        
+
         if q_depth >= 15:
             logger.warning(f"[{booth_id_str}] Queue full for {lang_code}. Dropping segment {seq}.")
             await tts_manager.broadcast_bundle(room.id, lang_code, b"", uuid_segment_id, seq, text, "", "pipeline_failed")
             return
-            
+
         LANGUAGE_QUEUES[lang_code] += 1
-        
+
         try:
             queue_decremented = False
             async with sem:
@@ -201,20 +200,20 @@ class TranslationWorker:
                     )
                     local_session.add(translation)
                     await local_session.commit()
-                
+
                 # Broadcast Stage 1 (Text Ready) immediately with empty audio
                 await tts_manager.broadcast_bundle(room.id, lang_code, b"", uuid_segment_id, seq, text, translated_text, None)
-                
+
             # Decrement queue early so slow TTS doesn't cause new incoming segments to be dropped
             LANGUAGE_QUEUES[lang_code] -= 1
             queue_decremented = True
-                
+
             from portal.tts.worker import synthesize
-            
+
             timeout_s = max(2.0, 0.3 * len(translated_text))
             error = None
             audio_bytes = b""
-            
+
             try:
                 synth_bytes = await asyncio.wait_for(synthesize(room.id, translated_text, lang_code), timeout=timeout_s)
                 if synth_bytes:

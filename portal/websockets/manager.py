@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import struct
 from dataclasses import dataclass
 
 from fastapi import WebSocket
@@ -79,9 +80,6 @@ class ListenerConnectionManager:
             self.remove(ws, booth_id)
 
 
-import asyncio
-import struct
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +118,7 @@ class TTSConnectionManager:
         header_bytes = json.dumps(header).encode('utf-8')
         # Frame: [1-byte version][4-byte length L][L-bytes header][audio_bytes]
         frame = struct.pack(">BI", 1, len(header_bytes)) + header_bytes + audio_bytes
-        
+
         dead: list[WebSocket] = []
         for ws in list(self._rooms.get(key, set())):
             try:
