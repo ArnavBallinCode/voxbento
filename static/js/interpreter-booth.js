@@ -444,6 +444,9 @@ async function fetchBoothState() {
   url.searchParams.set('token', state.token)
   url.searchParams.set('language', state.language)
   url.searchParams.set('channel', state.channelId)
+  if (portal.dataset.roomId) {
+    url.searchParams.set('room_id', portal.dataset.roomId)
+  }
   const response = await fetch(url, { headers: authHeaders() })
   if (!response.ok) {
     const payload = await response.json().catch(() => ({ error: response.statusText }))
@@ -597,6 +600,7 @@ function joinBooth() {
     channel_id: state.channelId,
     participant_id: state.participantId,
     event_slug: portal.dataset.eventSlug || '',
+    room_id: portal.dataset.roomId ? parseInt(portal.dataset.roomId, 10) : undefined,
   })
 }
 
