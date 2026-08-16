@@ -864,3 +864,28 @@ async def log_usage_metric(session: AsyncSession, event_id: int, metric_name: st
     metric = UsageMetric(event_id=event_id, metric_name=metric_name, value=value)
     session.add(metric)
     await session.flush()
+
+
+async def get_booth_language_name(booth_id: str) -> str:
+    """Resolve the real language name for a booth_id from the database.
+    
+    Returns 'English' as a fallback if the booth is not found or parsing fails.
+    """
+    from sqlalchemy import select
+    from portal.models import DBBooth, Event
+    from portal.booth_identity import parse_booth_id
+
+    try:
+        event_slug, room_id, language_code = parse_booth_id(booth_id)
+        async with get_session() as db_session:
+            stmt = select(DBBooth.language_name).join(Event).where(
+                Event.slug == event_slug,
+                DBBooth.room_id == room_id,
+                DBBooth.language_code == language_code
+            )
+            res = await db_session.scalar(stmt)
+            if res:
+                return res
+    except Exception:
+        pass
+    return "English"
