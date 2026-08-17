@@ -23,7 +23,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
 import sqlalchemy as sa
-from sqlalchemy import func, select, or_
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import joinedload, selectinload
 
