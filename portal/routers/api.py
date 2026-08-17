@@ -5,10 +5,18 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from portal.auth import create_listener_token, security
+from portal.auth import create_embed_token, create_listener_token, security
 from portal.booth_identity import make_booth_id, make_mediamtx_path
 from portal.config import settings
-from portal.database import create_invite_token, get_session, log_usage_metric, verify_api_key
+from portal.database import (
+    create_invite_token,
+    delete_booth,
+    get_event_by_slug,
+    get_session,
+    list_rooms_for_event,
+    log_usage_metric,
+    verify_api_key,
+)
 from portal.globals import booths
 from portal.models import DBBooth, Event, Room
 from portal.rate_limit import check_rate_limit
@@ -26,7 +34,15 @@ bearer_scheme = HTTPBearer(auto_error=False)
 async def provision_listener_token(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    purpose: str | None = Query(None),
 ):
+    """Issue a listener JWT for a third-party client.
+
+    - Default (no purpose param): 4-hour token for WebSocket listener use.
+    - purpose=embed: 30-minute token for embedding in an iframe src= attribute.
+      The shorter lifetime limits exposure since the token is visible in the
+      third party's page HTML source.
+    """
     ip_address = request.client.host if request.client else "unknown"
     if not check_rate_limit("api_token_provision", ip_address, max_requests=60, window_seconds=60):
         raise HTTPException(status_code=429, detail="Too many requests")
@@ -40,21 +56,41 @@ async def provision_listener_token(
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API Key")
 
         await log_usage_metric(session, key.event_id, "listener_token_issued")
-        token = create_listener_token(event_slug=key.event.slug)
+        if purpose == "embed":
+            token = create_embed_token(event_slug=key.event.slug)
+        else:
+            token = create_listener_token(event_slug=key.event.slug)
         return {"token": token}
 
 
-@router.delete("/events/{event_slug}/booths/{language_code}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/events/{event_slug}/rooms/{room_id}/booths/{language_code}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_booth_by_language(
     request: Request,
     event_slug: str,
+    room_id: int,
     language_code: str,
     token: str = Query(""),
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ):
     """Delete a booth from an event."""
     _require_access(request, credentials, token)
-    await booths.delete_booth(event_slug, language_code)
+
+    booth_id = make_booth_id(event_slug, room_id, language_code)
+    await stop_transcription_worker(booth_id)
+
+    # Delete from DB
+    async with get_session() as session:
+        stmt = (
+            select(DBBooth)
+            .join(Event)
+            .where(Event.slug == event_slug, DBBooth.room_id == room_id, DBBooth.language_code == language_code)
+        )
+        db_booth = await session.scalar(stmt)
+        if db_booth:
+            await delete_booth(session, db_booth.id)
+
+    # Remove from in memory state
+    await booths.remove_booth(event_slug, room_id, language_code)
 
 
 @router.post("/events/{event_slug}/booths", status_code=status.HTTP_201_CREATED)
@@ -71,63 +107,80 @@ async def create_event_booth(
     WHIP URL, and WHEP URL.
     """
     _require_access(request, credentials, token)
-    try:
-        state = await booths.create_booth(
-            event_slug=event_slug,
-            language_code=body.language_code,
-            language=body.language or body.language_code.upper(),
-            instance=body.instance,
-            room_id=body.room_id,
-        )
-    except ValueError as exc:
-        if "already exists" in str(exc):
-            booth_id = make_booth_id(event_slug, body.language_code)
-            mtx_path = make_mediamtx_path(event_slug, body.language_code)
-            state = await booths.snapshot(
-                booth_id=booth_id,
-                language=body.language or body.language_code.upper(),
-                channel_id=mtx_path,
-                room_id=body.room_id,
-            )
-        else:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-    mediamtx_path = state["mediamtx_path"]
-    await _ensure_mediamtx_path(mediamtx_path)
-    state["whip_url"] = f"{settings.mediamtx_whip_base}/{mediamtx_path}/whip"
-    state["whep_url"] = f"{settings.mediamtx_whip_base}/{mediamtx_path}/whep"
 
     async with get_session() as session:
-        # 1. Get or Create Event
+        # Get or Create Event
         event_query = await session.execute(select(Event).where(Event.slug == event_slug))
         event = event_query.scalar_one_or_none()
         if not event:
-            event = Event(slug=event_slug, display_name=event_slug.title())
+            try:
+                event = Event(slug=event_slug, display_name=event_slug.title())
+            except ValueError as exc:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
             session.add(event)
             await session.flush()
 
-        # 2. Get or Create Room (if body.room_id is provided)
-        db_room_id = None
-        if body.room_id is not None:
-            room_query = await session.execute(
-                select(Room).where(Room.event_id == event.id, Room.eventyay_room_id == str(body.room_id))
-            )
-            room = room_query.scalar_one_or_none()
-            display_name = body.room_name or f"Room {body.room_id}"
-            if not room:
-                room = Room(
-                    event_id=event.id,
-                    display_name=display_name,
-                    eventyay_room_id=str(body.room_id),
+        # Get or Create Room
+        room_id = body.room_id
+        if room_id is None:
+            rooms = await list_rooms_for_event(session, event.id)
+            if len(rooms) > 1:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="Event has multiple rooms. room_id is required."
                 )
+            if rooms:
+                room = rooms[0]
+            else:
+                room = Room(event_id=event.id, display_name=body.room_name or "Main Room")
                 session.add(room)
+                await session.flush()
+        else:
+            room_query = await session.execute(select(Room).where(Room.event_id == event.id, Room.id == room_id))
+            room = room_query.scalar_one_or_none()
+            display_name = body.room_name or f"Room {room_id}"
+            if not room:
+                room = Room(event_id=event.id, display_name=display_name)
+                # Don't force id=room_id to avoid unique constraint violations
+                session.add(room)
+                await session.flush()
             elif room.display_name != display_name:
                 room.display_name = display_name
-            await session.flush()
-            db_room_id = room.id
+                await session.flush()
 
-        # 3. Get or Create DBBooth
+        db_room_id = room.id
+
+        # Create Booth in memory state
+        try:
+            state = await booths.create_booth(
+                event_slug=event_slug,
+                language_code=body.language_code,
+                language=body.language or body.language_code.upper(),
+                instance=body.instance,
+                room_id=db_room_id,
+            )
+        except ValueError as exc:
+            if "already exists" in str(exc):
+                booth_id = make_booth_id(event_slug, db_room_id, body.language_code)
+                mtx_path = make_mediamtx_path(event_slug, db_room_id, body.language_code)
+                state = await booths.snapshot(
+                    booth_id=booth_id,
+                    language=body.language or body.language_code.upper(),
+                    channel_id=mtx_path,
+                    room_id=db_room_id,
+                )
+            else:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+        mediamtx_path = state["mediamtx_path"]
+        await _ensure_mediamtx_path(mediamtx_path)
+        state["whip_url"] = f"{settings.mediamtx_whip_base}/{mediamtx_path}/whip"
+        state["whep_url"] = f"{settings.mediamtx_whip_base}/{mediamtx_path}/whep"
+
+        # Get or Create DBBooth
         booth_query = await session.execute(
-            select(DBBooth).where(DBBooth.event_id == event.id, DBBooth.language_code == body.language_code)
+            select(DBBooth).where(
+                DBBooth.event_id == event.id, DBBooth.room_id == db_room_id, DBBooth.language_code == body.language_code
+            )
         )
         db_booth = booth_query.scalar_one_or_none()
         if not db_booth:
@@ -140,7 +193,7 @@ async def create_event_booth(
             session.add(db_booth)
             await session.flush()
 
-        # 4. Generate InviteToken
+        # Generate InviteToken
         invite = await create_invite_token(
             session,
             booth_id=db_booth.id,
@@ -201,7 +254,9 @@ async def delete_event_booth(
 @router.get("/events/{event_slug}/booths")
 async def list_event_booths(
     request: Request,
-    event_slug: str, token: str = Query(""), credentials: HTTPAuthorizationCredentials | None = Depends(security)
+    event_slug: str,
+    token: str = Query(""),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> dict:
     """List all booths for an event."""
     _require_access(request, credentials, token)
@@ -219,12 +274,28 @@ async def event_booth_state(
     request: Request,
     event_slug: str,
     language_code: str,
+    room_id: int | None = Query(None),
     token: str = Query(""),
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> dict:
     """Event-scoped booth state — never auto-creates a booth."""
     _require_access(request, credentials, token)
-    state = await booths.get_booth_for_event(event_slug, language_code)
+
+    if room_id is None:
+        async with get_session() as session:
+            ev = await get_event_by_slug(session, event_slug)
+            if ev:
+                rooms = await list_rooms_for_event(session, ev.id)
+                if len(rooms) > 1:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST, detail="Event has multiple rooms. room_id is required."
+                    )
+                if rooms:
+                    room_id = rooms[0].id
+        if room_id is None:
+            room_id = 1
+
+    state = await booths.get_booth_for_event(event_slug, room_id, language_code)
     if state is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -239,13 +310,29 @@ async def event_booth_whip_url(
     event_slug: str,
     language_code: str,
     participant_id: str = Query(...),
+    room_id: int | None = Query(None),
     token: str = Query(""),
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> dict:
     """Event-scoped WHIP URL — validates event ownership before returning."""
     _require_access(request, credentials, token)
-    booth_id = make_booth_id(event_slug, language_code)
-    channel_id = make_mediamtx_path(event_slug, language_code)
+
+    if room_id is None:
+        async with get_session() as session:
+            ev = await get_event_by_slug(session, event_slug)
+            if ev:
+                rooms = await list_rooms_for_event(session, ev.id)
+                if len(rooms) > 1:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST, detail="Event has multiple rooms. room_id is required."
+                    )
+                if rooms:
+                    room_id = rooms[0].id
+        if room_id is None:
+            room_id = 1
+
+    booth_id = make_booth_id(event_slug, room_id, language_code)
+    channel_id = make_mediamtx_path(event_slug, room_id, language_code)
     try:
         await booths.validate_booth_event(booth_id, event_slug)
     except PermissionError as exc:
@@ -259,25 +346,34 @@ async def ingest_status_api(channel_id: str) -> dict:
     return {"channel_id": channel_id, "state": "mediamtx", "reachable": await _check_mediamtx()}
 
 
-@router.post("/events/{event_slug}/booths/{language_code}/transcription/start")
+@router.post("/events/{event_slug}/rooms/{room_id}/booths/{language_code}/transcription/start")
 async def api_transcription_start(
     event_slug: str,
+    room_id: int,
     language_code: str,
     request: Request,
     token: str = Query(""),
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ):
     _require_access(request, credentials, token)
-    booth_id = make_booth_id(event_slug, language_code)
+    booth_id = make_booth_id(event_slug, room_id, language_code)
     async with get_session() as session:
         stmt = (
             select(DBBooth)
             .join(Event)
             .options(selectinload(DBBooth.event))
-            .where(Event.slug == event_slug, DBBooth.language_code == language_code)
+            .where(Event.slug == event_slug, DBBooth.room_id == room_id, DBBooth.language_code == language_code)
         )
         db_booth = await session.scalar(stmt)
         if not db_booth or not db_booth.transcription_enabled:
+            print(
+                "API START: Transcription disabled for booth",
+                booth_id,
+                "db_booth=",
+                db_booth,
+                "enabled=",
+                getattr(db_booth, "transcription_enabled", None),
+            )
             return {"status": "disabled", "message": "Transcription is not enabled for this booth."}
         provider = db_booth.transcription_provider
         model_size = db_booth.transcription_model
@@ -297,25 +393,26 @@ async def api_transcription_start(
         if provider_enum != ProviderEnum.LOCAL and (not api_key):
             raise HTTPException(status_code=400, detail=f"{provider} API key missing. Cannot start transcription.")
         config = ProviderConfig(api_key=api_key)
-        room_id = db_booth.room_id
     try:
         await start_transcription_worker(
             event_slug, language_code, booth_id, broadcast_transcription, provider, model_size, config, room_id=room_id
         )
     except ValueError as e:
         raise HTTPException(status_code=429, detail=str(e))
+    print("API START: Successfully started worker for booth", booth_id)
     return {"status": "started", "provider": provider, "model": model_size}
 
 
-@router.post("/events/{event_slug}/booths/{language_code}/transcription/stop")
+@router.post("/events/{event_slug}/rooms/{room_id}/booths/{language_code}/transcription/stop")
 async def api_transcription_stop(
     request: Request,
     event_slug: str,
+    room_id: int,
     language_code: str,
     token: str = Query(""),
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ):
     _require_access(request, credentials, token)
-    booth_id = make_booth_id(event_slug, language_code)
+    booth_id = make_booth_id(event_slug, room_id, language_code)
     await stop_transcription_worker(booth_id)
     return {"status": "stopped"}

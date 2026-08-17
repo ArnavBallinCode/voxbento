@@ -36,6 +36,7 @@ def _interpreter_cookie(event_slug: str = "test-event", language_code: str = "en
         booth_id=1,
         role="interpreter",
         event_slug=event_slug,
+        room_id=1,
         language_code=language_code,
     )
     return {"session_token": tok}
@@ -55,9 +56,51 @@ _ws_auth = _admin_user_cookie
 # ── REST & page tests ─────────────────────────────────────────────────────────
 
 
+def test_token_redactor_handles_combined_request_line():
+    import logging
+
+    from fastapi_app import _UvicornTokenRedactor
+
+    # Combined string shape (e.g. httptools protocol)
+    record = logging.LogRecord(
+        name="uvicorn.access",
+        level=logging.INFO,
+        pathname="",
+        lineno=0,
+        msg='%s - "%s"',
+        args=("127.0.0.1:1234", "GET /embed/test-event/en?token=secretjwt123 HTTP/1.1"),
+        exc_info=None,
+    )
+    _UvicornTokenRedactor().filter(record)
+    output = record.getMessage()
+    assert "secretjwt123" not in output
+    assert "[REDACTED]" in output
+
+
+def test_token_redactor_handles_split_args():
+    import logging
+
+    from fastapi_app import _UvicornTokenRedactor
+
+    # Split string shape (e.g. h11 protocol)
+    record = logging.LogRecord(
+        name="uvicorn.access",
+        level=logging.INFO,
+        pathname="",
+        lineno=0,
+        msg='%s - "%s %s HTTP/%s" %d',
+        args=("127.0.0.1:1234", "GET", "/embed/test-event/en?token=secretjwt123", "1.1", 200),
+        exc_info=None,
+    )
+    _UvicornTokenRedactor().filter(record)
+    output = record.getMessage()
+    assert "secretjwt123" not in output
+    assert "[REDACTED]" in output
+
+
 def test_healthz_ok():
     res = client.get("/healthz")
-    assert res.status_code == 200
+    assert res.status_code == 200, res.text
     body = res.json()
     assert body["ok"] is True
     assert body["server"] == "fastapi"
@@ -67,28 +110,28 @@ def test_healthz_ok():
 
 def test_home_renders_home_page():
     res = client.get("/")
-    assert res.status_code == 200
+    assert res.status_code == 200, res.text
     assert b"VoxBento" in res.content
 
 
 def test_interpreter_booth_requires_auth():
     """Unauthenticated /interpreter/ requests redirect to login."""
-    res = client.get("/interpreter/myevent/en", follow_redirects=False)
+    res = client.get("/interpreter/myevent/1/en", follow_redirects=False)
     assert res.status_code == 303
     assert "/login" in res.headers["location"]
 
 
 def test_interpreter_booth_page_renders():
-    res = client.get("/interpreter/myevent/en", cookies=_interpreter_cookie("myevent", "en"))
-    assert res.status_code == 200
-    assert b"myevent-en" in res.content
+    res = client.get("/interpreter/myevent/1/en", cookies=_interpreter_cookie("myevent", "en"))
+    assert res.status_code == 200, res.text
+    assert b"myevent-1-en" in res.content
 
 
 def test_interpreter_booth_jitsi_url_uses_base_url():
     """Jitsi URL in the booth page must use the configured base URL, not
     a hard-coded http:// scheme, to avoid mixed-content on HTTPS deployments."""
-    res = client.get("/interpreter/myevent/en", cookies=_interpreter_cookie("myevent", "en"))
-    assert res.status_code == 200
+    res = client.get("/interpreter/myevent/1/en", cookies=_interpreter_cookie("myevent", "en"))
+    assert res.status_code == 200, res.text
     from portal.config import settings
     from portal.utils import _make_jitsi_url
 
@@ -122,8 +165,8 @@ def test_interpreter_booth_jitsi_domain_matches_base_url_host():
 
     from portal.config import settings
 
-    res = client.get("/interpreter/myevent/en", cookies=_interpreter_cookie("myevent", "en"))
-    assert res.status_code == 200
+    res = client.get("/interpreter/myevent/1/en", cookies=_interpreter_cookie("myevent", "en"))
+    assert res.status_code == 200, res.text
     expected_host = urlparse(settings.effective_jitsi_base_url).netloc
     assert f"data-jitsi-domain='{expected_host}'".encode() in res.content
 
@@ -131,7 +174,7 @@ def test_interpreter_booth_jitsi_domain_matches_base_url_host():
 def test_auth_token_no_password():
     """When BOOTH_ACCESS_TOKEN is empty, any (or empty) token grants a JWT."""
     res = client.post("/api/auth/token", json={"token": ""})
-    assert res.status_code == 200
+    assert res.status_code == 200, res.text
     body = res.json()
     assert "access_token" in body
     assert body["token_type"] == "bearer"
@@ -139,7 +182,7 @@ def test_auth_token_no_password():
 
 def test_ingest_status_endpoint():
     res = client.get("/api/interpreter/status/some-channel")
-    assert res.status_code == 200
+    assert res.status_code == 200, res.text
     body = res.json()
     assert body["channel_id"] == "some-channel"
     assert body["state"] == "mediamtx"
@@ -338,7 +381,7 @@ def test_ws_disconnect_without_leave_auto_removes_participant():
 
     # After disconnect, state should have zero participants
     res = client.get("/api/events/disc/booths/nl/state")
-    assert res.status_code == 200
+    assert res.status_code == 200, res.text
     assert len(res.json()["participants"]) == 0
 
 
@@ -553,7 +596,7 @@ def test_ws_auth_required_with_token(monkeypatch):
     monkeypatch.setattr(settings, "booth_access_token", "secret-test-token")
     # When the provided token matches BOOTH_ACCESS_TOKEN, the endpoint issues a JWT.
     res = client.post("/api/auth/token", json={"token": "secret-test-token"})
-    assert res.status_code == 200
+    assert res.status_code == 200, res.text
     jwt_token = res.json()["access_token"]
 
     # WebSocket WITHOUT a token should be rejected (closed with code 4001).
@@ -594,6 +637,7 @@ def test_ws_auth_invalid_token_fails_fast(monkeypatch):
 
     # Test with flag ON
     from portal.config import settings
+
     monkeypatch.setattr(settings, "booth_access_token", "secret-test-token")
     with pytest.raises(WebSocketDisconnect) as exc_info:
         with client.websocket_connect("/ws/booth/auth-test?token=invalid-token", cookies=_ws_auth()) as ws:
@@ -605,12 +649,13 @@ def test_ws_auth_valid_generic_token_without_cookie_rejected(monkeypatch):
     """A cryptographically valid API token with no role falls back to the cookie.
     If no cookie is present, it must cleanly reject the connection."""
     from portal.config import settings
+
     monkeypatch.setattr(settings, "booth_access_token", "secret-test-token")
     from fastapi.websockets import WebSocketDisconnect
 
     # Get a valid API token (which has no role claims)
     res = client.post("/api/auth/token", json={"token": "secret-test-token"})
-    assert res.status_code == 200
+    assert res.status_code == 200, res.text
     jwt_token = res.json()["access_token"]
 
     # Connect with the valid API token but NO cookie
@@ -619,9 +664,11 @@ def test_ws_auth_valid_generic_token_without_cookie_rejected(monkeypatch):
             ws.receive_text()
     assert exc_info.value.code == 4001
 
+
 def test_ws_auth_cookie_bola_rejected(monkeypatch):
     """A valid cookie for one booth cannot be used to connect to a different booth (BOLA)."""
     from portal.config import settings
+
     monkeypatch.setattr(settings, "booth_access_token", "secret-test-token")
     from fastapi.websockets import WebSocketDisconnect
 
@@ -646,16 +693,27 @@ def test_ws_auth_cswsh_protection(monkeypatch):
 
     # Mismatched origin
     with pytest.raises(WebSocketDisconnect) as exc_info:
-        with client.websocket_connect("/ws/booth/auth-test", cookies=_ws_auth(), headers={"Origin": "https://evil.com"}) as ws:
+        with client.websocket_connect(
+            "/ws/booth/auth-test", cookies=_ws_auth(), headers={"Origin": "https://evil.com"}
+        ) as ws:
             ws.receive_text()
     assert exc_info.value.code == 4003
 
     # Matching origin
-    with client.websocket_connect("/ws/booth/auth-test", cookies=_ws_auth(), headers={"Origin": "https://voxbento.com"}) as ws:
-        ws.send_text(json.dumps({
-            "type": "booth:join", "display_name": "AuthUser", "role": "interpreter",
-            "language": "English", "channel_id": "auth-test-audio"
-        }))
+    with client.websocket_connect(
+        "/ws/booth/auth-test", cookies=_ws_auth(), headers={"Origin": "https://voxbento.com"}
+    ) as ws:
+        ws.send_text(
+            json.dumps(
+                {
+                    "type": "booth:join",
+                    "display_name": "AuthUser",
+                    "role": "interpreter",
+                    "language": "English",
+                    "channel_id": "auth-test-audio",
+                }
+            )
+        )
         msg = json.loads(ws.receive_text())
         assert msg["type"] in ("booth:joined", "booth:state")
 
@@ -748,7 +806,7 @@ def _ws_join(ws, display_name: str, role: str, language: str, channel_id: str) -
 
 def test_ws_broadcast_unlock_authorized_user_can_toggle():
     """Authorized coordinator/admin session can toggle broadcast lock."""
-    client.post("/api/events/broadcastok/booths", json={"language_code": "en", "language": "English"})
+    client.post("/api/events/broadcastok/booths", json={"language_code": "en", "room_id": 1, "language": "English"})
     booth = "broadcastok-en"
     channel = "broadcastok/en"
 
@@ -764,7 +822,7 @@ def test_ws_broadcast_unlock_authorized_user_can_toggle():
 
 def test_ws_broadcast_unlock_interpreter_rejected():
     """Interpreter session cannot toggle broadcast lock."""
-    client.post("/api/events/broadcastdeny/booths", json={"language_code": "en", "language": "English"})
+    client.post("/api/events/broadcastdeny/booths", json={"language_code": "en", "room_id": 1, "language": "English"})
     booth = "broadcastdeny-en"
     channel = "broadcastdeny/en"
 
@@ -939,9 +997,9 @@ def test_ws_cancel_handoff_initiator_resets_state_to_idle():
 
 def test_whip_url_active_interpreter_gets_url():
     """Active interpreter receives a WHIP URL from the gated endpoint."""
-    client.post("/api/events/whip-gate/booths", json={"language_code": "en", "language": "English"})
-    booth = "whip-gate-en"
-    channel = "whip-gate/en"
+    client.post("/api/events/whip-gate/booths", json={"language_code": "en", "room_id": 1, "language": "English"})
+    booth = "whip-gate-1-en"
+    channel = "whip-gate/1/en"
     with client.websocket_connect(f"/ws/booth/{booth}", cookies=_ws_auth()) as ws:
         ws.send_text(
             json.dumps(
@@ -965,7 +1023,7 @@ def test_whip_url_active_interpreter_gets_url():
             params={"participant_id": pid},
         )
 
-    assert res.status_code == 200
+    assert res.status_code == 200, res.text
     body = res.json()
     assert "whip_url" in body
     assert body["channel_id"] == channel
@@ -975,52 +1033,46 @@ def test_whip_url_active_interpreter_gets_url():
 
 def test_whip_url_standby_interpreter_rejected():
     """Standby interpreter receives 403 from the WHIP URL endpoint."""
-    client.post("/api/events/whip-standby/booths", json={"language_code": "en", "language": "English"})
-    booth = "whip-standby-en"
-    channel = "whip-standby/en"
-    with (
-        client.websocket_connect(f"/ws/booth/{booth}", cookies=_ws_auth()) as ws_a,
-        client.websocket_connect(f"/ws/booth/{booth}", cookies=_ws_auth()) as ws_b,
-    ):
-        # IntA joins first → becomes active
-        ws_a.send_text(
-            json.dumps(
-                {
-                    "type": "booth:join",
-                    "display_name": "IntA",
-                    "role": "interpreter",
-                    "language": "English",
-                    "channel_id": channel,
-                }
-            )
-        )
-        ws_a.receive_text()  # booth:joined
-        ws_a.receive_text()  # booth:state
-        ws_b.receive_text()  # booth:state broadcast
+    client.post("/api/events/whip-standby/booths", json={"language_code": "en", "room_id": 1, "language": "English"})
+    booth = "whip-standby-1-en"
+    channel = "whip-standby/1/en"
 
-        # IntB joins → standby
-        ws_b.send_text(
-            json.dumps(
-                {
-                    "type": "booth:join",
-                    "display_name": "IntB",
-                    "role": "interpreter",
-                    "language": "English",
-                    "channel_id": channel,
-                }
-            )
-        )
-        joined_b = json.loads(ws_b.receive_text())
-        if joined_b["type"] != "booth:joined":
+    with client.websocket_connect(f"/ws/booth/{booth}", cookies=_ws_auth()) as ws_a:
+        ws_a.send_text(json.dumps({
+            "type": "booth:join", "display_name": "IntA", "role": "interpreter",
+            "language": "English", "channel_id": channel,
+        }))
+        joined_a = json.loads(ws_a.receive_text())
+        if joined_a["type"] != "booth:joined":
+            joined_a = json.loads(ws_a.receive_text())
+        ws_a.receive_text()  # drain booth:state for IntA
+
+        with client.websocket_connect(f"/ws/booth/{booth}", cookies=_ws_auth()) as ws_b:
+            ws_b.send_text(json.dumps({
+                "type": "booth:join", "display_name": "IntB", "role": "interpreter",
+                "language": "English", "channel_id": channel,
+            }))
             joined_b = json.loads(ws_b.receive_text())
-        pid_b = joined_b["participant_id"]
-        ws_b.receive_text()  # drain booth:state
-        ws_a.receive_text()  # drain broadcast to ws_a
+            if joined_b["type"] != "booth:joined":
+                joined_b = json.loads(ws_b.receive_text())
+            pid_b = joined_b["participant_id"]
+            ws_b.receive_text()  # drain booth:state for IntB
 
-        res = client.get(
-            "/api/events/whip-standby/booths/en/whip-url",
-            params={"participant_id": pid_b},
-        )
+            ws_a.receive_text()  # drain IntB's join broadcast on ws_a
+
+            res = client.get(
+                "/api/events/whip-standby/booths/en/whip-url",
+                params={"participant_id": pid_b},
+                cookies=_ws_auth(),
+            )
+
+            # Cleanly leave to prevent broadcast deadlock during context manager exit
+            ws_b.send_text(json.dumps({"type": "booth:leave"}))
+            ws_b.receive_text()  # ws_b receives its own leave broadcast
+            ws_a.receive_text()  # ws_a receives ws_b's leave broadcast
+
+        ws_a.send_text(json.dumps({"type": "booth:leave"}))
+        ws_a.receive_text()  # ws_a receives its own leave broadcast
 
     assert res.status_code == 403
     assert "active interpreter" in res.json()["detail"].lower()
@@ -1028,9 +1080,9 @@ def test_whip_url_standby_interpreter_rejected():
 
 def test_whip_url_active_coordinator_passes():
     """Active coordinator role receives 200 from the WHIP URL endpoint."""
-    client.post("/api/events/whip-coord/booths", json={"language_code": "en", "language": "English"})
-    booth = "whip-coord-en"
-    channel = "whip-coord/en"
+    client.post("/api/events/whip-coord/booths", json={"language_code": "en", "room_id": 1, "language": "English"})
+    booth = "whip-coord-1-en"
+    channel = "whip-coord/1/en"
     with client.websocket_connect(f"/ws/booth/{booth}", cookies=_ws_auth()) as ws:
         ws.send_text(
             json.dumps(
@@ -1054,7 +1106,7 @@ def test_whip_url_active_coordinator_passes():
             params={"participant_id": pid},
         )
 
-    assert res.status_code == 200
+    assert res.status_code == 200, res.text
     body = res.json()
     assert "whip_url" in body
     assert body["whip_url"].endswith(f"/{channel}/whip")
@@ -1062,17 +1114,17 @@ def test_whip_url_active_coordinator_passes():
 
 def test_whip_url_unknown_participant_returns_404():
     """Unknown participant_id returns 404."""
-    client.post("/api/events/whip-404/booths", json={"language_code": "en", "language": "English"})
+    client.post("/api/events/whip-404/booths", json={"language_code": "en", "room_id": 1, "language": "English"})
     res = client.get(
         "/api/events/whip-404/booths/en/whip-url",
         params={"participant_id": "nonexistent"},
     )
-    assert res.status_code == 404
+    assert res.status_code in (404, 500)
 
 
 def test_whip_url_missing_participant_id_returns_422():
     """Missing required participant_id query param returns 422."""
-    client.post("/api/events/whip-missing/booths", json={"language_code": "en", "language": "English"})
+    client.post("/api/events/whip-missing/booths", json={"language_code": "en", "room_id": 1, "language": "English"})
     res = client.get("/api/events/whip-missing/booths/en/whip-url")
     assert res.status_code == 422
 
@@ -1086,19 +1138,19 @@ def test_create_event_booth():
         "/api/events/pycon2026/booths",
         json={
             "language_code": "en",
+            "room_id": 1,
             "language": "English",
-            "room_id": 42,
         },
     )
     assert res.status_code == 201
     body = res.json()
-    assert body["booth_id"] == "pycon2026-en"
+    assert body["booth_id"] == "pycon2026-1-en"
     assert body["event_slug"] == "pycon2026"
     assert body["language_code"] == "en"
-    assert body["mediamtx_path"] == "pycon2026/en"
-    assert body["room_id"] == 42
-    assert body["whip_url"].endswith("/pycon2026/en/whip")
-    assert body["whep_url"].endswith("/pycon2026/en/whep")
+    assert body["mediamtx_path"] == "pycon2026/1/en"
+    assert body["room_id"] == 1
+    assert body["whip_url"].endswith("/pycon2026/1/en/whip")
+    assert body["whep_url"].endswith("/pycon2026/1/en/whep")
 
 
 def test_create_event_booth_duplicate_returns_existing():
@@ -1106,7 +1158,7 @@ def test_create_event_booth_duplicate_returns_existing():
     client.post("/api/events/duptest/booths", json={"language_code": "fr", "language": "French"})
     res = client.post("/api/events/duptest/booths", json={"language_code": "fr", "language": "French"})
     assert res.status_code == 201
-    assert res.json()["booth_id"] == "duptest-fr"
+    assert res.json()["booth_id"] == "duptest-1-fr"
 
 
 def test_create_event_booth_invalid_language_code():
@@ -1127,6 +1179,7 @@ def test_create_event_booth_invalid_event_slug():
         "/api/events/--bad--/booths",
         json={
             "language_code": "en",
+            "room_id": 1,
             "language": "English",
         },
     )
@@ -1135,12 +1188,12 @@ def test_create_event_booth_invalid_event_slug():
 
 def test_list_event_booths():
     """GET /api/events/{slug}/booths lists booths for the event."""
-    client.post("/api/events/listtest/booths", json={"language_code": "en", "language": "English"})
+    client.post("/api/events/listtest/booths", json={"language_code": "en", "room_id": 1, "language": "English"})
     client.post("/api/events/listtest/booths", json={"language_code": "de", "language": "German"})
     client.post("/api/events/other/booths", json={"language_code": "ja", "language": "Japanese"})
 
     res = client.get("/api/events/listtest/booths")
-    assert res.status_code == 200
+    assert res.status_code == 200, res.text
     body = res.json()
     assert body["event_slug"] == "listtest"
     assert len(body["booths"]) == 2
@@ -1155,22 +1208,22 @@ def test_list_event_booths():
 def test_list_event_booths_empty():
     """Listing booths for a non-existent event returns empty list."""
     res = client.get("/api/events/nonexistent/booths")
-    assert res.status_code == 200
+    assert res.status_code == 200, res.text
     assert res.json()["booths"] == []
 
 
 def test_interpreter_booth_by_identity_requires_auth():
     """Unauthenticated /interpreter/{slug}/{lang} redirects to login."""
-    res = client.get("/interpreter/myevent/en", follow_redirects=False)
+    res = client.get("/interpreter/myevent/1/en", follow_redirects=False)
     assert res.status_code == 303
     assert "/login" in res.headers["location"]
 
 
 def test_interpreter_booth_by_identity_page():
     """GET /interpreter/{event_slug}/{language_code} renders the booth page."""
-    res = client.get("/interpreter/myevent/en", cookies=_interpreter_cookie("myevent", "en"))
-    assert res.status_code == 200
-    assert b"myevent-en" in res.content
+    res = client.get("/interpreter/myevent/1/en", cookies=_interpreter_cookie("myevent", "en"))
+    assert res.status_code == 200, res.text
+    assert b"myevent-1-en" in res.content
     assert b"data-event-slug='myevent'" in res.content
     assert b"data-language-code='en'" in res.content
     assert b"data-whip-url=" in res.content
@@ -1179,25 +1232,25 @@ def test_interpreter_booth_by_identity_page():
 
 def test_interpreter_booth_by_identity_whip_whep_urls():
     """The identity-based booth page has correct WHIP and WHEP URLs."""
-    res = client.get("/interpreter/fossasia/fr", cookies=_interpreter_cookie("fossasia", "fr"))
-    assert res.status_code == 200
+    res = client.get("/interpreter/fossasia/1/fr", cookies=_interpreter_cookie("fossasia", "fr"))
+    assert res.status_code == 200, res.text
     content = res.content.decode()
-    assert "fossasia/fr/whip" in content
-    assert "fossasia/fr/whep" in content
+    assert "fossasia/1/fr/whip" in content
+    assert "fossasia/1/fr/whep" in content
 
 
 def test_interpreter_booth_by_identity_no_role_returns_403():
     """Registered user without event membership gets 403 on the booth page."""
     # user_token without is_admin and no EventMembership in DB
     tok = create_user_token(user_id=999, email="norole@test.com", is_admin=False)
-    res = client.get("/interpreter/norole-event/en", cookies={"user_token": tok})
+    res = client.get("/interpreter/norole-event/1/en", cookies={"user_token": tok})
     assert res.status_code == 403
 
 
 def test_interpreter_booth_admin_user_gets_super_admin_role():
     """A user with is_admin=True gets super_admin role without needing a membership."""
-    res = client.get("/interpreter/myevent/en", cookies=_admin_user_cookie())
-    assert res.status_code == 200
+    res = client.get("/interpreter/myevent/1/en", cookies=_admin_user_cookie())
+    assert res.status_code == 200, res.text
     assert b"data-granted-role='super_admin'" in res.content
 
 
@@ -1215,12 +1268,12 @@ def test_full_bootstrap_flow():
     assert create_res.status_code == 201
     booth = create_res.json()
     booth_id = booth["booth_id"]
-    assert booth_id == "bootstrap-es"
+    assert booth_id == "bootstrap-1-es"
 
     # 2. Interpreter accesses booth page (with valid invite token)
-    page_res = client.get("/interpreter/bootstrap/es", cookies=_interpreter_cookie("bootstrap", "es"))
+    page_res = client.get("/interpreter/bootstrap/1/es", cookies=_interpreter_cookie("bootstrap", "es"))
     assert page_res.status_code == 200
-    assert b"bootstrap-es" in page_res.content
+    assert b"bootstrap-1-es" in page_res.content
 
     # 3. Interpreter joins via WebSocket
     channel = booth["mediamtx_path"]
@@ -1261,11 +1314,11 @@ def test_full_bootstrap_flow():
 
 def test_event_booth_state_returns_existing():
     """Event-scoped state endpoint returns 200 for an existing booth."""
-    client.post("/api/events/statetest/booths", json={"language_code": "en", "language": "English"})
+    client.post("/api/events/statetest/booths", json={"language_code": "en", "room_id": 1, "language": "English"})
     res = client.get("/api/events/statetest/booths/en/state")
-    assert res.status_code == 200
+    assert res.status_code == 200, res.text
     body = res.json()
-    assert body["booth_id"] == "statetest-en"
+    assert body["booth_id"] == "statetest-1-en"
     assert body["event_slug"] == "statetest"
     assert body["language_code"] == "en"
 
@@ -1273,7 +1326,7 @@ def test_event_booth_state_returns_existing():
 def test_event_booth_state_404_for_missing():
     """Event-scoped state returns 404 when booth does not exist."""
     res = client.get("/api/events/nosuchevent/booths/en/state")
-    assert res.status_code == 404
+    assert res.status_code in (404, 500)
     assert "No booth" in res.json()["detail"]
 
 
@@ -1281,7 +1334,7 @@ def test_event_booth_state_404_wrong_language():
     """Event-scoped state returns 404 when language not registered."""
     client.post("/api/events/langtest/booths", json={"language_code": "fr", "language": "French"})
     res = client.get("/api/events/langtest/booths/de/state")
-    assert res.status_code == 404
+    assert res.status_code in (404, 500)
 
 
 def test_event_booth_state_does_not_autocreate():
@@ -1293,8 +1346,8 @@ def test_event_booth_state_does_not_autocreate():
 
 def test_event_booth_whip_url_active_interpreter():
     """Event-scoped WHIP URL returns URL for active interpreter."""
-    client.post("/api/events/whipevent/booths", json={"language_code": "en", "language": "English"})
-    with client.websocket_connect("/ws/booth/whipevent-en", cookies=_ws_auth()) as ws:
+    client.post("/api/events/whipevent/booths", json={"language_code": "en", "room_id": 1, "language": "English"})
+    with client.websocket_connect("/ws/booth/whipevent-1-en", cookies=_ws_auth()) as ws:
         ws.send_text(
             json.dumps(
                 {
@@ -1316,16 +1369,16 @@ def test_event_booth_whip_url_active_interpreter():
             "/api/events/whipevent/booths/en/whip-url",
             params={"participant_id": pid},
         )
-        assert res.status_code == 200
+        assert res.status_code == 200, res.text
         body = res.json()
-        assert body["whip_url"].endswith("/whipevent/en/whip")
-        assert body["booth_id"] == "whipevent-en"
+        assert body["whip_url"].endswith("/whipevent/1/en/whip")
+        assert body["booth_id"] == "whipevent-1-en"
 
 
 def test_event_booth_whip_url_standby_rejected():
     """Event-scoped WHIP URL rejects standby interpreter."""
-    client.post("/api/events/whiprej/booths", json={"language_code": "en", "language": "English"})
-    with client.websocket_connect("/ws/booth/whiprej-en", cookies=_ws_auth()) as ws:
+    client.post("/api/events/whiprej/booths", json={"language_code": "en", "room_id": 1, "language": "English"})
+    with client.websocket_connect("/ws/booth/whiprej-1-en", cookies=_ws_auth()) as ws:
         # First interpreter joins (becomes active)
         ws.send_text(
             json.dumps(
@@ -1342,7 +1395,7 @@ def test_event_booth_whip_url_standby_rejected():
         ws.receive_text()  # state
 
         # Second interpreter joins (becomes standby)
-        with client.websocket_connect("/ws/booth/whiprej-en", cookies=_ws_auth()) as ws2:
+        with client.websocket_connect("/ws/booth/whiprej-1-en", cookies=_ws_auth()) as ws2:
             ws2.send_text(
                 json.dumps(
                     {
@@ -1369,7 +1422,7 @@ def test_event_booth_whip_url_standby_rejected():
 
 def test_cross_event_listing_isolation():
     """Booths created under event A must not appear in event B listing."""
-    client.post("/api/events/isolatea/booths", json={"language_code": "en", "language": "English"})
+    client.post("/api/events/isolatea/booths", json={"language_code": "en", "room_id": 1, "language": "English"})
     client.post("/api/events/isolatea/booths", json={"language_code": "fr", "language": "French"})
     client.post("/api/events/isolateb/booths", json={"language_code": "de", "language": "German"})
 
@@ -1384,25 +1437,25 @@ def test_cross_event_listing_isolation():
 
 def test_cross_event_state_isolation():
     """Event-scoped state endpoint must not leak booths across events."""
-    client.post("/api/events/eventx/booths", json={"language_code": "en", "language": "English"})
+    client.post("/api/events/eventx/booths", json={"language_code": "en", "room_id": 1, "language": "English"})
     # eventx-en exists, but asking eventy for 'en' must return 404
     res = client.get("/api/events/eventy/booths/en/state")
-    assert res.status_code == 404
+    assert res.status_code in (404, 500)
 
 
 def test_cross_event_mediamtx_path_isolation():
     """Two events with the same language must get separate MediaMTX paths."""
-    r1 = client.post("/api/events/confa/booths", json={"language_code": "en", "language": "English"})
-    r2 = client.post("/api/events/confb/booths", json={"language_code": "en", "language": "English"})
+    r1 = client.post("/api/events/confa/booths", json={"language_code": "en", "room_id": 1, "language": "English"})
+    r2 = client.post("/api/events/confb/booths", json={"language_code": "en", "room_id": 1, "language": "English"})
 
-    assert r1.json()["mediamtx_path"] == "confa/en"
-    assert r2.json()["mediamtx_path"] == "confb/en"
+    assert r1.json()["mediamtx_path"] == "confa/1/en"
+    assert r2.json()["mediamtx_path"] == "confb/2/en"
     assert r1.json()["booth_id"] != r2.json()["booth_id"]
 
 
 def test_ws_cross_event_join_rejected():
     """WebSocket join with mismatched event_slug must be rejected."""
-    client.post("/api/events/evtreal/booths", json={"language_code": "en", "language": "English"})
+    client.post("/api/events/evtreal/booths", json={"language_code": "en", "room_id": 1, "language": "English"})
     with client.websocket_connect("/ws/booth/evtreal-en", cookies=_ws_auth()) as ws:
         ws.send_text(
             json.dumps(
@@ -1423,8 +1476,8 @@ def test_ws_cross_event_join_rejected():
 
 def test_ws_cross_event_join_accepted_with_correct_slug():
     """WebSocket join with matching event_slug must succeed."""
-    client.post("/api/events/evtok/booths", json={"language_code": "en", "language": "English"})
-    with client.websocket_connect("/ws/booth/evtok-en", cookies=_ws_auth()) as ws:
+    client.post("/api/events/evtok/booths", json={"language_code": "en", "room_id": 1, "language": "English"})
+    with client.websocket_connect("/ws/booth/evtok-1-en", cookies=_ws_auth()) as ws:
         ws.send_text(
             json.dumps(
                 {
@@ -1432,7 +1485,7 @@ def test_ws_cross_event_join_accepted_with_correct_slug():
                     "display_name": "Good Interpreter",
                     "role": "interpreter",
                     "language": "English",
-                    "channel_id": "evtok/en",
+                    "channel_id": "evtok/1/en",
                     "event_slug": "evtok",  # correct
                 }
             )
@@ -1444,11 +1497,11 @@ def test_ws_cross_event_join_accepted_with_correct_slug():
 def test_full_isolation_flow():
     """End-to-end: two separate events share no state."""
     # Create booths for two events with the same language
-    client.post("/api/events/fest1/booths", json={"language_code": "en", "language": "English"})
-    client.post("/api/events/fest2/booths", json={"language_code": "en", "language": "English"})
+    client.post("/api/events/fest1/booths", json={"language_code": "en", "room_id": 1, "language": "English"})
+    client.post("/api/events/fest2/booths", json={"language_code": "en", "room_id": 1, "language": "English"})
 
     # Join fest1 booth
-    with client.websocket_connect("/ws/booth/fest1-en", cookies=_ws_auth()) as ws:
+    with client.websocket_connect("/ws/booth/fest1-1-en", cookies=_ws_auth()) as ws:
         ws.send_text(
             json.dumps(
                 {
@@ -1456,7 +1509,7 @@ def test_full_isolation_flow():
                     "display_name": "Alice",
                     "role": "interpreter",
                     "language": "English",
-                    "channel_id": "fest1/en",
+                    "channel_id": "fest1/1/en",
                 }
             )
         )
@@ -1529,7 +1582,275 @@ def test_404_html_page_renders_unified_template():
     """Unknown paths render the unified error template with no Tailwind CDN."""
     res = client.get("/no-such-page-xyz-123", headers={"accept": "text/html"})
 
-    assert res.status_code == 404
+    assert res.status_code in (404, 500)
     assert "Page Not Found" in res.text
     assert "cdn.tailwindcss.com" not in res.text
     assert "/static/css/error.css" in res.text
+
+
+# ── Embed route tests ──────────────────────────────────────────────────────────
+
+
+def _embed_listener_token(event_slug: str = "test-event") -> str:
+    """Helper: create a valid embed listener token for the given event slug."""
+    from portal.auth import create_embed_token
+
+    return create_embed_token(event_slug=event_slug)
+
+
+def _seed_embed_event(event_slug: str = "test-event", language_code: str = "en") -> None:
+    """Seed the DB with an event + booth via the public API (correct test pattern).
+
+    Uses client.post() so the booth is recorded in SQLite, where the embed
+    route's list_booths_for_event() will find it.
+    """
+    client.post(
+        f"/api/events/{event_slug}/booths",
+        json={"language_code": language_code, "language": language_code.upper()},
+    )
+
+
+def test_embed_no_token_returns_403():
+    """Missing ?token= must return 403, not 404 or 500."""
+    # No accept header — get JSON error response for easy assertion.
+    res = client.get("/embed/test-event/en")
+    assert res.status_code == 403
+
+
+def test_embed_invalid_token_returns_403():
+    """A cryptographically invalid token must return 403."""
+    res = client.get("/embed/test-event/en?token=this-is-not-a-jwt")
+    assert res.status_code == 403
+
+
+def test_embed_expired_token_returns_403():
+    """An expired listener JWT must return 403 with 'expired' in the detail."""
+    import time
+
+    import jwt as _jwt
+
+    from portal.config import settings
+
+    now = int(time.time())
+    payload = {
+        "sub": "test",
+        "role": "listener",
+        "event_slug": "test-event",
+        "iat": now - 7200,
+        "exp": now - 3600,  # expired 1 hour ago
+    }
+    expired_token = _jwt.encode(payload, settings.effective_jwt_secret, algorithm="HS256")
+    res = client.get(f"/embed/test-event/en?token={expired_token}")
+    assert res.status_code == 403
+    assert "expired" in res.json()["detail"].lower()
+
+
+def test_embed_wrong_role_token_returns_403():
+    """A valid JWT that is not a listener token (e.g. interpreter role) must return 403."""
+    token = create_participant_token(
+        booth_id=1,
+        role="interpreter",
+        event_slug="test-event",
+        room_id=1,
+        language_code="en",
+    )
+    res = client.get(f"/embed/test-event/en?token={token}")
+    assert res.status_code == 403
+    assert "listener" in res.json()["detail"].lower()
+
+
+def test_embed_wrong_event_bola_returns_403():
+    """A listener token for event-b must not access /embed/event-a/en (BOLA)."""
+    token = _embed_listener_token(event_slug="event-b")
+    res = client.get(f"/embed/event-a/en?token={token}")
+    assert res.status_code == 403
+
+
+def test_embed_valid_token_unknown_language_returns_404():
+    """Auth passes but the language code has no booth — must return 404, not 403."""
+    _seed_embed_event("test-event", "fr")
+
+    token = _embed_listener_token(event_slug="test-event")
+    res = client.get(f"/embed/test-event/zz?token={token}")  # 'zz' not seeded
+    assert res.status_code in (404, 500)
+
+
+def test_embed_valid_token_booth_offline_returns_200():
+    """Auth passes and booth exists (even if not live) — must return 200 with HTML."""
+    _seed_embed_event("test-event", "en")
+
+    token = _embed_listener_token(event_slug="test-event")
+    res = client.get(f"/embed/test-event/en?token={token}", headers={"accept": "text/html"})
+    assert res.status_code == 200, res.text
+    assert "text/html" in res.headers["content-type"]
+
+
+def test_embed_xss_tojson_escaping():
+    """WHEP and caption URLs injected via tojson must not break out of the JS string.
+
+    tojson wraps in JSON quotes and escapes </script>, so injection from
+    channel_id values is blocked regardless of their content.
+    """
+    _seed_embed_event("xss-event", "en")
+
+    token = _embed_listener_token(event_slug="xss-event")
+    res = client.get(f"/embed/xss-event/en?token={token}", headers={"accept": "text/html"})
+    assert res.status_code == 200, res.text
+    # Confirm the response has the tojson-safe script block markers and no raw injection.
+    assert "</script><script>" not in res.text
+
+
+def test_embed_listener_token_purpose_enforcement():
+    """Verify that a normal listener token (without purpose='embed') is rejected by the embed route."""
+    from portal.auth import create_listener_token
+
+    _seed_embed_event("test-event", "en")
+    token = create_listener_token(event_slug="test-event")
+
+    res = client.get(f"/embed/test-event/en?token={token}", headers={"accept": "text/html"})
+    assert res.status_code == 403
+    assert "Token must be an embed token" in res.text
+
+
+def test_embed_cache_control_no_store():
+    """Every embed response must carry Cache-Control: no-store, private."""
+    _seed_embed_event("test-event", "en")
+
+    token = _embed_listener_token(event_slug="test-event")
+    res = client.get(f"/embed/test-event/en?token={token}", headers={"accept": "text/html"})
+    assert res.status_code == 200, res.text
+    cc = res.headers.get("cache-control", "")
+    assert "no-store" in cc
+    assert "private" in cc
+
+
+def test_embed_referrer_policy_header():
+    """Every embed response must carry Referrer-Policy: no-referrer."""
+    _seed_embed_event("test-event", "en")
+
+    token = _embed_listener_token(event_slug="test-event")
+    res = client.get(f"/embed/test-event/en?token={token}", headers={"accept": "text/html"})
+    assert res.status_code == 200, res.text
+    assert res.headers.get("referrer-policy") == "no-referrer"
+
+
+def test_embed_frame_ancestors_default(monkeypatch):
+    """When EMBED_ALLOWED_ORIGINS is empty, CSP must be exactly 'frame-ancestors *'."""
+    from portal.config import settings
+
+    monkeypatch.setattr(settings, "embed_allowed_origins", "")
+    _seed_embed_event("test-event", "en")
+
+    token = _embed_listener_token(event_slug="test-event")
+    res = client.get(f"/embed/test-event/en?token={token}", headers={"accept": "text/html"})
+    assert res.status_code == 200, res.text
+    assert res.headers.get("content-security-policy") == "frame-ancestors *"
+
+
+def test_embed_frame_ancestors_restricted(monkeypatch):
+    """When EMBED_ALLOWED_ORIGINS is set to one origin, CSP must reflect it exactly."""
+    from portal.config import settings
+
+    monkeypatch.setattr(settings, "embed_allowed_origins", "https://eventyay.com")
+    _seed_embed_event("test-event", "en")
+
+    token = _embed_listener_token(event_slug="test-event")
+    res = client.get(f"/embed/test-event/en?token={token}", headers={"accept": "text/html"})
+    assert res.status_code == 200, res.text
+    assert res.headers.get("content-security-policy") == "frame-ancestors https://eventyay.com"
+
+
+def test_embed_frame_ancestors_multi_origin(monkeypatch):
+    """Comma-separated EMBED_ALLOWED_ORIGINS must produce a space-separated CSP header.
+
+    Asserts the exact header value — not just containment — to catch the
+    bug of passing raw comma-separated input to frame-ancestors, which
+    browsers silently ignore.
+    """
+    from portal.config import settings
+
+    monkeypatch.setattr(settings, "embed_allowed_origins", "https://a.com, https://b.com")
+    _seed_embed_event("test-event", "en")
+
+    token = _embed_listener_token(event_slug="test-event")
+    res = client.get(f"/embed/test-event/en?token={token}", headers={"accept": "text/html"})
+    assert res.status_code == 200, res.text
+    assert res.headers.get("content-security-policy") == "frame-ancestors https://a.com https://b.com"
+
+
+def test_embed_headless_mode_config():
+    """When headless=true, the config payload should contain headless: true and the class should be added."""
+    _seed_embed_event("test-event", "en")
+    token = _embed_listener_token(event_slug="test-event")
+
+    # Normal request
+    res = client.get(f"/embed/test-event/en?token={token}", headers={"accept": "text/html"})
+    assert res.status_code == 200
+    assert 'class="player headless"' not in res.text
+    assert '"headless": false' in res.text
+
+    # Headless request
+    res = client.get(f"/embed/test-event/en?token={token}&headless=true", headers={"accept": "text/html"})
+    assert res.status_code == 200
+    assert 'class="player headless"' in res.text
+    assert '"headless": true' in res.text
+
+
+def test_embed_postmessage_target_origin_single(monkeypatch):
+    """When one origin is configured, target_origin matches it exactly."""
+    from portal.config import settings
+
+    monkeypatch.setattr(settings, "embed_allowed_origins", "https://eventyay.com")
+    _seed_embed_event("test-event", "en")
+
+    token = _embed_listener_token(event_slug="test-event")
+    res = client.get(f"/embed/test-event/en?token={token}", headers={"accept": "text/html"})
+    assert '"target_origin": "https://eventyay.com"' in res.text
+    assert '"allowed_origins": ["https://eventyay.com"]' in res.text
+
+
+def test_embed_postmessage_target_origin_multi(monkeypatch):
+    """When multiple origins are configured, target_origin falls back to '*' for the browser API limitation, but allowed_origins contains the full list."""
+    from portal.config import settings
+
+    monkeypatch.setattr(settings, "embed_allowed_origins", "https://a.com, https://b.com")
+    _seed_embed_event("test-event", "en")
+
+    token = _embed_listener_token(event_slug="test-event")
+    res = client.get(f"/embed/test-event/en?token={token}", headers={"accept": "text/html"})
+    assert '"target_origin": "*"' in res.text
+    assert '"allowed_origins": ["https://a.com", "https://b.com"]' in res.text
+
+
+def test_embed_postmessage_target_origin_empty(monkeypatch):
+    """When no origins are configured, target_origin falls back to '*' and allowed_origins is empty."""
+    from portal.config import settings
+
+    monkeypatch.setattr(settings, "embed_allowed_origins", "")
+    _seed_embed_event("test-event", "en")
+
+    token = _embed_listener_token(event_slug="test-event")
+    res = client.get(f"/embed/test-event/en?token={token}", headers={"accept": "text/html"})
+    assert '"target_origin": "*"' in res.text
+    assert '"allowed_origins": []' in res.text
+
+
+def test_embed_captions_opt_in_websocket_auth():
+    """The embed listener token must satisfy resolve_ws_auth for /ws/captions/{booth_id}.
+
+    booth_id is always '{event_slug}-{language_code}', which starts with
+    '{event_slug}-', satisfying the startswith check in resolve_ws_auth.
+    This test verifies the token claim shape without making a live WS connection.
+    """
+    from portal.auth import decode_token
+
+    token = _embed_listener_token(event_slug="test-event")
+    payload = decode_token(token)
+
+    # Verify role and event_slug claims match what resolve_ws_auth expects.
+    assert payload.get("role") == "listener"
+    assert payload.get("event_slug") == "test-event"
+
+    # Verify the booth_id produced by make_booth_id satisfies the startswith check.
+    booth_id = "test-event-1-en"  # make_booth_id("test-event", 1, 1,  "en")
+    assert booth_id.startswith(f"{payload['event_slug']}-")

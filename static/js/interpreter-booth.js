@@ -444,6 +444,18 @@ async function fetchBoothState() {
   url.searchParams.set('token', state.token)
   url.searchParams.set('language', state.language)
   url.searchParams.set('channel', state.channelId)
+
+  const rawRoomId = portal.dataset.roomId
+  const parsedRoomId =
+    rawRoomId != null && rawRoomId !== ''
+      ? parseInt(rawRoomId, 10)
+      : undefined
+  const roomId = Number.isNaN(parsedRoomId) ? undefined : parsedRoomId
+
+  if (roomId !== undefined) {
+    url.searchParams.set('room_id', String(roomId))
+  }
+
   const response = await fetch(url, { headers: authHeaders() })
   if (!response.ok) {
     const payload = await response.json().catch(() => ({ error: response.statusText }))
@@ -589,15 +601,28 @@ function joinBooth() {
   const displayName = portal.dataset.displayName || 'Interpreter'
   const requestedRole = state.grantedRole || 'interpreter'
 
-  wsSend({
+  const rawRoomId = portal.dataset.roomId
+  const parsedRoomId =
+    rawRoomId != null && rawRoomId !== ''
+      ? parseInt(rawRoomId, 10)
+      : undefined
+  const roomId = Number.isNaN(parsedRoomId) ? undefined : parsedRoomId
+
+  const payload = {
     type: 'booth:join',
-    display_name: displayName || 'Interpreter',
+    display_name: displayName,
     role: requestedRole,
     language: state.language,
     channel_id: state.channelId,
     participant_id: state.participantId,
     event_slug: portal.dataset.eventSlug || '',
-  })
+  }
+
+  if (roomId !== undefined) {
+    payload.room_id = roomId
+  }
+
+  wsSend(payload)
 }
 
 function joinMonitoringFeed() {
@@ -1094,9 +1119,9 @@ async function startLiveIngest() {
     // Start backend transcription
     try {
       const payload = { event_slug: portal.dataset.eventSlug, language_code: portal.dataset.languageCode }
-      await fetch(`/api/events/${portal.dataset.eventSlug}/booths/${portal.dataset.languageCode}/transcription/start`, {
+      await fetch(`/api/events/${portal.dataset.eventSlug}/rooms/${portal.dataset.roomId}/booths/${portal.dataset.languageCode}/transcription/start`, {
         method: 'POST',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        headers: { 'Authorization': `Bearer ${portal.dataset.boothToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       })
     } catch (err) {
@@ -1143,7 +1168,7 @@ async function stopLiveIngest() {
     // If someone else is active, it means they took over, so let THEM manage the transcription!
     if (state.activeInterpreterId === null || state.activeInterpreterId === state.participantId) {
       try {
-        await fetch(`/api/events/${portal.dataset.eventSlug}/booths/${portal.dataset.languageCode}/transcription/stop`, { method: 'POST', headers: authHeaders() })
+        await fetch(`/api/events/${portal.dataset.eventSlug}/rooms/${portal.dataset.roomId}/booths/${portal.dataset.languageCode}/transcription/stop`, { method: 'POST', headers: authHeaders() })
       } catch (err) {
         console.warn('Failed to stop transcription worker:', err)
       }
@@ -1196,9 +1221,9 @@ function attemptRelayStart(attempt) {
       // Start backend transcription worker now that WHIP ingest is live
       if (portal.dataset.eventSlug && portal.dataset.languageCode) {
         try {
-          await fetch(`/api/events/${portal.dataset.eventSlug}/booths/${portal.dataset.languageCode}/transcription/start`, {
+          await fetch(`/api/events/${portal.dataset.eventSlug}/rooms/${portal.dataset.roomId}/booths/${portal.dataset.languageCode}/transcription/start`, {
             method: 'POST',
-            headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+            headers: { 'Authorization': `Bearer ${portal.dataset.boothToken}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({
               event_slug: portal.dataset.eventSlug,
               language_code: portal.dataset.languageCode,

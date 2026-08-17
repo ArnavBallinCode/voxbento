@@ -23,7 +23,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
 import sqlalchemy as sa
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -230,6 +230,21 @@ async def delete_room(session: AsyncSession, room_id: int) -> bool:
     room = await get_room_by_id(session, room_id)
     if room is None:
         return False
+    # Break the circular FK cycle: rooms.relay_booth_id → booths.id ↔ booths.room_id → rooms.id
+    # null out relay_booth_id to remove the back-reference
+    room.relay_booth_id = None
+    await session.flush()
+    # delete all booths belonging to this room explicitly
+    from sqlalchemy import delete as sa_delete
+    from sqlalchemy import select as sa_select
+
+    # First delete booth memberships and tokens to avoid orphans since SQLite FKs are OFF
+    booth_ids = sa_select(DBBooth.id).where(DBBooth.room_id == room_id)
+    await session.execute(sa_delete(BoothMembership).where(BoothMembership.booth_id.in_(booth_ids)))
+    await session.execute(sa_delete(InviteToken).where(InviteToken.booth_id.in_(booth_ids)))
+    await session.execute(sa_delete(DBBooth).where(DBBooth.room_id == room_id))
+    await session.flush()
+    # now safe to delete the room
     await session.delete(room)
     await session.flush()
     return True
@@ -458,8 +473,11 @@ async def get_user_by_id(session: AsyncSession, user_id: int) -> User | None:
     return result.scalar_one_or_none()
 
 
-async def count_users(session: AsyncSession) -> int:
-    result = await session.execute(select(func.count(User.id)))
+async def count_users(session: AsyncSession, search: str | None = None) -> int:
+    stmt = select(func.count(User.id))
+    if search:
+        stmt = stmt.where(or_(User.email.ilike(f"%{search}%"), User.display_name.ilike(f"%{search}%")))
+    result = await session.execute(stmt)
     return result.scalar_one()
 
 
@@ -468,8 +486,12 @@ async def list_users(
     *,
     limit: int = 100,
     offset: int = 0,
+    search: str | None = None,
 ) -> list[User]:
-    result = await session.execute(select(User).order_by(User.created_at).limit(limit).offset(offset))
+    stmt = select(User).order_by(User.created_at).limit(limit).offset(offset)
+    if search:
+        stmt = stmt.where(or_(User.email.ilike(f"%{search}%"), User.display_name.ilike(f"%{search}%")))
+    result = await session.execute(stmt)
     return list(result.scalars().all())
 
 
@@ -751,11 +773,15 @@ async def save_transcript_segment(booth_id_str: str, text: str, room_id: int | N
     from portal.models import DBBooth, Event
 
     parts = booth_id_str.split("-")
-    if len(parts) < 2:
-        return None
-
-    language_code = parts[-1]
-    event_slug = "-".join(parts[:-1])
+    if len(parts) < 3:
+        # Fallback for floor or invalid
+        language_code = parts[-1] if parts else "floor"
+        event_slug = "-".join(parts[:-1]) if len(parts) > 1 else ""
+        parsed_room_id = room_id
+    else:
+        language_code = parts[-1]
+        parsed_room_id = int(parts[-2])
+        event_slug = "-".join(parts[:-2])
 
     try:
         async with get_session() as session:
@@ -764,7 +790,11 @@ async def save_transcript_segment(booth_id_str: str, text: str, room_id: int | N
                 stmt = (
                     select(DBBooth.id)
                     .join(Event)
-                    .where(Event.slug == event_slug, DBBooth.language_code == language_code)
+                    .where(
+                        Event.slug == event_slug,
+                        DBBooth.room_id == parsed_room_id,
+                        DBBooth.language_code == language_code,
+                    )
                 )
                 booth_id = await session.scalar(stmt)
 
@@ -842,3 +872,29 @@ async def log_usage_metric(session: AsyncSession, event_id: int, metric_name: st
     metric = UsageMetric(event_id=event_id, metric_name=metric_name, value=value)
     session.add(metric)
     await session.flush()
+
+
+async def get_booth_language_name(booth_id: str) -> str:
+    """Resolve the real language name for a booth_id from the database.
+
+    Returns 'English' as a fallback if the booth is not found or parsing fails.
+    """
+    from sqlalchemy import select
+
+    from portal.booth_identity import parse_booth_id
+    from portal.models import DBBooth, Event
+
+    try:
+        event_slug, room_id, language_code = parse_booth_id(booth_id)
+        async with get_session() as db_session:
+            stmt = (
+                select(DBBooth.language_name)
+                .join(Event)
+                .where(Event.slug == event_slug, DBBooth.room_id == room_id, DBBooth.language_code == language_code)
+            )
+            res = await db_session.scalar(stmt)
+            if res:
+                return res
+    except Exception:
+        pass
+    return "English"

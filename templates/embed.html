@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!--
+    Security-first head order:
+    1. referrer meta  — prevents the page URL (including ?token=) leaking to Google Fonts
+    2. robots meta    — standard practice for token-bearing URLs
+    3. charset / viewport
+    4. external font  — fired after referrer policy is established
+    5. inline styles  — CSS variables from server-sanitised theming params only
+  -->
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VoxBento Audio</title>
+
+  <!-- Google Font — Referrer-Policy: no-referrer prevents ?token= leaking here -->
+  <link
+    rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family={{ font_family }}:wght@400;600;700&display=swap"
+  >
+
+  <!-- External Stylesheet -->
+  <link rel="stylesheet" href="{{ url_for('static', path='css/embed.css') }}?v={{ js_version }}" />
+
+  {% if custom_css_url %}
+  <!-- Third-Party Custom CSS Override -->
+  <link rel="stylesheet" href="{{ custom_css_url }}" />
+  {% endif %}
+
+  <style>
+    /* ── CSS variables — all values are server-sanitised ─────────────────── */
+    :root {
+      --primary:  #{{ primary_color }};
+      --font:     '{{ font_family }}', Inter, system-ui, sans-serif;
+      {% if theme == "dark" %}
+      --bg:       #0d0f10;
+      --surface:  #1a1d21;
+      --border:   #2a2d32;
+      --text:     #f1f5f9;
+      --muted:    #94a3b8;
+      {% else %}
+      --bg:       #f8f9fa;
+      --surface:  #ffffff;
+      --border:   #e2e8f0;
+      --text:     #0d0f10;
+      --muted:    #64748b;
+      {% endif %}
+    }
+  </style>
+</head>
+<body>
+
+  <audio id="embed-audio" style="display:none"></audio>
+
+  <div class="player {% if headless %}headless{% endif %}">
+
+    <div class="status-row">
+      <div class="status-dot connecting" id="status-dot"></div>
+      <span id="status-text">Connecting&hellip;</span>
+    </div>
+
+    <button class="play-btn" id="play-btn" disabled>
+      &#9654;&nbsp; Play Audio
+    </button>
+
+    {% if captions_enabled %}
+    <div class="captions-box empty" id="captions-box">
+      <div id="embed-caption-history"></div>
+      <div id="embed-caption-current" style="color: var(--primary);"></div>
+      <div id="embed-caption-placeholder">Captions will appear here&hellip;</div>
+    </div>
+    {% endif %}
+
+    <div class="footer">
+      Powered by <a href="https://voxbento.com" target="_blank" rel="noopener noreferrer">VoxBento</a>
+    </div>
+
+  </div>
+
+  <script src="/static/js/whep-listener.js?v={{ js_version }}"></script>
+
+  <script type="application/json" id="embed-config">
+    {
+      "whep_url": {{ whep_url | tojson }},
+      "caption_url": {{ caption_url | tojson }},
+      "captions_enabled": {{ captions_enabled | tojson }},
+      "token": {{ token | tojson }},
+      "audio_delay_ms": {{ audio_delay_ms | tojson }},
+      "source_lang_code": "{{ language_code }}",
+      "target_lang_code": "{{ target_lang_code }}",
+      "headless": {{ headless | tojson }},
+      "target_origin": {{ postmessage_target_origin | tojson }},
+      "allowed_origins": {{ allowed_origins_list | tojson }}
+    }
+  </script>
+  <script src="/static/js/embed-player.js?v={{ js_version }}"></script>
+
+</body>
+</html>

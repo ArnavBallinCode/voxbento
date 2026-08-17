@@ -30,8 +30,8 @@ async def interpreter_landing_page(request: Request) -> Any:
     if payload is None:
         return safe_redirect(url="/login?next=/interpreter", status_code=status.HTTP_303_SEE_OTHER)
     my_booths = []
-    if "event_slug" in payload and "language_code" in payload:
-        bid = make_booth_id(payload["event_slug"], payload["language_code"])
+    if "event_slug" in payload and "language_code" in payload and "room_id" in payload:
+        bid = make_booth_id(payload["event_slug"], payload["room_id"], payload["language_code"])
         mem_booth = booths.get_booth_sync(bid)
         is_live = mem_booth is not None and mem_booth.ingest_status == "connected"
         async with get_session() as session:
@@ -39,7 +39,11 @@ async def interpreter_landing_page(request: Request) -> Any:
                 select(DBBooth)
                 .options(joinedload(DBBooth.event), joinedload(DBBooth.room))
                 .join(Event)
-                .where(Event.slug == payload["event_slug"], DBBooth.language_code == payload["language_code"])
+                .where(
+                    Event.slug == payload["event_slug"],
+                    DBBooth.room_id == payload["room_id"],
+                    DBBooth.language_code == payload["language_code"],
+                )
             )
             res = await session.execute(stmt)
             b = res.scalar_one_or_none()
@@ -53,6 +57,7 @@ async def interpreter_landing_page(request: Request) -> Any:
                 "event_name": event_name,
                 "language_name": language_name,
                 "room_name": room_name,
+                "room_id": payload.get("room_id"),
                 "event_slug": payload["event_slug"],
                 "language_code": payload["language_code"],
                 "role": payload.get("role", "interpreter"),
@@ -64,7 +69,7 @@ async def interpreter_landing_page(request: Request) -> Any:
             async with get_session() as session:
                 bms = await list_booth_memberships_for_user(session, uid)
                 for bm in bms:
-                    bid = make_booth_id(bm.booth.event.slug, bm.booth.language_code)
+                    bid = make_booth_id(bm.booth.event.slug, bm.booth.room_id, bm.booth.language_code)
                     mem_booth = booths.get_booth_sync(bid)
                     is_live = mem_booth is not None and mem_booth.ingest_status == "connected"
                     my_booths.append(
@@ -74,6 +79,7 @@ async def interpreter_landing_page(request: Request) -> Any:
                             "event_name": bm.booth.event.display_name,
                             "language_name": bm.booth.language_name,
                             "room_name": bm.booth.room.display_name if bm.booth.room else "",
+                            "room_id": bm.booth.room_id,
                             "event_slug": bm.booth.event.slug,
                             "language_code": bm.booth.language_code,
                             "role": bm.role,
@@ -86,9 +92,9 @@ async def interpreter_landing_page(request: Request) -> Any:
     )
 
 
-@router.get("/interpreter/{event_slug}/{language_code}")
+@router.get("/interpreter/{event_slug}/{room_id}/{language_code}")
 async def interpreter_booth_by_identity(
-    request: Request, event_slug: str, language_code: str, token: str = "", language: str = ""
+    request: Request, event_slug: str, room_id: int, language_code: str, token: str = "", language: str = ""
 ) -> Any:
     """Booth page addressed by event_slug and language_code (preferred URL).
 
@@ -98,17 +104,18 @@ async def interpreter_booth_by_identity(
     payload = get_booth_session(request)
     if payload is None:
         return safe_redirect(
-            url=f"/login?next=/interpreter/{event_slug}/{language_code}", status_code=status.HTTP_303_SEE_OTHER
+            url=f"/login?next=/interpreter/{event_slug}/{room_id}/{language_code}",
+            status_code=status.HTTP_303_SEE_OTHER,
         )
-    booth_id = make_booth_id(event_slug, language_code)
+    booth_id = make_booth_id(event_slug, room_id, language_code)
     granted_role = await resolve_booth_role(payload, booth_id)
     if granted_role is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have a role assigned for this event. Ask an admin to assign you one.",
         )
-    booth_id = make_booth_id(event_slug, language_code)
-    mediamtx_path = make_mediamtx_path(event_slug, language_code)
+    booth_id = make_booth_id(event_slug, room_id, language_code)
+    mediamtx_path = make_mediamtx_path(event_slug, room_id, language_code)
     channel_id = mediamtx_path
     display_language = language or language_code.upper()
     await _ensure_mediamtx_path(channel_id)
@@ -121,6 +128,7 @@ async def interpreter_booth_by_identity(
             .join(Event)
             .options(joinedload(DBBooth.room))
             .where(Event.slug == event_slug)
+            .where(DBBooth.room_id == room_id)
             .where(DBBooth.language_code == language_code)
         )
         db_booth = (await session.scalars(stmt)).first()
@@ -132,7 +140,7 @@ async def interpreter_booth_by_identity(
             if db_booth.room.relay_booth_id:
                 relay_b = await get_booth_by_id(session, db_booth.room.relay_booth_id)
                 if relay_b:
-                    relay_channel = make_mediamtx_path(event_slug, relay_b.language_code)
+                    relay_channel = make_mediamtx_path(event_slug, relay_b.room_id, relay_b.language_code)
                     relay_whep_url = f"{settings.mediamtx_whip_base}/{relay_channel}/whep"
                     relay_language_name = relay_b.language_name
     default_jitsi_url = _make_jitsi_url(settings.effective_jitsi_base_url, settings.default_jitsi_room)
@@ -147,6 +155,7 @@ async def interpreter_booth_by_identity(
             "booth_language": display_language,
             "booth_channel_id": channel_id,
             "event_slug": event_slug,
+            "room_id": room_id,
             "language_code": language_code,
             "whip_url": whip_url,
             "whep_url": whep_url,
