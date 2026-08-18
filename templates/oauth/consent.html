@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}Authorize Application — Voxbento{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+  <div class="auth-card">
+    <div class="auth-header text-center">
+      <h2>Authorize Application</h2>
+      <p><strong>{{ client.name }}</strong> wants to access your VoxBento account for the event <strong>{{ event.name }}</strong>.</p>
+    </div>
+
+    <div class="auth-body">
+      <h4>Requested Permissions:</h4>
+      <ul class="permission-list">
+        {% for scope_id, scope_desc in scopes %}
+        <li><strong>{{ scope_id }}</strong>: {{ scope_desc }}</li>
+        {% endfor %}
+      </ul>
+
+      <form method="POST" action="/oauth/authorize" class="auth-form mt-4">
+        <input type="hidden" name="client_id" value="{{ client.client_id }}">
+        <input type="hidden" name="redirect_uri" value="{{ redirect_uri }}">
+        <input type="hidden" name="state" value="{{ state }}">
+        <input type="hidden" name="code_challenge" value="{{ code_challenge }}">
+        <input type="hidden" name="code_challenge_method" value="{{ code_challenge_method }}">
+        <input type="hidden" name="event_id" value="{{ event.id }}">
+        <input type="hidden" name="scope" value="{{ scope_string }}">
+        
+        <div class="form-actions d-flex justify-content-between">
+          <button type="submit" name="action" value="deny" class="btn btn-outline">Cancel</button>
+          <button type="submit" name="action" value="approve" class="btn btn-primary">Authorize</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
