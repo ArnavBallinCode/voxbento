@@ -35,9 +35,9 @@ async def developer_dashboard(
         clients = client_result.scalars().all()
 
     return templates.TemplateResponse(
+        request,
         "developer/dashboard.html",
         {
-            "request": request,
             "user": user,
             "account": account,
             "clients": clients,

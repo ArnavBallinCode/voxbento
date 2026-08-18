@@ -1704,9 +1704,9 @@ async def admin_developer_accounts(
     accounts = result.scalars().all()
 
     return templates.TemplateResponse(
+        request,
         "admin/developer_accounts.html",
         {
-            "request": request,
             "user": user,
             "accounts": accounts,
         },

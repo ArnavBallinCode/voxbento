@@ -144,9 +144,9 @@ async def authorize_get(
     # For now, require explicit consent (can auto-approve if consent exists and covers scopes)
 
     return templates.TemplateResponse(
+        request,
         "oauth/consent.html",
         {
-            "request": request,
             "client": client,
             "event": evt,
             "scopes": [(s, VALID_SCOPES.get(s, s)) for s in effective_scopes],
