@@ -1703,12 +1703,16 @@ async def admin_developer_accounts(
     )
     accounts = result.scalars().all()
 
+    from portal.auth import get_admin_flags
+    admin_flags = await get_admin_flags(request)
+
     return templates.TemplateResponse(
         request,
         "admin/developer_accounts.html",
         {
             "user": user,
             "accounts": accounts,
+            **admin_flags,
         },
     )
 
