@@ -46,6 +46,7 @@ from portal.database import (
     delete_user,
     get_api_keys_for_event,
     get_booth_by_id,
+    get_db_session,
     get_event_by_id,
     get_event_by_slug,
     get_room_by_id,
@@ -1685,11 +1686,11 @@ async def api_supertonic_download_progress():
 # Developer Accounts
 # ---------------------------------------------------------------------------
 
-@router.get("/admin/developer-accounts", include_in_schema=False)
+@router.get("/admin/developer-accounts", include_in_schema=False, dependencies=[Depends(require_super_admin)])
 async def admin_developer_accounts(
     request: Request,
-    user: User = Depends(require_super_admin),
-    db: AsyncSession = Depends(get_session),
+    user: dict = Depends(require_user),
+    db: AsyncSession = Depends(get_db_session),
 ):
     from sqlalchemy.orm import selectinload
 
@@ -1711,11 +1712,11 @@ async def admin_developer_accounts(
         },
     )
 
-@router.post("/api/admin/developer-accounts/{account_id}/approve", include_in_schema=False)
+@router.post("/api/admin/developer-accounts/{account_id}/approve", include_in_schema=False, dependencies=[Depends(require_super_admin)])
 async def admin_developer_approve(
     account_id: int,
-    user: User = Depends(require_super_admin),
-    db: AsyncSession = Depends(get_session),
+    user: dict = Depends(require_user),
+    db: AsyncSession = Depends(get_db_session),
 ):
     from datetime import datetime, timezone
 
@@ -1726,17 +1727,17 @@ async def admin_developer_approve(
         raise HTTPException(status_code=404, detail="Account not found")
 
     account.status = "approved"
-    account.reviewed_by = user.id
+    account.reviewed_by = int(user["sub"])
     account.reviewed_at = datetime.now(timezone.utc)
     await db.commit()
 
     return RedirectResponse(url="/admin/developer-accounts", status_code=status.HTTP_303_SEE_OTHER)
 
-@router.post("/api/admin/developer-accounts/{account_id}/reject", include_in_schema=False)
+@router.post("/api/admin/developer-accounts/{account_id}/reject", include_in_schema=False, dependencies=[Depends(require_super_admin)])
 async def admin_developer_reject(
     account_id: int,
-    user: User = Depends(require_super_admin),
-    db: AsyncSession = Depends(get_session),
+    user: dict = Depends(require_user),
+    db: AsyncSession = Depends(get_db_session),
 ):
     from datetime import datetime, timezone
 
@@ -1747,7 +1748,7 @@ async def admin_developer_reject(
         raise HTTPException(status_code=404, detail="Account not found")
 
     account.status = "rejected"
-    account.reviewed_by = user.id
+    account.reviewed_by = int(user["sub"])
     account.reviewed_at = datetime.now(timezone.utc)
     await db.commit()
 
