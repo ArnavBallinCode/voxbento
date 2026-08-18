@@ -16,6 +16,7 @@ from portal.auth import require_admin
 from portal.config import settings
 from portal.routers.admin import router as admin_router
 from portal.routers.api import router as api_router
+from portal.routers.api_v1 import router as api_v1_router
 from portal.routers.auth import router as auth_router
 from portal.routers.demo import router as demo_router
 from portal.routers.developer import router as developer_router
@@ -151,6 +152,7 @@ app.include_router(interpreter_router)
 app.include_router(listener_router)
 
 app.include_router(api_router)
+app.include_router(api_v1_router)
 
 app.include_router(admin_router)
 
