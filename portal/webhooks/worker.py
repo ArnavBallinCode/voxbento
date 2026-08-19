@@ -38,7 +38,7 @@ async def enqueue_webhook(event_type: str, payload: dict) -> None:
 
             if deliveries:
                 db.add_all(deliveries)
-                await db.commit()
+                await db.flush()
     except Exception as e:
         logger.error(f"Failed to enqueue webhook: {e}", exc_info=True)
 
@@ -153,7 +153,7 @@ async def webhook_worker_loop():
                         claimed = True
                         for delivery in claimed_deliveries:
                             await process_delivery(client, db, delivery)
-                        await db.commit()
+                        await db.flush()
 
                 # Sleep OUTSIDE the database session to release the SQLite lock
                 if not claimed:

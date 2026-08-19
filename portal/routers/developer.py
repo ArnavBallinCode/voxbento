@@ -66,7 +66,7 @@ async def apply_for_developer(
         organization_name=organization_name,
     )
     db.add(account)
-    await db.commit()
+    await db.flush()
 
     return RedirectResponse(url="/developer", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -99,8 +99,7 @@ async def create_oauth_client(
         redirect_uris=uris,
     )
     db.add(client)
-    await db.commit()
-    await db.refresh(client)
+    await db.flush()
 
     # Re-fetch all clients to render the dashboard
     client_result = await db.execute(select(OAuthClient).where(OAuthClient.developer_account_id == account.id))

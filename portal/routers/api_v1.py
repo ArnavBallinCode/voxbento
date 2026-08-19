@@ -213,8 +213,7 @@ async def create_booth(
     whip_path = make_mediamtx_path(event.slug, language_code)
     booth = DBBooth(room_id=room_id, language_code=language_code, event_id=event.id, whip_path=whip_path)
     db.add(booth)
-    await db.commit()
-    await db.refresh(booth)
+    await db.flush()
 
     return {"status": "success", "booth_id": booth.id, "whip_path": whip_path}
 

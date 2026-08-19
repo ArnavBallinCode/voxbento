@@ -161,7 +161,7 @@ async def delete_webhook(
         status_code=status.HTTP_204_NO_CONTENT,
     )
     db.add(audit)
-    await db.commit()
+    await db.flush()
 
 @router.get("/debug/dump", include_in_schema=False)
 async def debug_dump(db: AsyncSession = Depends(get_db_session)):
