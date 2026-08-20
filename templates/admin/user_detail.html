@@ -87,7 +87,7 @@
         {% endif %}
       </td>
       <td>
-        <form method="post" action="/admin/users/{{ user_detail.id }}/events/{{ event.id }}/toggle-admin" class="inline-form">
+        <form method="post" action="/admin/users/{{ user_detail.id }}/events/{{ event.id }}/toggle-owner" class="inline-form">
           <button type="submit" class="btn btn-sm {{ 'btn-danger' if is_event_admin else 'btn-primary' }}">
             {{ 'Remove Admin' if is_event_admin else 'Make Admin' }}
           </button>
