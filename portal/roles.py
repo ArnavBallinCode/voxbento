@@ -73,10 +73,15 @@ ROLE_PERMISSIONS: dict[ParticipantRole, frozenset[Permission]] = {
             Permission.BOOTH_VIEW,
         }
     ),
+    "support": frozenset(
+        {
+            Permission.BOOTH_VIEW,
+        }
+    ),
 }
 
 # Roles considered administrative (mirrors Eventyay's ``ORGANIZER_ROLES``).
-ADMIN_ROLES: frozenset[ParticipantRole] = frozenset({"super_admin", "event_owner"})
+ADMIN_ROLES: frozenset[ParticipantRole] = frozenset({"super_admin", "event_owner", "support"})
 
 # All valid role values as a frozenset for quick membership testing.
 ALL_ROLES: frozenset[ParticipantRole] = frozenset(ROLE_PERMISSIONS.keys())
@@ -84,6 +89,7 @@ ALL_ROLES: frozenset[ParticipantRole] = frozenset(ROLE_PERMISSIONS.keys())
 _ROLE_RANK = {
     "super_admin": 50,
     "event_owner": 40,
+    "support": 35,
     "room_coordinator": 30,
     "interpreter": 20,
 }

@@ -140,17 +140,17 @@ async def create_event(session: AsyncSession, *, slug: str, display_name: str) -
 
 
 async def get_event_by_slug(session: AsyncSession, slug: str) -> Event | None:
-    result = await session.execute(select(Event).where(Event.slug == slug))
+    result = await session.execute(select(Event).where(Event.slug == slug, Event.deleted_at.is_(None)))
     return result.scalar_one_or_none()
 
 
 async def get_event_by_id(session: AsyncSession, event_id: int) -> Event | None:
-    result = await session.execute(select(Event).where(Event.id == event_id))
+    result = await session.execute(select(Event).where(Event.id == event_id, Event.deleted_at.is_(None)))
     return result.scalar_one_or_none()
 
 
 async def count_events(session: AsyncSession, *, allowed_event_ids: set[int] | None = None) -> int:
-    stmt = select(func.count(Event.id))
+    stmt = select(func.count(Event.id)).where(Event.deleted_at.is_(None))
     if allowed_event_ids is not None:
         stmt = stmt.where(Event.id.in_(allowed_event_ids))
     result = await session.execute(stmt)
@@ -164,7 +164,7 @@ async def list_events(
     offset: int = 0,
     allowed_event_ids: set[int] | None = None,
 ) -> list[Event]:
-    stmt = select(Event).order_by(Event.created_at)
+    stmt = select(Event).where(Event.deleted_at.is_(None)).order_by(Event.created_at)
     if allowed_event_ids is not None:
         stmt = stmt.where(Event.id.in_(allowed_event_ids))
     result = await session.execute(stmt.limit(limit).offset(offset))

@@ -26,7 +26,7 @@ import secrets
 from datetime import datetime, timezone
 
 import sqlalchemy as sa
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, validates
 
 from portal.booth_identity import make_mediamtx_path, validate_event_slug, validate_language_code
@@ -85,6 +85,7 @@ class Event(Base):
     encrypted_groq_api_key: Mapped[str | None] = mapped_column("groq_api_key", Text, nullable=True, default=None)
     listener_join_code: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, default=None)
 
     rooms: Mapped[list[Room]] = relationship(back_populates="event", cascade="all, delete-orphan")
     booths: Mapped[list[DBBooth]] = relationship(back_populates="event", cascade="all, delete-orphan")
@@ -106,6 +107,7 @@ class Event(Base):
 
 class Room(Base):
     __tablename__ = "rooms"
+    __table_args__ = (UniqueConstraint("event_id", "eventyay_room_id", name="uq_room_event_eventyay_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"))

@@ -218,3 +218,71 @@ async def test_process_delivery_circuit_breaker(db):
     assert len(audits) == 1
     assert audits[0].action == "webhook.circuit_breaker_tripped"
 
+
+@pytest.mark.anyio
+async def test_atomic_queue_claim(db):
+    """Test that multiple workers do not claim the same webhook delivery."""
+    sub = WebhookSubscription(
+        developer_account_id=1,
+        target_url="https://example.com/webhook",
+        event_types=["session.status_changed"],
+        secret_key="secret",
+        is_active=True
+    )
+    db.add(sub)
+    await db.flush()
+
+    # Create 5 pending deliveries
+    for i in range(5):
+        delivery = WebhookDelivery(
+            subscription_id=sub.id,
+            event_type="session.status_changed",
+            payload={"id": i},
+            status="pending"
+        )
+        db.add(delivery)
+    await db.flush()
+
+    now = datetime.now(timezone.utc)
+    from sqlalchemy import update, select
+    
+    # Simulate worker 1 claiming 3 items
+    subquery1 = (
+        select(WebhookDelivery.id)
+        .where(WebhookDelivery.status.in_(["pending", "failed"]))
+        .where(WebhookDelivery.next_attempt_at <= now)
+        .limit(3)
+    )
+    stmt1 = (
+        update(WebhookDelivery)
+        .where(WebhookDelivery.id.in_(subquery1))
+        .values(status="delivering")
+        .returning(WebhookDelivery)
+    )
+    result1 = await db.execute(stmt1)
+    claimed1 = result1.scalars().all()
+
+    # Simulate worker 2 claiming 3 items at the exact same time
+    subquery2 = (
+        select(WebhookDelivery.id)
+        .where(WebhookDelivery.status.in_(["pending", "failed"]))
+        .where(WebhookDelivery.next_attempt_at <= now)
+        .limit(3)
+    )
+    stmt2 = (
+        update(WebhookDelivery)
+        .where(WebhookDelivery.id.in_(subquery2))
+        .values(status="delivering")
+        .returning(WebhookDelivery)
+    )
+    result2 = await db.execute(stmt2)
+    claimed2 = result2.scalars().all()
+
+    # Worker 1 should get 3, Worker 2 should get the remaining 2
+    assert len(claimed1) == 3
+    assert len(claimed2) == 2
+    
+    # No overlap in claimed IDs
+    ids1 = {d.id for d in claimed1}
+    ids2 = {d.id for d in claimed2}
+    assert ids1.isdisjoint(ids2)
