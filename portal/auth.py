@@ -128,9 +128,13 @@ async def require_admin(request: Request) -> None:
                         get_session,
                         list_memberships_for_user,
                         list_room_memberships_for_user,
+                        get_user_by_id,
                     )
 
                     async with get_session() as db_session:
+                        user = await get_user_by_id(db_session, int(payload["sub"]))
+                        if user and user.is_admin:
+                            return
                         memberships = await list_memberships_for_user(db_session, int(payload["sub"]))
                         rms = await list_room_memberships_for_user(db_session, int(payload["sub"]))
                         if room_id is not None:
@@ -172,8 +176,16 @@ async def require_super_admin(request: Request) -> None:
     if user_cookie:
         try:
             payload = decode_token(user_cookie)
-            if payload.get("user") and payload.get("is_admin"):
-                return
+            if payload.get("user"):
+                if payload.get("is_admin"):
+                    return
+                if payload.get("sub"):
+                    from portal.database import get_session, get_user_by_id
+
+                    async with get_session() as db_session:
+                        user = await get_user_by_id(db_session, int(payload["sub"]))
+                        if user and user.is_admin:
+                            return
         except jwt.InvalidTokenError:
             pass
 
