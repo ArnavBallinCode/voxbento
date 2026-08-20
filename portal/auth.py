@@ -126,9 +126,9 @@ async def require_admin(request: Request) -> None:
                 if payload.get("sub"):
                     from portal.database import (
                         get_session,
+                        get_user_by_id,
                         list_memberships_for_user,
                         list_room_memberships_for_user,
-                        get_user_by_id,
                     )
 
                     async with get_session() as db_session:
@@ -613,7 +613,11 @@ def require_oauth_scope(required_scope: str):
             raise HTTPException(status_code=401, detail="Token revoked")
 
         # SQLAlchemy with SQLite might return naive datetimes for expires_at
-        expires_at_aware = oauth_token.expires_at.replace(tzinfo=timezone.utc) if oauth_token.expires_at.tzinfo is None else oauth_token.expires_at
+        expires_at_aware = (
+            oauth_token.expires_at.replace(tzinfo=timezone.utc)
+            if oauth_token.expires_at.tzinfo is None
+            else oauth_token.expires_at
+        )
         if expires_at_aware < datetime.now(timezone.utc):
             raise HTTPException(status_code=401, detail="Token expired")
 
