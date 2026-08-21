@@ -26,8 +26,8 @@ from portal.roles import (
 # ── Role type completeness ──────────────────────────────────────────────
 
 
-def test_all_roles_has_four_entries():
-    assert len(ALL_ROLES) == 4
+def test_all_roles_has_five_entries():
+    assert len(ALL_ROLES) == 5
 
 
 def test_all_roles_values():
@@ -37,6 +37,7 @@ def test_all_roles_values():
             "event_owner",
             "room_coordinator",
             "interpreter",
+            "support",
         }
     )
 
@@ -77,9 +78,9 @@ def test_has_permission_booth_view_all_roles(role: ParticipantRole):
     assert has_permission(role, Permission.BOOTH_VIEW) is True
 
 
-@pytest.mark.parametrize("role", list(ALL_ROLES))
-def test_has_permission_booth_chat_all_roles(role: ParticipantRole):
-    """Every role can send chat messages."""
+@pytest.mark.parametrize("role", list(ALL_ROLES - {"support"}))
+def test_has_permission_booth_chat_some_roles(role: ParticipantRole):
+    """Every role except support can send chat messages."""
     assert has_permission(role, Permission.BOOTH_CHAT_SEND) is True
 
 

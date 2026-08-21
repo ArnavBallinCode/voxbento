@@ -559,7 +559,12 @@ async def resolve_booth_role(payload: dict | None, booth_id: str | None = None) 
                 stmt = (
                     select(DBBooth)
                     .join(Event)
-                    .where(Event.slug == event_slug, DBBooth.room_id == room_id, DBBooth.language_code == lang_code)
+                    .where(
+                        Event.slug == event_slug,
+                        Event.deleted_at.is_(None),
+                        DBBooth.room_id == room_id,
+                        DBBooth.language_code == lang_code
+                    )
                 )
                 booth = (await db_session.scalars(stmt)).first()
                 if booth:

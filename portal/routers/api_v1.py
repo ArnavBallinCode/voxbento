@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,7 +12,19 @@ from portal.auth import require_oauth_scope
 from portal.booth_identity import make_booth_id
 from portal.database import get_db_session
 from portal.globals import booths
-from portal.models import DBBooth, Event, EventMembership, OAuthToken, Room, RoomMembership
+from portal.models import (
+    DBBooth,
+    DeveloperAccount,
+    Event,
+    EventMembership,
+    OAuthAuditLog,
+    OAuthClient,
+    OAuthToken,
+    Room,
+    RoomMembership,
+    RoomTranslationLanguage,
+)
+from portal.rate_limit import auth_rate_limiter
 from portal.transcription.worker import start_transcription_worker, stop_transcription_worker
 
 logger = logging.getLogger(__name__)
@@ -25,7 +39,7 @@ async def _verify_token_rbac(db: AsyncSession, token: OAuthToken, event: Event, 
     # Check if user is super admin or event owner
     from portal.models import User
     user = await db.get(User, token.user_id)
-    if user and user.is_super_admin:
+    if user and getattr(user, "is_super_admin", False):
         return
 
     # Check Event Owner
@@ -59,7 +73,7 @@ async def get_event(
     db: AsyncSession = Depends(get_db_session),
     token: OAuthToken = Depends(require_oauth_scope("events:read")),
 ):
-    result = await db.execute(select(Event).where(Event.slug == event_slug))
+    result = await db.execute(select(Event).where(Event.slug == event_slug, Event.deleted_at.is_(None)))
     event = result.scalars().first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -80,7 +94,7 @@ async def get_rooms(
     db: AsyncSession = Depends(get_db_session),
     token: OAuthToken = Depends(require_oauth_scope("events:read")),
 ):
-    result = await db.execute(select(Event).where(Event.slug == event_slug))
+    result = await db.execute(select(Event).where(Event.slug == event_slug, Event.deleted_at.is_(None)))
     event = result.scalars().first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -99,24 +113,199 @@ async def get_rooms(
         } for r in rooms
     ]
 
-@router.post("/events/{event_slug}/rooms/{room_id}")
-async def create_or_update_room(
+
+class EventCreate(BaseModel):
+    slug: str
+    name: str
+
+@router.post("/events/", status_code=status.HTTP_201_CREATED)
+async def create_event(
+    request: Request,
+    payload: EventCreate,
+    db: AsyncSession = Depends(get_db_session),
+    token: OAuthToken = Depends(require_oauth_scope("events:write")),
+):
+    client_ip = request.client.host if request.client else "unknown"
+    if await auth_rate_limiter.is_rate_limited(f"create_event_{client_ip}"):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many requests")
+
+    from portal.booth_identity import validate_event_slug
+    try:
+        slug = validate_event_slug(payload.slug)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    result = await db.execute(select(Event).where(Event.slug == slug))
+    existing_event = result.scalars().first()
+
+    if existing_event:
+        if existing_event.deleted_at is None:
+            # Update the display name if the event already exists (e.g. from OAuth auto-provisioning)
+            if existing_event.display_name != payload.name:
+                existing_event.display_name = payload.name
+                db.add(existing_event)
+                await db.flush()
+            return {"id": existing_event.id, "slug": existing_event.slug, "name": existing_event.display_name}
+        existing_event.deleted_at = None
+        existing_event.display_name = payload.name
+        event = existing_event
+        action = "event.restored"
+        status_code_ret = status.HTTP_200_OK
+    else:
+        event = Event(slug=slug, display_name=payload.name)
+        db.add(event)
+        await db.flush()
+
+        db.add(EventMembership(user_id=token.user_id, event_id=event.id, role="event_owner"))
+
+        client_res = await db.execute(select(OAuthClient).where(OAuthClient.id == token.client_id))
+        client = client_res.scalars().first()
+        if client:
+            dev_acc_res = await db.execute(select(DeveloperAccount).where(DeveloperAccount.id == client.developer_account_id))
+            dev_acc = dev_acc_res.scalars().first()
+            if dev_acc and dev_acc.user_id != token.user_id:
+                db.add(EventMembership(user_id=dev_acc.user_id, event_id=event.id, role="support"))
+
+        action = "event.created"
+        status_code_ret = status.HTTP_201_CREATED
+
+    audit = OAuthAuditLog(
+        token_id=token.id,
+        client_id=token.client_id,
+        action=action,
+        request_path="/api/v1/events/",
+        status_code=status_code_ret,
+    )
+    db.add(audit)
+    await db.flush()
+
+    return {"status": "success", "event_slug": event.slug}
+
+@router.delete("/events/{event_slug}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_event(
     event_slug: str,
-    room_id: int, # Using int for now, could be slug/name in body
+    db: AsyncSession = Depends(get_db_session),
+    token: OAuthToken = Depends(require_oauth_scope("events:write")),
+):
+    result = await db.execute(select(Event).where(Event.slug == event_slug, Event.deleted_at.is_(None)))
+    event = result.scalars().first()
+    if not event:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+
+    await _verify_token_rbac(db, token, event)
+
+    active_booths = await booths.list_booths_for_event(event_slug)
+    if active_booths:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot delete event while active booths are running.")
+
+    event.deleted_at = datetime.now(timezone.utc)
+
+    audit = OAuthAuditLog(
+        token_id=token.id,
+        client_id=token.client_id,
+        action="event.deleted",
+        request_path=f"/api/v1/events/{event_slug}",
+        status_code=status.HTTP_204_NO_CONTENT,
+    )
+    db.add(audit)
+    await db.flush()
+    return None
+
+class RoomUpsert(BaseModel):
+    name: str
+    description: str = ""
+    enabled: bool = True
+    target_languages: list[str] = []
+
+@router.put("/events/{event_slug}/rooms/{eventyay_room_id}")
+async def upsert_room(
+    event_slug: str,
+    eventyay_room_id: str,
+    payload: RoomUpsert,
     db: AsyncSession = Depends(get_db_session),
     token: OAuthToken = Depends(require_oauth_scope("rooms:write")),
 ):
-    # As per issue: GET/POST /api/v1/events/{event_slug}/rooms/{room_id}
-    # This is slightly weird REST but we'll fulfill it.
-    result = await db.execute(select(Event).where(Event.slug == event_slug))
+    result = await db.execute(select(Event).where(Event.slug == event_slug, Event.deleted_at.is_(None)))
     event = result.scalars().first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
 
     await _verify_token_rbac(db, token, event)
 
-    # We'll just return a mock success for POST
-    return {"status": "success", "room_id": room_id}
+    room_res = await db.execute(
+        select(Room).where(Room.event_id == event.id, Room.eventyay_room_id == eventyay_room_id)
+    )
+    room = room_res.scalars().first()
+
+    if room:
+        room.display_name = payload.name
+        action = "room.updated"
+        status_code_ret = status.HTTP_200_OK
+    else:
+        room = Room(event_id=event.id, eventyay_room_id=eventyay_room_id, display_name=payload.name)
+        db.add(room)
+        await db.flush()
+        action = "room.created"
+        status_code_ret = status.HTTP_201_CREATED
+
+    lang_res = await db.execute(select(RoomTranslationLanguage).where(RoomTranslationLanguage.room_id == room.id))
+    existing_langs = {rl.language_code: rl for rl in lang_res.scalars().all()}
+    requested_langs = set(payload.target_languages)
+
+    for code, rl in existing_langs.items():
+        if code not in requested_langs:
+            await db.delete(rl)
+
+    for code in requested_langs:
+        if code not in existing_langs:
+            db.add(RoomTranslationLanguage(room_id=room.id, language_code=code))
+
+    audit = OAuthAuditLog(
+        token_id=token.id,
+        client_id=token.client_id,
+        action=action,
+        request_path=f"/api/v1/events/{event_slug}/rooms/{eventyay_room_id}",
+        status_code=status_code_ret,
+    )
+    db.add(audit)
+    await db.flush()
+    return {"status": "success", "room_id": room.id}
+
+@router.delete("/events/{event_slug}/rooms/{eventyay_room_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_room(
+    event_slug: str,
+    eventyay_room_id: str,
+    db: AsyncSession = Depends(get_db_session),
+    token: OAuthToken = Depends(require_oauth_scope("rooms:write")),
+):
+    result = await db.execute(select(Event).where(Event.slug == event_slug, Event.deleted_at.is_(None)))
+    event = result.scalars().first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    await _verify_token_rbac(db, token, event)
+
+    room_res = await db.execute(select(Room).where(Room.event_id == event.id, Room.eventyay_room_id == eventyay_room_id))
+    room = room_res.scalars().first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+
+    for b_id, b_state in booths.items():
+        if b_state.event_slug == event_slug and b_state.room_id == room.id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot delete room while active booths are running.")
+
+    await db.delete(room)
+
+    audit = OAuthAuditLog(
+        token_id=token.id,
+        client_id=token.client_id,
+        action="room.deleted",
+        request_path=f"/api/v1/events/{event_slug}/rooms/{eventyay_room_id}",
+        status_code=status.HTTP_204_NO_CONTENT,
+    )
+    db.add(audit)
+    await db.flush()
+    return None
 
 @router.patch("/events/{event_slug}/rooms/{room_id}/settings")
 async def patch_room_settings(
@@ -125,7 +314,7 @@ async def patch_room_settings(
     db: AsyncSession = Depends(get_db_session),
     token: OAuthToken = Depends(require_oauth_scope("rooms:write")),
 ):
-    result = await db.execute(select(Event).where(Event.slug == event_slug))
+    result = await db.execute(select(Event).where(Event.slug == event_slug, Event.deleted_at.is_(None)))
     event = result.scalars().first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -140,7 +329,7 @@ async def list_booths(
     db: AsyncSession = Depends(get_db_session),
     token: OAuthToken = Depends(require_oauth_scope("booths:read")),
 ):
-    result = await db.execute(select(Event).where(Event.slug == event_slug))
+    result = await db.execute(select(Event).where(Event.slug == event_slug, Event.deleted_at.is_(None)))
     event = result.scalars().first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")

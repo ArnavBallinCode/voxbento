@@ -37,6 +37,7 @@ templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
 
 VALID_SCOPES = {
     "events:read": "Read event information",
+    "events:write": "Manage events",
     "rooms:read": "Read room information",
     "rooms:write": "Manage rooms",
     "booths:read": "Read booth information",
@@ -139,7 +140,15 @@ async def authorize_get(
     evt_result = await db.execute(select(Event).where(Event.slug == event))
     evt = evt_result.scalars().first()
     if not evt:
-        raise HTTPException(status_code=404, detail="Event not found.")
+        # Auto-provision a stub event for OAuth flow
+        evt = Event(slug=event, display_name=event)
+        db.add(evt)
+        await db.flush()
+
+        # Give the authorizing user ownership
+        membership = EventMembership(user_id=int(user['sub']), event_id=evt.id, role='event_owner')
+        db.add(membership)
+        await db.flush()
 
     # 3. Calculate Scopes
     requested_scopes = scope.split(" ") if scope else []

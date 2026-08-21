@@ -21,6 +21,7 @@ ParticipantRole = Literal[
     "event_owner",
     "room_coordinator",
     "interpreter",
+    "support",
 ]
 
 
