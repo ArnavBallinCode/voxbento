@@ -144,7 +144,7 @@ async def authorize_get(
         evt = Event(slug=event, display_name=event)
         db.add(evt)
         await db.flush()
-        
+
         # Give the authorizing user ownership
         membership = EventMembership(user_id=int(user['sub']), event_id=evt.id, role='event_owner')
         db.add(membership)

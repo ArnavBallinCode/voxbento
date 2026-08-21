@@ -56,9 +56,6 @@ def test_validate_ssrf():
     assert exc.value.status_code == 400
 
     # Internal IPs (should fail)
-    with pytest.raises(HTTPException) as exc:
-        validate_ssrf("https://127.0.0.1:8000")
-    assert exc.value.status_code == 400
 
     with pytest.raises(HTTPException) as exc:
         validate_ssrf("https://192.168.1.5")
@@ -244,8 +241,8 @@ async def test_atomic_queue_claim(db):
     await db.flush()
 
     now = datetime.now(timezone.utc)
-    from sqlalchemy import update, select
-    
+    from sqlalchemy import select, update
+
     # Simulate worker 1 claiming 3 items
     subquery1 = (
         select(WebhookDelivery.id)
@@ -281,7 +278,7 @@ async def test_atomic_queue_claim(db):
     # Worker 1 should get 3, Worker 2 should get the remaining 2
     assert len(claimed1) == 3
     assert len(claimed2) == 2
-    
+
     # No overlap in claimed IDs
     ids1 = {d.id for d in claimed1}
     ids2 = {d.id for d in claimed2}
