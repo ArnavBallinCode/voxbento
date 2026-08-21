@@ -100,36 +100,36 @@ curl https://voxbento.com/api/events/pycon2026/booths \
 {
   "event_slug": "pycon2026",
   "booths": [
-    {
-      "booth_id": "pycon2026-en",
-      "event_slug": "pycon2026",
-      "language_code": "en",
-      "language_name": "English",
-      "mediamtx_path": "pycon2026/en",
-      "whip_url": "https://voxbento.com/pycon2026/en/whip",
-      "whep_url": "https://voxbento.com/pycon2026/en/whep",
-      "active_interpreter_id": "user-abc123",
-      "active_interpreter_name": "Alice",
-      "mic_active": true,
-      "ingest_connected": true,
-      "participants": [
-        {"id": "user-abc123", "name": "Alice", "role": "interpreter"}
-      ]
-    },
-    {
-      "booth_id": "pycon2026-es",
-      "event_slug": "pycon2026",
-      "language_code": "es",
-      "language_name": "Spanish",
-      "mediamtx_path": "pycon2026/es",
-      "whip_url": "https://voxbento.com/pycon2026/es/whip",
-      "whep_url": "https://voxbento.com/pycon2026/es/whep",
-      "active_interpreter_id": null,
-      "active_interpreter_name": null,
-      "mic_active": false,
-      "ingest_connected": false,
-      "participants": []
-    }
+{
+  "booth_id": "pycon2026-en",
+  "event_slug": "pycon2026",
+  "language_code": "en",
+  "language_name": "English",
+  "mediamtx_path": "pycon2026/en",
+  "whip_url": "https://voxbento.com/pycon2026/en/whip",
+  "whep_url": "https://voxbento.com/pycon2026/en/whep",
+  "active_interpreter_id": "user-abc123",
+  "active_interpreter_name": "Alice",
+  "mic_active": true,
+  "ingest_connected": true,
+  "participants": [
+    {"id": "user-abc123", "name": "Alice", "role": "interpreter"}
+  ]
+},
+{
+  "booth_id": "pycon2026-es",
+  "event_slug": "pycon2026",
+  "language_code": "es",
+  "language_name": "Spanish",
+  "mediamtx_path": "pycon2026/es",
+  "whip_url": "https://voxbento.com/pycon2026/es/whip",
+  "whep_url": "https://voxbento.com/pycon2026/es/whep",
+  "active_interpreter_id": null,
+  "active_interpreter_name": null,
+  "mic_active": false,
+  "ingest_connected": false,
+  "participants": []
+}
   ]
 }
 ```
@@ -144,21 +144,21 @@ curl https://voxbento.com/api/events/pycon2026/booths \
 <summary>Booth object fields</summary>
 
 
-      Canonical booth identifier in the format `{event_slug}-{language_code}`.
+  Canonical booth identifier in the format `{event_slug}-{language_code}`.
 
-    **`mediamtx_path`** *(string)* — The channel path in the format `{event_slug}/{language_code}`.
+**`mediamtx_path`** *(string)* — The channel path in the format `{event_slug}/{language_code}`.
 
-    **`whip_url`** *(string)* — The WHIP ingest URL for the active interpreter to publish audio.
+**`whip_url`** *(string)* — The WHIP ingest URL for the active interpreter to publish audio.
 
-    **`whep_url`** *(string)* — The WHEP playback URL for listeners to receive audio.
+**`whep_url`** *(string)* — The WHEP playback URL for listeners to receive audio.
 
-    **`active_interpreter_id`** *(string | null)* — Participant ID of the currently active interpreter, or `null`.
+**`active_interpreter_id`** *(string | null)* — Participant ID of the currently active interpreter, or `null`.
 
-    **`mic_active`** *(boolean)* — Whether the active interpreter's microphone is currently transmitting.
+**`mic_active`** *(boolean)* — Whether the active interpreter's microphone is currently transmitting.
 
-    **`ingest_connected`** *(boolean)* — Whether the WHIP ingest connection is established.
+**`ingest_connected`** *(boolean)* — Whether the WHIP ingest connection is established.
 
-    **`participants`** *(array)* — All participants currently connected to the booth WebSocket.
+**`participants`** *(array)* — All participants currently connected to the booth WebSocket.
 
 </details>
 

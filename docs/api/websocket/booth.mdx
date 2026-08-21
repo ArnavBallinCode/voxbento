@@ -131,8 +131,8 @@ The examples below show the exact JSON structure for the most common messages.
   "booth_id": "pycon2026-en",
   "active_interpreter_id": "user-abc123",
   "participants": [
-    { "user_id": "user-abc123", "display_name": "Alice", "role": "interpreter" },
-    { "user_id": "user-def456", "display_name": "Bob",   "role": "coordinator" }
+{ "user_id": "user-abc123", "display_name": "Alice", "role": "interpreter" },
+{ "user_id": "user-def456", "display_name": "Bob",   "role": "coordinator" }
   ],
   "mic_active": true,
   "ingest_connected": true
@@ -158,11 +158,11 @@ The examples below show the exact JSON structure for the most common messages.
 <summary>booth:join</summary>
 
 
-    Must be `"booth:join"`.
+Must be `"booth:join"`.
   
 
   
-    Human-readable name shown to other booth participants. Falls back to the name stored in your token if omitted.
+Human-readable name shown to other booth participants. Falls back to the name stored in your token if omitted.
   
 
 </details>
@@ -171,7 +171,7 @@ The examples below show the exact JSON structure for the most common messages.
 <summary>booth:leave</summary>
 
 
-    Must be `"booth:leave"`. No additional fields are required. If the active interpreter sends this message, Voxbento automatically triggers a handoff to the next available interpreter.
+Must be `"booth:leave"`. No additional fields are required. If the active interpreter sends this message, Voxbento automatically triggers a handoff to the next available interpreter.
   
 
 </details>
@@ -180,11 +180,11 @@ The examples below show the exact JSON structure for the most common messages.
 <summary>booth:chat</summary>
 
 
-    Must be `"booth:chat"`.
+Must be `"booth:chat"`.
   
 
   
-    The text content to broadcast. Required; empty strings are rejected.
+The text content to broadcast. Required; empty strings are rejected.
   
 
 </details>
@@ -193,11 +193,11 @@ The examples below show the exact JSON structure for the most common messages.
 <summary>booth:set-active</summary>
 
 
-    Must be `"booth:set-active"`.
+Must be `"booth:set-active"`.
   
 
   
-    The `user_id` of the interpreter to promote to active. Must be a current booth participant.
+The `user_id` of the interpreter to promote to active. Must be a current booth participant.
   
 
 </details>
@@ -206,15 +206,15 @@ The examples below show the exact JSON structure for the most common messages.
 <summary>booth:update-state</summary>
 
 
-    Must be `"booth:update-state"`.
+Must be `"booth:update-state"`.
   
 
   
-    Set to `true` when the interpreter's microphone is live, `false` when muted.
+Set to `true` when the interpreter's microphone is live, `false` when muted.
   
 
   
-    Set to `true` when the WHIP ingest connection is established, `false` when it drops.
+Set to `true` when the WHIP ingest connection is established, `false` when it drops.
   
 
 </details>
@@ -265,8 +265,8 @@ const ws = new WebSocket(
 
 ws.onopen = () => {
   ws.send(JSON.stringify({
-    type: 'booth:join',
-    display_name: 'Alice'
+type: 'booth:join',
+display_name: 'Alice'
   }));
 };
 
@@ -289,20 +289,20 @@ Your token's server-assigned role gates which messages you can send. Attempting 
 
 ### interpreter
 
-    Can join, leave, chat, and update mic/ingest state flags. Cannot set another interpreter as active.
+Can join, leave, chat, and update mic/ingest state flags. Cannot set another interpreter as active.
   
 
-  ### coordinator
+### coordinator
 
-    Can do everything an interpreter can, plus promote any booth participant to the active interpreter role.
+Can do everything an interpreter can, plus promote any booth participant to the active interpreter role.
   
 
-  ### event_owner
+### event_owner
 
-    Full control over the booth, including active-interpreter assignment and all room_coordinator capabilities.
+Full control over the booth, including active-interpreter assignment and all room_coordinator capabilities.
   
 
-  ### listener
+### listener
 
-    Can join and leave only. Listeners cannot send chat or modify booth state.
+Can join and leave only. Listeners cannot send chat or modify booth state.
   

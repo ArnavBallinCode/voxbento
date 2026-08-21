@@ -31,7 +31,7 @@ The first message sent after connection MUST be `booth:join`. The server will no
 {
   "type": "booth:join",
   "payload": {
-    "name": "Arnav Angarkar"
+"name": "Arnav Angarkar"
   }
 }
 ```
@@ -42,8 +42,8 @@ Participants should continually update the server on their WebRTC status.
 {
   "type": "booth:update-state",
   "payload": {
-    "mic_active": true,
-    "ingest_connected": true
+"mic_active": true,
+"ingest_connected": true
   }
 }
 ```
@@ -54,7 +54,7 @@ Sending an internal chat message to the booth.
 {
   "type": "booth:chat",
   "payload": {
-    "body": "Ready in 30 seconds."
+"body": "Ready in 30 seconds."
   }
 }
 ```
@@ -66,7 +66,7 @@ This is the core of the Voxbento handoff mechanic. A participant with the `BOOTH
 {
   "type": "booth:set-active",
   "payload": {
-    "target_id": "participant-uuid-here"
+"target_id": "participant-uuid-here"
   }
 }
 ```
@@ -83,12 +83,12 @@ Every time a participant joins, leaves, updates their mic status, or the active 
   "booth_id": "pycon2026-en",
   "active_interpreter_id": "participant-uuid-here",
   "participants": {
-    "participant-uuid-here": {
-      "name": "Arnav Angarkar",
-      "role": "interpreter",
-      "mic_active": false,
-      "ingest_connected": false
-    }
+"participant-uuid-here": {
+  "name": "Arnav Angarkar",
+  "role": "interpreter",
+  "mic_active": false,
+  "ingest_connected": false
+}
   }
 }
 ```

@@ -100,17 +100,17 @@ To rotate your encryption key without service interruption:
 ### Generate a new key
 
 ```bash
-    openssl rand -hex 32
-    ```
+openssl rand -hex 32
+```
 
-    Copy the output — this is your new key.
-  ### Prepend the new key to the list
+Copy the output — this is your new key.
+### Prepend the new key to the list
 
 Update `API_KEY_ENCRYPTION_KEY` in your `.env` to `NEW_KEY,OLD_KEY`. Deploy this change. New data is encrypted with the new key; old data still decrypts with the old key.
-  ### Re-encrypt existing data
+### Re-encrypt existing data
 
 Trigger a re-encryption pass for all stored API keys (via the admin panel or the relevant management command). Once complete, all data is encrypted under the new key.
-  ### Remove the old key
+### Remove the old key
 
 Update `API_KEY_ENCRYPTION_KEY` to contain only `NEW_KEY` and redeploy. The old key is no longer needed.
 

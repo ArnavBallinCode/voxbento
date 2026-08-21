@@ -54,7 +54,7 @@ The three caption status values represent distinct moments in the transcription 
 
 The interpreter is still speaking. The `text` field contains the words recognised so far in the current utterance. Expect this message to arrive multiple times in quick succession as the transcription engine processes each audio chunk. You should overwrite your previous partial caption display with the new `text` value on every update.
 
-    :::tip
+:::tip
 Display `partial` captions with lower opacity or a distinct style (e.g. italics, a muted colour) to signal to viewers that the text may still change before it is finalised.
 :::
 
@@ -78,16 +78,16 @@ Understanding how captions flow from the interpreter to your client helps you se
 ### Interpreter goes live
 
 The active interpreter's browser publishes audio via WebRTC/WHIP. The `mic_active` and `ingest_connected` flags in `booth:state` turn `true`.
-  ### Audio is captured and converted
+### Audio is captured and converted
 
 Voxbento captures the interpreter's audio stream and converts it to the format expected by the configured transcription provider.
-  ### Transcription provider processes audio
+### Transcription provider processes audio
 
 Audio is chunked and passed to the configured transcription provider — options include a local model, OpenAI Whisper, Deepgram, NVIDIA Riva, or ElevenLabs. Each chunk produces a text result.
-  ### Caption events are generated
+### Caption events are generated
 
 Completed sentences produce `final` caption events. Any in-progress fragment produces a `partial` event. Silence produces a `clear` event.
-  ### Events are delivered to subscribers
+### Events are delivered to subscribers
 
 Each caption event is pushed in real time to every client connected to `/ws/captions/{booth_id}`.
 
@@ -146,16 +146,16 @@ ws.onmessage = (e) => {
   const msg = JSON.parse(e.data);
 
   if (msg.type === 'caption') {
-    if (msg.status === 'clear') {
-      clearCaption();
-    } else {
-      showCaption(msg.text, msg.status);
-    }
+if (msg.status === 'clear') {
+  clearCaption();
+} else {
+  showCaption(msg.text, msg.status);
+}
   }
 
   if (msg.type === 'booth:state') {
-    // Update live indicator, interpreter name, etc.
-    console.log('[captions] booth state', msg);
+// Update live indicator, interpreter name, etc.
+console.log('[captions] booth state', msg);
   }
 };
 
@@ -171,15 +171,15 @@ Display `partial` captions with lower opacity or in a different style than `fina
 
 ### Subtitle Overlays
 
-    Embed this WebSocket in a browser-based subtitle overlay rendered on top of your event stream. Use `partial` for live-typing effect and `final` for stable display.
+Embed this WebSocket in a browser-based subtitle overlay rendered on top of your event stream. Use `partial` for live-typing effect and `final` for stable display.
   
 
-  ### Broadcast Tools
+### Broadcast Tools
 
-    Push caption events to OBS, vMix, or any streaming encoder that accepts WebSocket data sources to add real-time subtitles to your live stream output.
+Push caption events to OBS, vMix, or any streaming encoder that accepts WebSocket data sources to add real-time subtitles to your live stream output.
   
 
-  ### Accessibility Widgets
+### Accessibility Widgets
 
-    Integrate captions into screen-reader-friendly widgets or ARIA live regions so attendees who are deaf or hard of hearing can follow interpretation in real time.
+Integrate captions into screen-reader-friendly widgets or ARIA live regions so attendees who are deaf or hard of hearing can follow interpretation in real time.
   

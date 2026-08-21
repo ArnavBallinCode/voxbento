@@ -99,13 +99,13 @@ API keys are stored at the event level and shared across all booths in that even
 ### Open the event
 
 In the admin panel, navigate to `/admin/events/` and click the event you want to configure.
-  ### Go to API Settings
+### Go to API Settings
 
 Click **API Settings** on the event detail page, or navigate to `/admin/events/{event_id}/api-settings/`.
-  ### Enter API keys
+### Enter API keys
 
 Fill in the API key fields for the providers you intend to use — OpenAI, Deepgram, ElevenLabs, or NVIDIA. Leave fields blank for providers you are not using.
-  ### Save
+### Save
 
 Click **Save**. Voxbento encrypts each key and stores it. The keys are never displayed in plain text after saving.
 
@@ -116,13 +116,13 @@ Each booth can use a different provider and model. You configure transcription o
 ### Open the booth detail page
 
 In the admin panel, navigate to your event → **Rooms** → select a room → **Booths** → click the target booth.
-  ### Find Transcription Settings
+### Find Transcription Settings
 
 Scroll to the **Transcription Settings** section on the booth detail page.
-  ### Select provider and model
+### Select provider and model
 
 Choose a **Provider** from the dropdown — for example, `deepgram`. Then select the **Model** for that provider — for example, `nova-2`.
-  ### Save
+### Save
 
 Click **Save**. If the booth is currently live (an interpreter is broadcasting), the transcription worker restarts immediately with the new settings. There is no need to wait for the next session.
 
