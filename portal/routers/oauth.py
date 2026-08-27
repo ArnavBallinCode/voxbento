@@ -16,7 +16,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from portal.auth import require_user
+from portal.auth import get_current_user, require_user
 from portal.database import get_db_session
 from portal.models import (
     Event,
@@ -113,9 +113,15 @@ async def authorize_get(
     code_challenge: str = "",
     code_challenge_method: str = "",
     event: str = "",
-    user: dict = Depends(require_user),
+    user: dict | None = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ):
+    if user is None:
+        # User is not logged in, redirect to login with 'next' parameter
+        path_query = f"{request.url.path}?{request.url.query}" if request.url.query else request.url.path
+        next_url = urllib.parse.quote(path_query)
+        return RedirectResponse(url=f"/login?next={next_url}", status_code=303)
+
     if response_type != "code":
         raise HTTPException(status_code=400, detail="Unsupported response_type. Only 'code' is supported.")
     if code_challenge_method != "S256":
