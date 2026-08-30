@@ -22,20 +22,14 @@ We use `uv` for lightning-fast Python dependency management and Docker for our m
 git clone https://github.com/fossasia/voxbento.git
 cd voxbento
 
-# 2. Install Python dependencies (this also provisions Python 3.13 automatically)
+# 2. Install local Python dependencies (required for IDE linting & running tests)
 uv sync --all-groups
 
 # 3. Set up your environment variables
 cp .env.example .env
 
-# 4. Start the infrastructure (MediaMTX and Jitsi)
-docker compose up -d
-
-# 5. Apply database migrations (SQLite is used by default locally)
-uv run alembic upgrade head
-
-# 6. Start the FastAPI development server
-uv run uvicorn fastapi_app:app --host 127.0.0.1 --port 8000 --reload
+# 4. Start the entire stack (FastAPI, MediaMTX, and Jitsi)
+docker compose up -d --build
 ```
 
 You can now visit the app at `http://localhost:8000`. 
@@ -82,10 +76,10 @@ If your feature requires changes to the database schema:
 
 ```bash
 # 1. Edit your SQLAlchemy models in portal/models.py
-# 2. Generate a new migration file
+# 2. Generate a new migration file locally
 uv run alembic revision --autogenerate -m "describe your change"
-# 3. Apply it locally
-uv run alembic upgrade head
+# 3. Apply it to the running Docker container
+docker compose exec portal uv run alembic upgrade head
 ```
 Always commit the generated migration files in `alembic/versions/`. Do **not** commit your local `.db` files.
 
