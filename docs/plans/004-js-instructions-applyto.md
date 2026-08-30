@@ -93,15 +93,15 @@ To:
 ```yaml
 ---
 description: 'JavaScript development standards'
-applyTo: 'static/**/*.js'
+applyTo: 'portal/static/**/*.js'
 ---
 ```
 
-The glob `static/**/*.js` matches all `.js` files in `portal/static/js/` and any
+The glob `portal/static/**/*.js` matches all `.js` files in `portal/static/js/` and any
 future subdirectories, which is exactly where all JavaScript lives in this
 repo.
 
-**Verify**: `grep 'applyTo' .github/instructions/js.instructions.md` → `applyTo: 'static/**/*.js'`
+**Verify**: `grep 'applyTo' .github/instructions/js.instructions.md` → `applyTo: 'portal/static/**/*.js'`
 
 ### Step 2: Confirm no other instruction files reference the old path
 
@@ -127,7 +127,7 @@ runtime code.
 
 ## Done criteria
 
-- [ ] `grep 'applyTo' .github/instructions/js.instructions.md` → `applyTo: 'static/**/*.js'`
+- [ ] `grep 'applyTo' .github/instructions/js.instructions.md` → `applyTo: 'portal/static/**/*.js'`
 - [ ] `grep -r 'app/\*\*' .github/instructions/` → no matches
 - [ ] `API_KEY_ENCRYPTION_KEY="ci-test-encryption-key-must-be-32-chars-long" uv run pytest tests/ -q` exits 0
 - [ ] `git diff --name-only HEAD` shows only `.github/instructions/js.instructions.md`
