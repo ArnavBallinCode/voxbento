@@ -72,7 +72,7 @@ git add alembic/versions/*.py
 ## Audio handoff
 
 The seamless interpreter-switch relies on the silence-mode handoff in
-`static/js/interpreter-booth.js → applyBoothState`. If you change timing
+`portal/static/js/interpreter-booth.js → applyBoothState`. If you change timing
 constants (`700 ms` outgoing silence window, `200 ms` retry interval), test with
 a real MediaMTX instance to verify WHEP continuity.
 
@@ -462,7 +462,7 @@ portal/
 alembic/
   env.py                      # async-aware Alembic environment
   versions/                   # migration scripts (committed to version control)
-templates/
+portal/templates/
   home.html                   # public home page with event list
   register.html               # user registration form
   login.html                  # user login form
