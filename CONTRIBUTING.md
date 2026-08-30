@@ -33,7 +33,7 @@ docker compose up -d --build
 ```
 
 You can now visit the app at `http://localhost:8000`. 
-To access the admin panel, go to `http://localhost:8000/admin/login` (the default password is `admin` unless changed in `.env`).
+To access the admin panel, set `ADMIN_PASSWORD` explicitly in `.env` during setup, then go to `http://localhost:8000/admin/login`. There is no usable default password.
 
 ---
 
@@ -55,7 +55,7 @@ node --check portal/static/js/admin.js
 uv run pytest tests/ -v
 ```
 
-All CI checks run these exact commands. Your PR will be blocked if any of these fail.
+CI runs the checks above (except `uv run ruff format .`), and also runs a separate Docker build and full-stack smoke test. Your PR will be blocked if any of these CI checks fail.
 
 ---
 
