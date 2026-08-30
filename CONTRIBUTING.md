@@ -72,7 +72,7 @@ git add alembic/versions/*.py
 ## Audio handoff
 
 The seamless interpreter-switch relies on the silence-mode handoff in
-`static/js/interpreter-booth.js → applyBoothState`. If you change timing
+`portal/static/js/interpreter-booth.js → applyBoothState`. If you change timing
 constants (`700 ms` outgoing silence window, `200 ms` retry interval), test with
 a real MediaMTX instance to verify WHEP continuity.
 
@@ -459,22 +459,22 @@ portal/
   roles.py                    # Permission enum, role-permission mapping
   models.py                   # SQLAlchemy declarative models (Event, Room, DBBooth, InviteToken, User)
   database.py                 # async engine, session factory, CRUD helpers
+  templates/
+    home.html                 # public home page with event list
+    register.html             # user registration form
+    login.html                # user login form
+    account.html              # user account page
+    interpreter_booth.html    # Jinja2 interpreter booth page
+    listener-webrtc.html      # Jinja2 attendee page (WHEP WebRTC, primary)
+    admin/                    # admin panel templates (dashboard, CRUD, users)
+  static/
+    js/interpreter-booth.js   # Plain browser JS — WebRTC/WHIP + WebSocket
+    js/whep-listener.js       # WHEP WebRTC listener client
+    css/interpreter.css
+    css/admin.css             # admin panel and auth page styles
 alembic/
   env.py                      # async-aware Alembic environment
   versions/                   # migration scripts (committed to version control)
-templates/
-  home.html                   # public home page with event list
-  register.html               # user registration form
-  login.html                  # user login form
-  account.html                # user account page
-  interpreter_booth.html      # Jinja2 interpreter booth page
-  listener-webrtc.html        # Jinja2 attendee page (WHEP WebRTC, primary)
-  admin/                      # admin panel templates (dashboard, CRUD, users)
-static/
-  js/interpreter-booth.js     # Plain browser JS — WebRTC/WHIP + WebSocket
-  js/whep-listener.js         # WHEP WebRTC listener client
-  css/interpreter.css
-  css/admin.css               # admin panel and auth page styles
 mediamtx.yml                  # MediaMTX config (WHIP ingest, WHEP playback, Control API)
 docker-compose.yml            # portal + mediamtx + jitsi services
 Dockerfile                    # FastAPI container (uv, Python 3.13-slim)
