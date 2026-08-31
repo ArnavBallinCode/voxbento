@@ -273,4 +273,4 @@ async def request_demo(data: DemoRequestModel):
         return {"ok": True}
     except Exception as e:
         logging.getLogger(__name__).error(f"Error processing demo request: {e}", exc_info=True)
-        return {"ok": False, "detail": str(e)}
+        return {"ok": False, "detail": "An internal error occurred while processing the request."}
