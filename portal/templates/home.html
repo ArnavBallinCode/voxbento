@@ -55,17 +55,28 @@
                 <a href="#open-source" class="hover:text-brand-600 transition-colors uppercase tracking-wider">Open
                     Source</a>
             </nav>
-            <div class="flex items-center gap-3 md:gap-4 text-[10px] sm:text-xs md:text-sm font-bold flex-shrink-0">
-                
-                <button onclick="openDemoModal()" class="brutal-btn brutal-btn-secondary brutal-btn-nav !bg-[#fbbf24] !border-[#0d0f10] hover:!bg-[#f59e0b] !px-2.5 !py-1.5 md:!px-5 md:!py-2 rounded-full">Request a demo</button>
+            <div class="flex items-center gap-1.5 sm:gap-3 md:gap-4 text-[10px] sm:text-xs md:text-sm font-bold flex-shrink-0">
+                <button onclick="openDemoModal()" class="brutal-btn brutal-btn-secondary brutal-btn-nav !bg-[#fbbf24] !border-[#0d0f10] hover:!bg-[#f59e0b] !px-2 sm:!px-2.5 !py-1 sm:!py-1.5 md:!px-5 md:!py-2 rounded-full whitespace-nowrap">
+                    <span class="max-sm:hidden">Request a demo</span>
+                    <span class="sm:hidden">Demo</span>
+                </button>
                 {% if current_user %}
-                <a href="/developer" class="brutal-btn brutal-btn-outline brutal-btn-nav max-md:hidden !px-2.5 !py-1.5 md:!px-5 md:!py-2">Developer</a>
-                <a href="/account" class="brutal-btn brutal-btn-outline brutal-btn-nav !px-2.5 !py-1.5 md:!px-5 md:!py-2">Account</a>
-                <a href="/admin/events/" class="brutal-btn brutal-btn-primary brutal-btn-nav !px-2.5 !py-1.5 md:!px-5 md:!py-2">Dashboard</a>
-                <a href="/logout" class="brutal-btn brutal-btn-outline brutal-btn-nav !px-2.5 !py-1.5 md:!px-5 md:!py-2">Logout</a>
+                <a href="/developer" class="brutal-btn brutal-btn-outline brutal-btn-nav max-md:hidden !px-2.5 !py-1.5 md:!px-5 md:!py-2 whitespace-nowrap">Developer</a>
+                <a href="/account" class="brutal-btn brutal-btn-outline brutal-btn-nav !px-2 sm:!px-2.5 !py-1 sm:!py-1.5 md:!px-5 md:!py-2 max-sm:hidden whitespace-nowrap">Account</a>
+                <a href="/admin/events/" class="brutal-btn brutal-btn-primary brutal-btn-nav !px-2 sm:!px-2.5 !py-1 sm:!py-1.5 md:!px-5 md:!py-2 whitespace-nowrap">
+                    <span class="max-sm:hidden">Dashboard</span>
+                    <span class="sm:hidden">Dash</span>
+                </a>
+                <a href="/logout" class="brutal-btn brutal-btn-outline brutal-btn-nav !px-2 sm:!px-2.5 !py-1 sm:!py-1.5 md:!px-5 md:!py-2 whitespace-nowrap">
+                    <span class="max-sm:hidden">Logout</span>
+                    <span class="sm:hidden">Exit</span>
+                </a>
                 {% else %}
-                <a href="/login" class="brutal-btn brutal-btn-primary brutal-btn-nav !px-2.5 !py-1.5 md:!px-5 md:!py-2">Sign In</a>
-                <a href="/register" class="brutal-btn brutal-btn-outline brutal-btn-nav !px-2.5 !py-1.5 md:!px-5 md:!py-2">Register</a>
+                <a href="/login" class="brutal-btn brutal-btn-primary brutal-btn-nav !px-2 sm:!px-2.5 !py-1 sm:!py-1.5 md:!px-5 md:!py-2 whitespace-nowrap">
+                    <span class="max-sm:hidden">Sign In</span>
+                    <span class="sm:hidden">Login</span>
+                </a>
+                <a href="/register" class="brutal-btn brutal-btn-outline brutal-btn-nav !px-2 sm:!px-2.5 !py-1 sm:!py-1.5 md:!px-5 md:!py-2 max-sm:hidden whitespace-nowrap">Register</a>
                 {% endif %}
             </div>
         </div>
