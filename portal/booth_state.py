@@ -24,6 +24,8 @@ ParticipantRole = Literal[
     "support",
 ]
 
+_background_tasks: set[asyncio.Task] = set()
+
 
 def utc_now_iso() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
@@ -282,9 +284,11 @@ class BoothRegistry:
 
             import portal.webhooks.worker as _wh
 
-            asyncio.create_task(
+            task = asyncio.create_task(
                 _wh.enqueue_webhook("session.status_changed", {"booth_id": booth_id, "is_active": unlocked})
             )
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
 
             return booth.as_public_dict()
 
