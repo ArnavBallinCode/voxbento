@@ -59,15 +59,19 @@ async def _check_mediamtx() -> bool:
     base = settings.mediamtx_api_base
     if not base:
         _mediamtx_cache = (now + _MEDIAMTX_CACHE_TTL, False)
+        _created_paths.clear()
         return False
     try:
         client = get_http_client()
         r = await client.get(f"{base}/v3/paths/list", timeout=2.0)
         ok = r.status_code < 500
         _mediamtx_cache = (now + _MEDIAMTX_CACHE_TTL, ok)
+        if not ok:
+            _created_paths.clear()
         return ok
     except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError, RuntimeError):
         _mediamtx_cache = (now + _MEDIAMTX_CACHE_TTL, False)
+        _created_paths.clear()
         return False
 
 
