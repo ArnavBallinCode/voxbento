@@ -100,7 +100,7 @@ VoxBento is a production-grade **browser-first interpretation booth console** fo
 9. **`portal.*` imports for all new Python code.**
 10. **Role is never trusted from client data.** WS handler reads `Session.granted_role` (derived from cookies at connect time).
 11. **No open redirects.** All redirects use `safe_redirect()` which validates path starts with `/` and has no netloc.
-12. **Management namespaces reflect privilege.** Event owners and room coordinators use `/workspace/*`; `/admin/*` is reserved for super-admin use. Legacy organizer URLs redirect without changing OAuth routes or token behavior.
+12. **Management namespaces reflect privilege.** Event owners use `/workspace/*`; room coordinators use the room-scoped `/mission-control/*` surface. `/admin/*` is reserved for super-admin use, apart from legacy room-scoped coordinator handlers retained for compatibility. Legacy event-owner URLs redirect without changing OAuth routes or token behavior.
 
 ---
 

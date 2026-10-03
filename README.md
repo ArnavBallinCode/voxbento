@@ -11,7 +11,8 @@ Rooms can optionally add a listener-side audio synchronization delay for WHEP pl
 
 ## Management dashboards
 
-- Event owners and room coordinators manage their permitted events at `/workspace/`.
+- Event owners manage event configuration at `/workspace/`.
+- Room coordinators use `/mission-control/`, which limits them to their assigned rooms.
 - System administrators use `/admin/` for instance-wide administration.
 - Existing organizer bookmarks under `/admin/events/...` redirect to the matching `/workspace/events/...` URL. HTTP methods and query strings are preserved, so old forms and filtered room-list bookmarks continue to work.
 

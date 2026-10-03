@@ -58,7 +58,7 @@
 
 ## Management Surfaces (`/workspace/*` and `/admin/*`)
 
-`/workspace/*` is the canonical organizer surface for event owners and room coordinators. `/admin/*` is reserved for super admins. The paths in the table below name the shared `/admin` handler routes; every event-management path has a corresponding organizer route formed by replacing `/admin` with `/workspace`. Likewise, `/api/admin/providers/...` and `/api/admin/events/...` have `/api/workspace/...` organizer equivalents.
+`/workspace/*` is the canonical event-management surface for event owners. Room coordinators use `/mission-control/*`, which filters the operational view to their assigned rooms. `/admin/*` is reserved for super admins, apart from legacy room-scoped coordinator handlers retained for compatibility. The paths in the table below name the shared `/admin` handler routes; every event-management path has a corresponding event-owner route formed by replacing `/admin` with `/workspace`. Likewise, `/api/admin/providers/...` and `/api/admin/events/...` have `/api/workspace/...` event-owner equivalents.
 
 Legacy organizer requests to `/admin/`, `/admin/events...`, `/admin/setup...`, or their management API equivalents receive a `307` redirect to the matching workspace URL. The redirect preserves the HTTP method and query string. System-only routes such as `/admin/users/`, `/admin/developer-accounts`, and `/admin/login` have no workspace equivalent. OAuth routes under `/oauth/*` are unchanged.
 

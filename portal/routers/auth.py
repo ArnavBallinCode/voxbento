@@ -442,13 +442,27 @@ async def account_page(request: Request):
 
     unified_memberships.sort(key=lambda x: x["created_at"] or datetime.min.replace(tzinfo=timezone.utc))
 
+    if user.is_admin:
+        management_home = "/admin/"
+        management_label = "Admin Panel"
+    elif any(m.role == "event_owner" for m in event_memberships):
+        management_home = "/workspace/"
+        management_label = "Organizer Workspace"
+    elif any(m.role == "room_coordinator" for m in room_memberships):
+        management_home = "/mission-control/"
+        management_label = "Mission Control"
+    else:
+        management_home = "/account"
+        management_label = "My Account"
+
     return templates.TemplateResponse(
         request=request,
         name="account.html",
         context={
             "user": user,
             "memberships": unified_memberships,
-            "management_home": "/admin/" if user.is_admin else "/workspace/",
+            "management_home": management_home,
+            "management_label": management_label,
         },
     )
 

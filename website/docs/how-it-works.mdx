@@ -69,7 +69,8 @@ In the organizer workspace, room management includes server-side search to quick
 
 Event management and system administration use separate public URL namespaces:
 
-- `/workspace/...` is the event workspace for `event_owner` and `room_coordinator` users. It contains event, room, booth, membership, transcription, translation, and event API-key management scoped by the existing role checks.
+- `/workspace/...` is the event workspace for `event_owner` users. It contains event, room, booth, membership, transcription, translation, and event API-key management scoped by the existing role checks.
+- `/mission-control/...` is the room-scoped operational surface for `room_coordinator` users.
 - `/admin/...` is reserved for `super_admin` users and contains system-wide views such as user and developer-account management.
 
 Both namespaces use the same underlying management handlers, so the route split does not duplicate event-management behavior. Existing organizer bookmarks under `/admin/events/...` receive a temporary redirect to the corresponding workspace URL with their query string and HTTP method preserved. The OAuth routes remain under `/oauth/...`; shared-organizer authorization and token lifecycle behavior are therefore unchanged.

@@ -140,6 +140,29 @@ def _slugify(text: str) -> str:
     return slug.strip("-")
 
 
+async def _management_event_ids(request: Request, user_id: int | None) -> set[int] | None:
+    """Return events appropriate to the active management namespace."""
+    is_super_admin, allowed_event_ids = await get_accessible_event_ids(request, user_id=user_id)
+    if not getattr(request.state, "is_workspace", False) or is_super_admin or user_id is None:
+        return allowed_event_ids
+
+    async with get_session() as session:
+        memberships = await list_memberships_for_user(session, user_id)
+    return {membership.event_id for membership in memberships if membership.role == "event_owner"}
+
+
+async def _assign_creator_as_event_owner(request: Request, session: AsyncSession, event_id: int) -> None:
+    """Keep a newly created event reachable from its creator's workspace."""
+    current_user = await get_current_user(request)
+    if current_user and current_user.get("sub"):
+        await set_event_membership(
+            session,
+            user_id=int(current_user["sub"]),
+            event_id=event_id,
+            role="event_owner",
+        )
+
+
 @router.get("/mission-control/")
 async def mission_control_list(request: Request, user=Depends(require_user), page: int = 1):
     is_super_admin, allowed_event_ids = await get_accessible_event_ids(request, user_id=int(user["sub"]))
@@ -275,7 +298,7 @@ async def admin_dashboard(request: Request, page: int = 1):
     admin_flags = await get_admin_flags(request)
     user = await get_current_user(request)
     user_id = int(user["sub"]) if user and user.get("sub") else None
-    _, allowed_event_ids = await get_accessible_event_ids(request, user_id=user_id)
+    allowed_event_ids = await _management_event_ids(request, user_id)
     limit = 20
     offset = (page - 1) * limit
     async with get_session() as session:
@@ -326,7 +349,7 @@ async def admin_event_list(request: Request, page: int = 1):
     admin_flags = await get_admin_flags(request)
     user = await get_current_user(request)
     user_id = int(user["sub"]) if user and user.get("sub") else None
-    _, allowed_event_ids = await get_accessible_event_ids(request, user_id=user_id)
+    allowed_event_ids = await _management_event_ids(request, user_id)
     limit = 20
     offset = (page - 1) * limit
     async with get_session() as session:
@@ -349,7 +372,8 @@ async def admin_create_event(request: Request):
         return safe_redirect(url=management_url(request, "events/"), status_code=status.HTTP_303_SEE_OTHER)
     try:
         async with get_session() as session:
-            await create_event(session, slug=slug, display_name=display_name)
+            event = await create_event(session, slug=slug, display_name=display_name)
+            await _assign_creator_as_event_owner(request, session, event.id)
     except Exception:
         return safe_redirect(url=management_url(request, "events/"), status_code=status.HTTP_303_SEE_OTHER)
     return safe_redirect(url=management_url(request, "events/"), status_code=status.HTTP_303_SEE_OTHER)
@@ -405,6 +429,7 @@ async def admin_setup_create_event(request: Request):
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
         event = await create_event(session, slug=slug, display_name=display_name)
+        await _assign_creator_as_event_owner(request, session, event.id)
         event_id = event.id
     return safe_redirect(
         url=management_url(request, f"events/{event_id}/setup/rooms"),

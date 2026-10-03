@@ -15,8 +15,10 @@ from portal.database import (
     create_room,
     create_user,
     dispose,
+    get_event_by_slug,
     get_session,
     init_db,
+    list_memberships_for_event,
     set_event_membership,
     set_room_membership,
 )
@@ -49,6 +51,7 @@ async def organizer():
 
     return {
         "event_id": event_id,
+        "user_id": user_id,
         "cookies": {"user_token": create_user_token(user_id=user_id, email=email)},
     }
 
@@ -211,3 +214,83 @@ async def test_room_coordinator_cannot_access_event_owner_workspace(organizer):
 
     assert workspace_response.status_code == 403
     assert legacy_response.status_code == 200
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("path", "slug", "display_name"),
+    [
+        ("/workspace/events/", "quick-created", "Quick Created"),
+        ("/workspace/setup", "wizard-created", "Wizard Created"),
+    ],
+)
+async def test_workspace_event_creation_assigns_creator_ownership(organizer, path, slug, display_name):
+    async with client() as http:
+        response = await http.post(
+            path,
+            data={"slug": slug, "display_name": display_name},
+            cookies=organizer["cookies"],
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 303
+    async with get_session() as session:
+        event = await get_event_by_slug(session, slug)
+        assert event is not None
+        memberships = await list_memberships_for_event(session, event.id)
+        assert any(
+            membership.user_id == organizer["user_id"] and membership.role == "event_owner"
+            for membership in memberships
+        )
+
+    async with client() as http:
+        event_page = await http.get(f"/workspace/events/{event.id}/", cookies=organizer["cookies"])
+
+    assert event_page.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_room_coordinator_navigation_uses_mission_control(organizer):
+    async with get_session() as session:
+        room = await create_room(
+            session,
+            event_id=organizer["event_id"],
+            display_name="Navigation Room",
+        )
+        user = await create_user(session, email="nav-coordinator@example.com", display_name="Navigation Coordinator")
+        await set_room_membership(session, user_id=user.id, room_id=room.id, role="room_coordinator")
+        coordinator_cookies = {"user_token": create_user_token(user_id=user.id, email=user.email)}
+
+    async with client() as http:
+        home = await http.get("/", cookies=coordinator_cookies)
+        account = await http.get("/account", cookies=coordinator_cookies)
+
+    assert home.status_code == 200
+    assert 'href="/mission-control/"' in home.text
+    assert 'href="/workspace/"' not in home.text
+    assert account.status_code == 200
+    assert 'href="/mission-control/">Mission Control</a>' in account.text
+
+
+@pytest.mark.anyio
+async def test_workspace_event_list_omits_coordinator_only_events(organizer):
+    async with get_session() as session:
+        coordinator_event = await create_event(
+            session,
+            slug="coordinator-only",
+            display_name="Coordinator Only Event",
+        )
+        room = await create_room(session, event_id=coordinator_event.id, display_name="Coordinator Room")
+        await set_room_membership(
+            session,
+            user_id=organizer["user_id"],
+            room_id=room.id,
+            role="room_coordinator",
+        )
+
+    async with client() as http:
+        response = await http.get("/workspace/events/", cookies=organizer["cookies"])
+
+    assert response.status_code == 200
+    assert "Shared Event" in response.text
+    assert "Coordinator Only Event" not in response.text
