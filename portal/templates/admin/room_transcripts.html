@@ -3,11 +3,11 @@
 
 {% block breadcrumb %}
 <nav class="breadcrumb">
-  <a href="/admin/">Dashboard</a> <span>/</span>
-  <a href="/admin/events/">Events</a> <span>/</span>
-  <a href="/admin/events/{{ event.id }}/">{{ event.display_name }}</a> <span>/</span>
-  <a href="/admin/events/{{ event.id }}/rooms/">Rooms</a> <span>/</span>
-  <a href="/admin/events/{{ event.id }}/rooms/{{ room.id }}/">{{ room.display_name }}</a> <span>/</span>
+  <a href="{{ management_prefix }}/">Dashboard</a> <span>/</span>
+  <a href="{{ management_prefix }}/events/">Events</a> <span>/</span>
+  <a href="{{ management_prefix }}/events/{{ event.id }}/">{{ event.display_name }}</a> <span>/</span>
+  <a href="{{ management_prefix }}/events/{{ event.id }}/rooms/">Rooms</a> <span>/</span>
+  <a href="{{ management_prefix }}/events/{{ event.id }}/rooms/{{ room.id }}/">{{ room.display_name }}</a> <span>/</span>
   <span class="breadcrumb-current" aria-current="page">Transcripts</span>
 </nav>
 {% endblock %}
@@ -74,7 +74,7 @@
     container.innerHTML = '<p class="muted transcript-placeholder">Loading...</p>';
     
     try {
-      const res = await fetch(`/api/admin/events/${eventId}/rooms/${roomId}/transcripts/${currentLanguageCode}`);
+      const res = await fetch(`{{ management_api_prefix }}/events/${eventId}/rooms/${roomId}/transcripts/${currentLanguageCode}`);
       if (!res.ok) throw new Error('Failed to fetch transcripts');
       
       const data = await res.json();

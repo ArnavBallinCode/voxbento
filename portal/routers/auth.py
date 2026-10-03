@@ -413,7 +413,7 @@ async def account_page(request: Request):
         unified_memberships.append(
             {
                 "context": m.event.display_name if m.event else "—",
-                "link": f"/admin/events/{m.event.id}/" if m.event else "#",
+                "link": f"/workspace/events/{m.event.id}/" if m.event else "#",
                 "type": "Event",
                 "role": m.role,
                 "created_at": m.created_at,
@@ -443,7 +443,13 @@ async def account_page(request: Request):
     unified_memberships.sort(key=lambda x: x["created_at"] or datetime.min.replace(tzinfo=timezone.utc))
 
     return templates.TemplateResponse(
-        request=request, name="account.html", context={"user": user, "memberships": unified_memberships}
+        request=request,
+        name="account.html",
+        context={
+            "user": user,
+            "memberships": unified_memberships,
+            "management_home": "/admin/" if user.is_admin else "/workspace/",
+        },
     )
 
 
