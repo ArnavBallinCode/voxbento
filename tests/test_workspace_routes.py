@@ -133,6 +133,14 @@ async def test_workspace_does_not_expose_system_admin_routes(organizer):
 
 
 @pytest.mark.anyio
+async def test_event_owner_cannot_use_system_admin_actions(organizer):
+    async with client() as http:
+        response = await http.post("/admin/demo/regenerate", cookies=organizer["cookies"])
+
+    assert response.status_code == 403
+
+
+@pytest.mark.anyio
 async def test_workspace_trailing_slash_redirect_stays_in_workspace(organizer):
     async with client() as http:
         response = await http.get(
