@@ -7,14 +7,16 @@ from urllib.parse import urlsplit, urlunsplit
 from starlette import status
 from starlette.datastructures import MutableHeaders
 from starlette.requests import Request
+from starlette.responses import JSONResponse
 from starlette.types import Message, Receive, Scope, Send
 
-from portal.auth import get_accessible_event_ids, get_admin_flags, get_current_user
+from portal.auth import get_admin_flags, get_current_user
 from portal.utils import safe_redirect
 
 WORKSPACE_PREFIX = "/workspace"
 ADMIN_PREFIX = "/admin"
 _EVENT_PATH_RE = re.compile(r"^/(?:api/)?admin(?:/api)?/events/(?P<event_id>\d+)(?:/|$)")
+_WORKSPACE_EVENT_PATH_RE = re.compile(r"^/(?:api/)?workspace(?:/api)?/events/(?P<event_id>\d+)(?:/|$)")
 
 
 def workspace_to_admin_path(path: str) -> str | None:
@@ -52,20 +54,20 @@ async def should_redirect_organizer(request: Request) -> bool:
     if user is None or not user.get("sub"):
         return False
 
-    is_super_admin, allowed_event_ids = await get_accessible_event_ids(request, user_id=int(user["sub"]))
-    if is_super_admin or not allowed_event_ids:
-        return False
-
     event_match = _EVENT_PATH_RE.match(request.url.path)
-    if event_match is None:
-        return True
-    event_id = int(event_match.group("event_id"))
-    if event_id not in allowed_event_ids:
+    event_id = int(event_match.group("event_id")) if event_match is not None else None
+    flags = await get_admin_flags(request, event_id=event_id)
+    if flags["is_super_admin"]:
         return False
-    if "/api/events/" in request.url.path:
-        flags = await get_admin_flags(request, event_id=event_id)
-        return flags["is_event_owner"]
-    return True
+    return flags["is_event_owner"]
+
+
+async def can_access_workspace(request: Request) -> bool:
+    """Limit organizer workspace aliases to event owners and super-admins."""
+    event_match = _WORKSPACE_EVENT_PATH_RE.match(request.url.path)
+    event_id = int(event_match.group("event_id")) if event_match is not None else None
+    flags = await get_admin_flags(request, event_id=event_id)
+    return flags["is_super_admin"] or flags["is_event_owner"]
 
 
 def management_template_context(request: Request) -> dict[str, str | bool]:
@@ -118,6 +120,15 @@ class WorkspaceRoutingMiddleware:
         mapped_path = workspace_to_admin_path(original_path)
         if mapped_path is None:
             await self.app(scope, receive, send)
+            return
+
+        request = Request(scope)
+        if not await can_access_workspace(request):
+            response = JSONResponse(
+                {"detail": "Event owner access required."},
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+            await response(scope, receive, send)
             return
 
         workspace_scope = dict(scope)

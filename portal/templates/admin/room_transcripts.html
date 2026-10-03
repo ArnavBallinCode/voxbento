@@ -74,7 +74,7 @@
     container.innerHTML = '<p class="muted transcript-placeholder">Loading...</p>';
     
     try {
-      const res = await fetch(`{{ management_api_prefix }}/events/${eventId}/rooms/${roomId}/transcripts/${currentLanguageCode}`);
+      const res = await fetch(`/api/admin/events/${eventId}/rooms/${roomId}/transcripts/${currentLanguageCode}`);
       if (!res.ok) throw new Error('Failed to fetch transcripts');
       
       const data = await res.json();

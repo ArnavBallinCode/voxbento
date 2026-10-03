@@ -5,8 +5,21 @@ from __future__ import annotations
 import os
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 
+from fastapi_app import app
 from portal.auth import create_admin_token, create_user_token
+from portal.database import (
+    configure,
+    create_event,
+    create_room,
+    create_user,
+    dispose,
+    get_session,
+    init_db,
+    set_event_membership,
+    set_room_membership,
+)
 
 os.environ["BOOTH_ACCESS_TOKEN"] = ""
 os.environ["ADMIN_PASSWORD"] = "test-admin-pass"
@@ -14,8 +27,6 @@ os.environ["ADMIN_PASSWORD"] = "test-admin-pass"
 
 @pytest.fixture(autouse=True)
 async def setup_db():
-    from portal.database import configure, dispose, init_db
-
     configure("sqlite+aiosqlite://")
     await init_db()
     yield
@@ -23,17 +34,11 @@ async def setup_db():
 
 
 def client():
-    from httpx import ASGITransport, AsyncClient
-
-    from fastapi_app import app
-
     return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
 
 @pytest.fixture
 async def organizer():
-    from portal.database import create_event, create_user, get_session, set_event_membership
-
     async with get_session() as session:
         event = await create_event(session, slug="shared-event", display_name="Shared Event")
         user = await create_user(session, email="owner@example.com", display_name="Event Owner")
@@ -168,8 +173,6 @@ async def test_organizer_navigation_points_to_workspace(organizer):
 
 @pytest.mark.anyio
 async def test_unrelated_user_cannot_access_workspace_event(organizer):
-    from portal.database import create_user, get_session
-
     async with get_session() as session:
         user = await create_user(session, email="outsider@example.com", display_name="Outsider")
         outsider_cookie = {"user_token": create_user_token(user_id=user.id, email=user.email)}
@@ -181,3 +184,30 @@ async def test_unrelated_user_cannot_access_workspace_event(organizer):
         )
 
     assert response.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_room_coordinator_cannot_access_event_owner_workspace(organizer):
+    async with get_session() as session:
+        room = await create_room(
+            session,
+            event_id=organizer["event_id"],
+            display_name="Coordinator Room",
+        )
+        user = await create_user(session, email="coordinator@example.com", display_name="Coordinator")
+        await set_room_membership(session, user_id=user.id, room_id=room.id, role="room_coordinator")
+        coordinator_cookies = {"user_token": create_user_token(user_id=user.id, email=user.email)}
+
+    async with client() as http:
+        workspace_response = await http.get(
+            f"/workspace/events/{organizer['event_id']}/",
+            cookies=coordinator_cookies,
+        )
+        legacy_response = await http.get(
+            f"/admin/events/{organizer['event_id']}/rooms/{room.id}/",
+            cookies=coordinator_cookies,
+            follow_redirects=False,
+        )
+
+    assert workspace_response.status_code == 403
+    assert legacy_response.status_code == 200

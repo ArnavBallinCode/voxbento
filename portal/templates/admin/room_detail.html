@@ -313,7 +313,7 @@
       if (!provider) return;
 
       try {
-        const res = await fetch('{{ management_api_prefix }}/providers/translation/models');
+        const res = await fetch('/api/admin/providers/translation/models');
         if (res.ok) {
           const data = await res.json();
           const models = data[provider] || [];
