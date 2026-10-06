@@ -15,6 +15,7 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def setup_db():
     import anyio
+
     from portal.database import configure, dispose, init_db
 
     configure("sqlite+aiosqlite://")
