@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import re
 import time
 from pathlib import Path
@@ -166,8 +165,8 @@ async def listen_event_page(request: Request, event_slug: str, code: str | None 
         context={
             "event": ev,
             "rooms": rooms,
-            "rooms_json": json.dumps(rooms_data),
-            "booths_json": json.dumps(booths_data),
+            "rooms_json": rooms_data,
+            "booths_json": booths_data,
             "js_version": _JS_CACHE_BUST,
         },
     )
