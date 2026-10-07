@@ -124,6 +124,10 @@ async def home(request: Request):
     )
 
 
+_VOXA_LATEST_VERSION = "0.1.11"
+_VOXA_LATEST_TAG = f"v{_VOXA_LATEST_VERSION}"
+
+
 @router.get("/local")
 @router.get("/local/")
 async def voxbento_local(request: Request):
@@ -136,9 +140,16 @@ async def voxbento_local(request: Request):
             "current_user": current_user,
             "management_home": management_home,
             "js_version": _JS_CACHE_BUST,
+            "latest_version": _VOXA_LATEST_TAG,
             "github_repo_url": "https://github.com/ArnavBallinCode/voxa",
             "github_releases_url": "https://github.com/ArnavBallinCode/voxa/releases",
-            "github_latest_release_url": "https://github.com/ArnavBallinCode/voxa/releases/latest",
+            "github_latest_release_url": f"https://github.com/ArnavBallinCode/voxa/releases/tag/{_VOXA_LATEST_TAG}",
+            "download_urls": {
+                "mac_arm": f"https://github.com/ArnavBallinCode/voxa/releases/download/{_VOXA_LATEST_TAG}/Voxa_{_VOXA_LATEST_VERSION}_aarch64.dmg",
+                "win_exe": f"https://github.com/ArnavBallinCode/voxa/releases/download/{_VOXA_LATEST_TAG}/Voxa_{_VOXA_LATEST_VERSION}_x64-setup.exe",
+                "linux_deb": f"https://github.com/ArnavBallinCode/voxa/releases/download/{_VOXA_LATEST_TAG}/Voxa_{_VOXA_LATEST_VERSION}_amd64.deb",
+                "linux_appimage": f"https://github.com/ArnavBallinCode/voxa/releases/download/{_VOXA_LATEST_TAG}/Voxa_{_VOXA_LATEST_VERSION}_amd64.AppImage",
+            },
         },
     )
 

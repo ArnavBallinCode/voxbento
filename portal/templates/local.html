@@ -160,10 +160,10 @@
                                     <div id="detected-os-name" class="text-sm font-black text-[#0d0f10]">macOS (Apple Silicon)</div>
                                 </div>
                             </div>
-                            <span id="release-version-tag" class="neo-badge bg-brand-50 text-brand-700 !text-[10px]">v0.1.0</span>
+                            <span id="release-version-tag" class="neo-badge bg-brand-50 text-brand-700 !text-[10px]">{{ latest_version }}</span>
                         </div>
 
-                        <a id="primary-download-btn" href="{{ github_latest_release_url }}" target="_blank" rel="noopener noreferrer" class="neo-btn-primary w-full py-3.5 px-4 rounded-lg flex items-center justify-center gap-3 text-sm uppercase tracking-wider mb-2.5">
+                        <a id="primary-download-btn" href="{{ download_urls.mac_arm }}" target="_blank" rel="noopener noreferrer" class="neo-btn-primary w-full py-3.5 px-4 rounded-lg flex items-center justify-center gap-3 text-sm uppercase tracking-wider mb-2.5">
                             <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                             <span id="primary-btn-label">Download .DMG for macOS</span>
                         </a>
@@ -326,10 +326,10 @@
                     </div>
 
                     <div class="space-y-2.5">
-                        <a href="{{ github_latest_release_url }}" target="_blank" rel="noopener noreferrer" class="neo-btn-primary w-full py-2.5 px-3 rounded text-xs text-center block uppercase tracking-wider">
+                        <a id="dl-mac-arm" href="{{ download_urls.mac_arm }}" target="_blank" rel="noopener noreferrer" class="neo-btn-primary w-full py-2.5 px-3 rounded text-xs text-center block uppercase tracking-wider">
                             Download DMG (Apple Silicon)
                         </a>
-                        <a href="{{ github_latest_release_url }}" target="_blank" rel="noopener noreferrer" class="brutal-btn brutal-btn-outline w-full !py-2 !px-3 text-xs text-center block">
+                        <a id="dl-mac-intel" href="{{ github_latest_release_url }}" target="_blank" rel="noopener noreferrer" class="brutal-btn brutal-btn-outline w-full !py-2 !px-3 text-xs text-center block">
                             Intel x64 Build (.dmg)
                         </a>
                     </div>
@@ -350,10 +350,10 @@
                     </div>
 
                     <div class="space-y-2.5">
-                        <a href="{{ github_latest_release_url }}" target="_blank" rel="noopener noreferrer" class="neo-btn-primary w-full py-2.5 px-3 rounded text-xs text-center block uppercase tracking-wider">
+                        <a id="dl-win-exe" href="{{ download_urls.win_exe }}" target="_blank" rel="noopener noreferrer" class="neo-btn-primary w-full py-2.5 px-3 rounded text-xs text-center block uppercase tracking-wider">
                             Download Windows (.exe)
                         </a>
-                        <a href="{{ github_latest_release_url }}" target="_blank" rel="noopener noreferrer" class="brutal-btn brutal-btn-outline w-full !py-2 !px-3 text-xs text-center block">
+                        <a id="dl-win-msi" href="{{ github_latest_release_url }}" target="_blank" rel="noopener noreferrer" class="brutal-btn brutal-btn-outline w-full !py-2 !px-3 text-xs text-center block">
                             Enterprise MSI Installer (.msi)
                         </a>
                     </div>
@@ -374,10 +374,10 @@
                     </div>
 
                     <div class="space-y-2.5">
-                        <a href="{{ github_latest_release_url }}" target="_blank" rel="noopener noreferrer" class="neo-btn-primary w-full py-2.5 px-3 rounded text-xs text-center block uppercase tracking-wider">
+                        <a id="dl-linux-deb" href="{{ download_urls.linux_deb }}" target="_blank" rel="noopener noreferrer" class="neo-btn-primary w-full py-2.5 px-3 rounded text-xs text-center block uppercase tracking-wider">
                             Download Debian Package (.deb)
                         </a>
-                        <a href="{{ github_latest_release_url }}" target="_blank" rel="noopener noreferrer" class="brutal-btn brutal-btn-outline w-full !py-2 !px-3 text-xs text-center block">
+                        <a id="dl-linux-appimage" href="{{ download_urls.linux_appimage }}" target="_blank" rel="noopener noreferrer" class="brutal-btn brutal-btn-outline w-full !py-2 !px-3 text-xs text-center block">
                             Universal AppImage (.AppImage)
                         </a>
                     </div>
@@ -517,28 +517,57 @@
             if (btnLabelEl) btnLabelEl.textContent = detected.btnText;
             if (osDetailsEl) osDetailsEl.textContent = detected.details;
 
-            // Fetch latest release details from GitHub API dynamically
-            fetch('https://api.github.com/repos/ArnavBallinCode/voxa/releases/latest')
-                .then(r => r.ok ? r.json() : null)
-                .then(release => {
-                    if (!release) return;
-                    
-                    const versionTagEl = document.getElementById('release-version-tag');
-                    if (versionTagEl && release.tag_name) {
-                        versionTagEl.textContent = release.tag_name;
-                    }
+            function applyRelease(release) {
+                if (!release) return;
+                const versionTagEl = document.getElementById('release-version-tag');
+                if (versionTagEl && release.tag_name) {
+                    versionTagEl.textContent = release.tag_name;
+                }
 
-                    if (release.assets && release.assets.length > 0 && primaryBtn) {
-                        // Find matching asset
+                if (release.assets && release.assets.length > 0) {
+                    if (primaryBtn) {
                         const matchedAsset = release.assets.find(a => detected.targetAssetPattern.test(a.name));
                         if (matchedAsset && matchedAsset.browser_download_url) {
                             primaryBtn.href = matchedAsset.browser_download_url;
                         }
                     }
+
+                    const macArmAsset = release.assets.find(a => /mac.*(aarch64|arm64|apple).*dmg/i.test(a.name));
+                    const macIntelAsset = release.assets.find(a => /mac.*(x64|x86_64).*dmg/i.test(a.name));
+                    const winExeAsset = release.assets.find(a => /(win.*x64|setup).*exe/i.test(a.name));
+                    const winMsiAsset = release.assets.find(a => /\.msi$/i.test(a.name));
+                    const linuxDebAsset = release.assets.find(a => /\.deb$/i.test(a.name));
+                    const linuxAppImageAsset = release.assets.find(a => /\.appimage$/i.test(a.name));
+
+                    const macArmBtn = document.getElementById('dl-mac-arm');
+                    if (macArmBtn && macArmAsset) macArmBtn.href = macArmAsset.browser_download_url;
+                    const macIntelBtn = document.getElementById('dl-mac-intel');
+                    if (macIntelBtn && macIntelAsset) macIntelBtn.href = macIntelAsset.browser_download_url;
+                    const winExeBtn = document.getElementById('dl-win-exe');
+                    if (winExeBtn && winExeAsset) winExeBtn.href = winExeAsset.browser_download_url;
+                    const winMsiBtn = document.getElementById('dl-win-msi');
+                    if (winMsiBtn && winMsiAsset) winMsiBtn.href = winMsiAsset.browser_download_url;
+                    const linuxDebBtn = document.getElementById('dl-linux-deb');
+                    if (linuxDebBtn && linuxDebAsset) linuxDebBtn.href = linuxDebAsset.browser_download_url;
+                    const linuxAppImageBtn = document.getElementById('dl-linux-appimage');
+                    if (linuxAppImageBtn && linuxAppImageAsset) linuxAppImageBtn.href = linuxAppImageAsset.browser_download_url;
+                }
+            }
+
+            // Query GitHub releases list first to ensure freshest non-draft release, falling back to /releases/latest
+            fetch('https://api.github.com/repos/ArnavBallinCode/voxa/releases?per_page=5')
+                .then(r => r.ok ? r.json() : null)
+                .then(releases => {
+                    if (Array.isArray(releases) && releases.length > 0) {
+                        const target = releases.find(r => !r.draft) || releases[0];
+                        applyRelease(target);
+                    } else {
+                        return fetch('https://api.github.com/repos/ArnavBallinCode/voxa/releases/latest')
+                            .then(r => r.ok ? r.json() : null)
+                            .then(applyRelease);
+                    }
                 })
-                .catch(() => {
-                    // Graceful fallback to release URL
-                });
+                .catch(() => {});
         })();
     </script>
 </body>
