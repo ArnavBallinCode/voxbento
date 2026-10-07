@@ -44,12 +44,12 @@
     <!-- Premium Navbar -->
     <header class="fixed top-0 w-full z-50 bg-[#eef2f6] border-b-[3px] border-[#0d0f10] transition-all duration-300" id="navbar">
         <div class="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between gap-3 sm:gap-6">
-            <div class="flex items-center gap-5 lg:gap-8 xl:gap-10 min-w-0">
+            <div class="flex items-center gap-4 lg:gap-8 xl:gap-10 min-w-0">
                 <a href="/" class="flex items-center gap-2 md:gap-3 flex-shrink-0">
                     <img src="{{ url_for('static', path='img/app_icon.png') }}" alt="VoxBento Icon" class="w-7 h-7 md:w-8 md:h-8 brutal-border rounded shadow-none">
                     <span class="text-lg md:text-[1.35rem] font-black tracking-tight text-[#0d0f10] whitespace-nowrap">VoxBento</span>
                 </a>
-                <nav class="hidden md:flex items-center gap-4 lg:gap-6 xl:gap-8 text-xs xl:text-sm font-bold text-[#0d0f10] whitespace-nowrap flex-shrink-0">
+                <nav class="hidden md:flex items-center gap-3 lg:gap-6 xl:gap-8 text-xs xl:text-sm font-bold text-[#0d0f10] whitespace-nowrap flex-shrink-0">
                     <a href="#solutions"
                         class="hover:text-brand-600 transition-colors uppercase tracking-wider whitespace-nowrap">Solutions</a>
                     <a href="#interactive-demo"
@@ -63,7 +63,7 @@
             </div>
             <div class="flex items-center gap-1.5 sm:gap-2.5 md:gap-3 text-[10px] sm:text-xs md:text-sm font-bold flex-shrink-0">
                 {% if not current_user %}
-                <button onclick="openDemoModal()" class="brutal-btn brutal-btn-secondary brutal-btn-nav !bg-[#fbbf24] !border-[#0d0f10] hover:!bg-[#f59e0b] !px-2.5 sm:!px-3 !py-1 sm:!py-1.5 md:!px-4 md:!py-2 rounded-full whitespace-nowrap !hidden sm:!inline-flex">
+                <button onclick="openDemoModal()" class="brutal-btn brutal-btn-secondary brutal-btn-nav !bg-[#fbbf24] !border-[#0d0f10] hover:!bg-[#f59e0b] !px-2.5 sm:!px-3 !py-1 sm:!py-1.5 md:!px-4 md:!py-2 rounded-full whitespace-nowrap !hidden lg:!inline-flex">
                     <span>Request a demo</span>
                 </button>
                 <a href="/login" class="brutal-btn brutal-btn-primary brutal-btn-nav !px-2.5 sm:!px-3 !py-1 sm:!py-1.5 md:!px-4 md:!py-2 whitespace-nowrap">
@@ -101,13 +101,13 @@
                 </a>
             </div>
             <div class="pt-2 border-t-2 border-zinc-300 flex flex-col gap-2">
-                <button onclick="openDemoModal(); closeMobileMenu();" class="brutal-btn brutal-btn-secondary !bg-[#fbbf24] !border-[#0d0f10] text-center py-2 text-xs uppercase tracking-wider font-bold">
-                    Request a demo
-                </button>
                 {% if current_user %}
                 <a href="/account" class="brutal-btn brutal-btn-outline text-center py-2 text-xs uppercase tracking-wider font-bold">Account</a>
                 <a href="/developer" class="brutal-btn brutal-btn-outline text-center py-2 text-xs uppercase tracking-wider font-bold">Developer</a>
                 {% else %}
+                <button onclick="openDemoModal(); closeMobileMenu();" class="brutal-btn brutal-btn-secondary !bg-[#fbbf24] !border-[#0d0f10] text-center py-2 text-xs uppercase tracking-wider font-bold">
+                    Request a demo
+                </button>
                 <a href="/register" class="brutal-btn brutal-btn-outline text-center py-2 text-xs uppercase tracking-wider font-bold">Register</a>
                 {% endif %}
             </div>
