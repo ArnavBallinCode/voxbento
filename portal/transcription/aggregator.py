@@ -1,9 +1,11 @@
+import asyncio
 import logging
 import time
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
+_background_tasks: set[asyncio.Task] = set()
 
 @dataclass
 class CaptionState:
@@ -145,7 +147,9 @@ class CaptionAggregator:
                 except Exception as e:
                     logger.error(f"[{booth_id}] _save_and_translate failed: {e}", exc_info=True)
 
-            asyncio.create_task(_save_and_translate())
+            task = asyncio.create_task(_save_and_translate())
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
 
         # Reset state for next utterance
         state.current_utterance = ""
