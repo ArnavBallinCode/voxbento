@@ -97,6 +97,52 @@ def credentials(room, token, **overrides):
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("failure", ["connection", "http", "json", "schema"])
+async def test_media_control_failure_returns_503_without_replacing_reservation(environment, monkeypatch, failure):
+    client, event, rooms, *_ = environment
+    room = rooms[0]
+    token = await enable(client, event, room)
+    original = credentials(room, token)
+    assert (await client.post("/internal/media-auth", json=original)).status_code == 204
+    ingest.health.clear()  # Force the persisted reservation's control-plane check.
+
+    def unavailable(request):
+        if failure == "connection":
+            raise httpx.ConnectError("upstream details", request=request)
+        if failure == "http":
+            return httpx.Response(502, text="upstream details")
+        if failure == "json":
+            return httpx.Response(200, text="not JSON")
+        return httpx.Response(200, json={"name": None})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(unavailable)) as media_client:
+        monkeypatch.setattr(ingest, "get_http_client", lambda: media_client)
+        response = await client.post("/internal/media-auth", json=credentials(room, token))
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Media control unavailable"}
+    async with get_session() as session:
+        saved = await session.get(Room, room.id)
+        assert saved.program_session_id == original["id"]
+
+
+@pytest.mark.anyio
+async def test_only_sync_actions_change_saved_offset(environment):
+    client, event, rooms, *_ = environment
+    room = rooms[0]
+    url = admin_url(event, room)
+    assert (await client.post(url, json={"action": "sync", "sync_offset_ms": 6500})).status_code == 200
+    for action in ["enable", "rotate", "revoke", "disable"]:
+        # Omitted/default and explicit offsets on credential actions are ignored.
+        for offset in [{}, {"sync_offset_ms": 100}]:
+            if action in {"rotate", "revoke"}:
+                await enable(client, event, room)
+            assert (await client.post(url, json={"action": action, **offset})).status_code == 200
+            assert (await client.get(url)).json()["sync_offset_ms"] == 6500
+    assert (await client.post(url, json={"action": "sync", "sync_offset_ms": 9000})).status_code == 200
+    assert (await client.get(url)).json()["sync_offset_ms"] == 9000
+
+
+@pytest.mark.anyio
 async def test_credentials_scope_rotation_expiry_and_no_leaks(environment, caplog):
     client, event, rooms, _, _, _, _ = environment
     room, other = rooms

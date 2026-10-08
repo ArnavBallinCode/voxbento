@@ -41,8 +41,14 @@ card.querySelectorAll('[data-ingest-action]').forEach(button => {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({action, sync_offset_ms: Number(offset.value)}),
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Update failed');
+      let data;
+      try {
+        data = await response.json();
+      } catch (error) {
+        // A proxy may return HTML on failure; preserve the HTTP status below.
+        if (response.ok) throw error;
+      }
+      if (!response.ok) throw new Error(typeof data?.detail === 'string' ? data.detail : `Update failed (HTTP ${response.status})`);
       if (data.secret) {
         secret.value = data.secret;
         document.getElementById('program-secret-panel').hidden = false;

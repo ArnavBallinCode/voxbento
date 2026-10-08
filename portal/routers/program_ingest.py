@@ -41,7 +41,10 @@ async def media_auth(request: Request) -> Response:
         data = MediaAuth.model_validate(json.loads(body))
     except (ValueError, ValidationError):
         raise HTTPException(401, "Publish authorization failed") from None
-    await authorize_publish(data)
+    try:
+        await authorize_publish(data)
+    except (httpx.HTTPError, ValueError):
+        raise HTTPException(503, "Media control unavailable") from None
     return Response(status_code=204)
 
 
@@ -99,7 +102,7 @@ async def ingest_change(request: Request, event_id: int, room_id: int, change: I
             room.program_sync_offset_ms = change.sync_offset_ms
         else:
             try:
-                secret = await configure_source(room, event, change.action, change.sync_offset_ms)
+                secret = await configure_source(room, event, change.action, room.program_sync_offset_ms)
             except httpx.HTTPError:
                 raise HTTPException(
                     502, "Could not confirm floor source shutdown; no credential was issued. Retry."
