@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     mediamtx_api_base: str = "http://localhost:9997"
     mediamtx_rtsp_base: str = "rtsp://mediamtx:8554"
     floor_bot_base: str = "http://floor-bot:8080"
+    program_ingest_enabled: bool = False  # Enable only with the authenticated MediaMTX configuration.
+    program_ingest_max_rooms: int = 10
+    program_ingest_disconnect_grace_secs: float = 15.0
+    program_ingest_stall_secs: float = 30.0
 
     @property
     def effective_jitsi_base_url(self) -> str:
