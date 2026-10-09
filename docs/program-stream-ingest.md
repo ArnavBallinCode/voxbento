@@ -25,7 +25,10 @@ Operator rollout (not an automatic deployment):
 2. Deploy the portal, MediaMTX config and Caddy config together. The authentication
    callback is `/internal/media-auth` on the Docker network only. Caddy must reject
    `/internal/*`. Bind host ports 8000, 8888, 8889, 9997 and 8554 to loopback as in
-   Compose. Never forward 9997/8554 at the firewall. No public RTMP/SRT listener.
+   Compose. Set `MEDIAMTX_AUTH_HOOK_SECRET` to the same strong random value for the
+   portal and MediaMTX (`openssl rand -hex 32`); Compose wires the value to both.
+   The portal refuses production startup without it. Never forward 9997/8554 at
+   the firewall. No public RTMP/SRT listener.
 3. Set `PUBLIC_BASE_URL` to the actual HTTPS origin and `MEDIAMTX_WHIP_BASE` to
    the same public origin. Set `PROGRAM_INGEST_ENABLED=true` after validating
    this boundary. Default is off. Set the reachable public IP/domain in MediaMTX's
@@ -98,7 +101,8 @@ The UI includes codec names, last connect/disconnect and credential expiry.
 Logs include action/room ID or reconciliation failure only, never request bodies,
 credentials, or upstream errors. Authentication failures are bounded to 10/IP/min
 with a bounded process-local cache. Do not enable HTTP request-body/debug logging
-on the media-auth route. Monitor degraded/disconnected rooms and worker capacity.
+on the media-auth route. The access-log filter redacts the hook key. Monitor
+degraded/disconnected rooms and worker capacity.
 
 ## Synchronization
 

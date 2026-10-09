@@ -118,8 +118,9 @@ Legacy organizer requests to allowlisted event-management paths under `/admin/`,
 ## Program ingest routes (#690)
 
 - `POST /internal/media-auth`: private MediaMTX callback only, blocked by Caddy;
-  publishing checks canonical floor identity, source mode, digest, expiry,
-  capacity and per-IP failure rate. Other legacy interpreter paths are unchanged.
+  requires the shared `MEDIAMTX_AUTH_HOOK_SECRET`, then checks canonical floor
+  identity, source mode, digest, expiry, capacity and per-IP failure rate. Other
+  legacy interpreter paths are unchanged.
 - `GET/POST /workspace/events/{event_id}/rooms/{room_id}/program-ingest`:
   event-owner controls/status, mapped to shared `/admin/...` handlers. No-store;
   rotate/enable responses reveal a new token once. POST supports enable, rotate,

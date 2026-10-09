@@ -29,6 +29,7 @@ services:
       # Browser-facing URLs — must be reachable from the user's machine
       MEDIAMTX_WHIP_BASE: "${MEDIAMTX_WHIP_BASE:-http://localhost:8889}"
       FLOOR_BOT_BASE: "http://floor-bot:8080"
+      MEDIAMTX_AUTH_HOOK_SECRET: "${MEDIAMTX_AUTH_HOOK_SECRET:-}"
       PROGRAM_INGEST_ENABLED: "${PROGRAM_INGEST_ENABLED:-false}"
       PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-https://voxbento.com}"
 
@@ -77,6 +78,8 @@ services:
     image: bluenviron/mediamtx:1.18.2
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
+    environment:
+      MTX_AUTHHTTPADDRESS: "http://portal:8000/internal/media-auth?key=${MEDIAMTX_AUTH_HOOK_SECRET:-}"
     ports:
       - "127.0.0.1:8888:8888" # HTTPS proxy only
       - "127.0.0.1:8889:8889" # HTTPS proxy only

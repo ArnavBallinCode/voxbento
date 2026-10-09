@@ -25,6 +25,8 @@ async def environment(monkeypatch):
     configure("sqlite+aiosqlite://")
     await init_db()
     monkeypatch.setattr(settings, "program_ingest_enabled", True)
+    monkeypatch.setattr(settings, "mediamtx_auth_hook_secret", "")
+    monkeypatch.setattr(settings, "debug", True)
     monkeypatch.setattr(settings, "program_ingest_disconnect_grace_secs", 0)
     ingest.health.clear()
     ingest.failures.clear()
@@ -94,6 +96,24 @@ def credentials(room, token, **overrides):
         "ip": "198.51.100.7",
         **overrides,
     }
+
+
+@pytest.mark.anyio
+async def test_media_auth_requires_shared_hook_secret(environment, monkeypatch):
+    client, event, rooms, *_ = environment
+    room = rooms[0]
+    token = await enable(client, event, room)
+    monkeypatch.setattr(settings, "debug", False)
+    monkeypatch.setattr(settings, "mediamtx_auth_hook_secret", "control-plane-secret")
+    payload = credentials(room, token)
+
+    assert (await client.post("/internal/media-auth", json=payload)).status_code == 401
+    assert (
+        await client.post("/internal/media-auth?key=wrong", json=payload)
+    ).status_code == 401
+    assert (
+        await client.post("/internal/media-auth?key=control-plane-secret", json=payload)
+    ).status_code == 204
 
 
 @pytest.mark.anyio

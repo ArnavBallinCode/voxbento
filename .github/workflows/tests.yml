@@ -34,6 +34,7 @@ jobs:
 
     env:
       API_KEY_ENCRYPTION_KEY: "ci-test-encryption-key-must-be-32-chars-long"
+      MEDIAMTX_AUTH_HOOK_SECRET: "ci-test-mediamtx-hook-secret"
 
     steps:
       - name: Checkout repository

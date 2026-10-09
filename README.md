@@ -75,6 +75,9 @@ echo "ADMIN_PASSWORD=$(openssl rand -hex 16)" >> .env
 # Required for API key encryption: set your encryption key (must be 32 characters or longer)
 echo "API_KEY_ENCRYPTION_KEY=$(openssl rand -hex 32)" >> .env
 
+# Required for MediaMTX-to-portal publish authorization
+echo "MEDIAMTX_AUTH_HOOK_SECRET=$(openssl rand -hex 32)" >> .env
+
 # Required for Jitsi video: set the IP JVB advertises to browsers
 # macOS:  ipconfig getifaddr en0
 # Linux:  hostname -I | awk '{print $1}'

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import ipaddress
 import json
 from typing import Literal
@@ -32,6 +33,13 @@ async def media_auth(request: Request) -> Response:
         private = False
     if not private:
         raise HTTPException(403, "Forbidden")
+    hook_secret = request.query_params.get("key", "")
+    expected_secret = settings.mediamtx_auth_hook_secret
+    if expected_secret:
+        if not hmac.compare_digest(hook_secret.encode(), expected_secret.encode()):
+            raise HTTPException(401, "Publish authorization failed")
+    elif not settings.debug:
+        raise HTTPException(503, "Media authorization is not configured")
     body = bytearray()
     async for chunk in request.stream():
         body.extend(chunk)

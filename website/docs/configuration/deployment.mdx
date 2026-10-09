@@ -219,6 +219,8 @@ coordinated deployment of the portal, MediaMTX 1.18.2 configuration and Caddy.
 Use one portal replica. Set `PUBLIC_BASE_URL` and `MEDIAMTX_WHIP_BASE` to the
 public HTTPS origin; expose HTTPS 443 and WebRTC UDP 8189. Control API 9997,
 RTSP 8554 and HTTP signalling/portal ports must remain private/loopback-bound.
+Set `MEDIAMTX_AUTH_HOOK_SECRET` to a strong random value shared by the portal and
+MediaMTX (`openssl rand -hex 32`); production startup fails when it is absent.
 Block `/internal/*` at every public reverse proxy. Never publish the auth callback.
 
 The encoder sends WHIP with Opus audio and a room-scoped bearer token. It keeps
