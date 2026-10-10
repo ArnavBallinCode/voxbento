@@ -30,11 +30,14 @@ async def environment(monkeypatch):
     monkeypatch.setattr(settings, "program_ingest_disconnect_grace_secs", 0)
     ingest.health.clear()
     ingest.failures.clear()
+    ingest.room_locks.clear()
     media = {}
     calls = []
 
     def control(request):
         calls.append((request.method, request.url.path))
+        if "/paths/list" in request.url.path:
+            return httpx.Response(200, json={"items": list(media.values())})
         if "/paths/get/" in request.url.path:
             name = request.url.path.split("/paths/get/")[1]
             return httpx.Response(200, json=media[name]) if name in media else httpx.Response(404)
@@ -72,6 +75,7 @@ async def environment(monkeypatch):
             yield client, event, rooms, media, calls, start, stop
     ingest.health.clear()
     ingest.failures.clear()
+    ingest.room_locks.clear()
     ingest.audio_progress.clear()
     await dispose()
 
@@ -114,6 +118,86 @@ async def test_media_auth_requires_shared_hook_secret(environment, monkeypatch):
     assert (
         await client.post("/internal/media-auth?key=control-plane-secret", json=payload)
     ).status_code == 204
+
+
+@pytest.mark.anyio
+async def test_room_ownership_lock_does_not_block_other_room_authorization(environment):
+    client, event, rooms, *_ = environment
+    tokens = [await enable(client, event, room) for room in rooms]
+    held_lock = ingest.room_lock(rooms[0].id)
+    await held_lock.acquire()
+    try:
+        response = await asyncio.wait_for(
+            client.post("/internal/media-auth", json=credentials(rooms[1], tokens[1])),
+            timeout=1,
+        )
+    finally:
+        held_lock.release()
+    assert response.status_code == 204
+
+
+@pytest.mark.anyio
+async def test_enable_tolerates_absent_floor_bot_but_not_http_rejection(environment, monkeypatch):
+    client, event, rooms, media, *_ = environment
+    room = rooms[0]
+
+    def absent_bot(request):
+        if request.url.host == "floor-bot":
+            raise httpx.ConnectError("not running", request=request)
+        if "/paths/get/" in request.url.path:
+            return httpx.Response(404)
+        return httpx.Response(200, json={"items": list(media.values())})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(absent_bot)) as media_client:
+        monkeypatch.setattr(ingest, "get_http_client", lambda: media_client)
+        response = await client.post(admin_url(event, room), json={"action": "enable"})
+    assert response.status_code == 200
+    assert response.json()["secret"]
+
+    async with get_session() as session:
+        saved = await session.get(Room, room.id)
+        saved.floor_source = "jitsi_bot"
+
+    def rejecting_bot(request):
+        if request.url.host == "floor-bot":
+            return httpx.Response(503, request=request)
+        return httpx.Response(200, json={"items": []}, request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(rejecting_bot)) as media_client:
+        monkeypatch.setattr(ingest, "get_http_client", lambda: media_client)
+        response = await client.post(admin_url(event, room), json={"action": "enable"})
+    assert response.status_code == 502
+
+
+@pytest.mark.anyio
+async def test_kick_404_fails_closed_while_same_source_is_live(environment, monkeypatch):
+    client, event, rooms, media, *_ = environment
+    room = rooms[0]
+    token = await enable(client, event, room)
+    auth = credentials(room, token)
+    assert (await client.post("/internal/media-auth", json=auth)).status_code == 204
+    media[auth["path"]] = {
+        "name": auth["path"],
+        "ready": True,
+        "source": {"type": "webRTCSession", "id": auth["id"]},
+        "tracks": ["Opus"],
+        "bytesReceived": 10,
+    }
+
+    def missing_kick_endpoint(request):
+        if "/kick/" in request.url.path:
+            return httpx.Response(404, request=request)
+        if "/paths/get/" in request.url.path:
+            return httpx.Response(200, json=media[auth["path"]], request=request)
+        return httpx.Response(200, json={}, request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(missing_kick_endpoint)) as media_client:
+        monkeypatch.setattr(ingest, "get_http_client", lambda: media_client)
+        response = await client.post(admin_url(event, room), json={"action": "revoke"})
+    assert response.status_code == 502
+    async with get_session() as session:
+        saved = await session.get(Room, room.id)
+        assert ingest.key_valid(saved, token)
 
 
 @pytest.mark.anyio
@@ -249,6 +333,7 @@ async def test_source_conflict_capacity_and_recovery(environment, monkeypatch):
     }
     calls.clear()
     await ingest.reconcile_once()
+    assert calls == [("GET", "/v3/paths/list")]
     assert start.call_args.kwargs["room_id"] == room.id
     assert not any(path.endswith("/start") for _, path in calls)
     assert (await client.get(admin_url(event, room))).json()["state"] == "processing"

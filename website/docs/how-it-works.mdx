@@ -195,6 +195,8 @@ An optional program-ingest mode replaces only the Jitsi audio adapter. The encod
 sends a separate HTTPS WHIP output to MediaMTX's canonical event/room/floor path;
 YouTube receives its own independent output. FastAPI authorizes publishing through
 MediaMTX's internal HTTP callback and reconciles room-owned transcription workers.
+The reconciler reads one MediaMTX path snapshot per tick, and per-room ownership
+locks keep an unavailable room from delaying authorization for other rooms.
 Media never passes through FastAPI. Only one floor source may own a room.
 
 The existing FFmpeg/STT/aggregator/storage/translation/TTS chain is reused. Program

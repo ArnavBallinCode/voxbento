@@ -35,8 +35,15 @@ from portal.transcription.worker import start_transcription_worker, stop_transcr
 from portal.websockets.manager import broadcast_transcription
 
 logger = logging.getLogger(__name__)
-ownership_lock = asyncio.Lock()
+room_locks: dict[int, asyncio.Lock] = {}
+capacity_lock = asyncio.Lock()
 FLOOR_PATH = re.compile(r"([a-z0-9]+(?:-[a-z0-9]+)*)/([1-9][0-9]*)/floor")
+MEDIA_CONTROL_TIMEOUT = 3.0
+
+
+def room_lock(room_id: int) -> asyncio.Lock:
+    """Serialize ownership changes for one room without blocking unrelated rooms."""
+    return room_locks.setdefault(room_id, asyncio.Lock())
 
 
 class MediaAuth(BaseModel):
@@ -121,7 +128,10 @@ def digest_program_secret(secret: str) -> str:
 
 
 def key_valid(room: Room, secret: str) -> bool:
-    digest = digest_program_secret(secret)
+    return key_digest_valid(room, digest_program_secret(secret))
+
+
+def key_digest_valid(room: Room, digest: str) -> bool:
     return bool(
         room.floor_source == "program_ingest"
         and room.program_key_hash
@@ -163,118 +173,165 @@ async def authorize_publish(data: MediaAuth) -> None:
     if not match:
         deny(data.ip)
     slug, room_id = match.groups()
-    async with ownership_lock, get_session() as session:
-        row = (
-            await session.execute(
-                select(Room, Event)
-                .join(Event)
+    parsed_room_id = int(room_id)
+    secret = data.token or data.password
+    if not settings.program_ingest_enabled or data.protocol != "webrtc" or data.query or not secret:
+        # Bot-mode RTSP is checked after loading the room; all invalid external
+        # program-ingest requests fail before doing password-grade KDF work.
+        presented_digest = ""
+    else:
+        presented_digest = await asyncio.to_thread(digest_program_secret, secret)
+    async with room_lock(parsed_room_id):
+        async with get_session() as session:
+            row = (
+                await session.execute(
+                    select(Room, Event)
+                    .join(Event)
+                    .where(
+                        Room.id == parsed_room_id,
+                        Event.slug == slug,
+                    )
+                )
+            ).first()
+            if row is None:
+                deny(data.ip)
+            room, event = row
+            if room.floor_source == "jitsi_bot":
+                # RTSP is not publicly exposed. WHIP must never impersonate the bot.
+                try:
+                    private = ipaddress.ip_address(data.ip).is_private
+                except ValueError:
+                    private = False
+                if data.protocol == "rtsp" and private:
+                    return
+                deny(data.ip)
+            if (
+                not settings.program_ingest_enabled
+                or data.protocol != "webrtc"
+                or data.query
+                or not key_digest_valid(room, presented_digest)
+            ):
+                deny(data.ip)
+            try:
+                session_id = str(UUID(data.id))
+            except ValueError:
+                deny(data.ip)
+            # A DB reservation can outlive a MediaMTX session across a process restart.
+            # Clear it immediately when the path confirms that no source remains;
+            # an active MediaMTX source retains the existing conflict response.
+            reservation = health.get(room.id)
+            reservation_recent = bool(
+                reservation and reservation.missing_since and time.monotonic() - reservation.missing_since < 5.0
+            )
+            if room.program_session_id and room.program_session_id != session_id and not reservation_recent:
+                live_path = await media_path(make_mediamtx_path(event.slug, room.id, "floor"))
+                if live_path is None or live_path.source is None:
+                    room.program_session_id = None
+                    health.pop(room.id, None)
+            if room.program_session_id and room.program_session_id != session_id:
+                raise HTTPException(409, "A floor publisher is already connected or connecting")
+
+        # Keep the cross-room lock around only the capacity transaction. Slow
+        # MediaMTX calls and credential KDF work happen before reaching it.
+        async with capacity_lock, get_session() as session:
+            room = await session.get(Room, parsed_room_id)
+            if room is None or not key_digest_valid(room, presented_digest):
+                deny(data.ip)
+            if room.program_session_id and room.program_session_id != session_id:
+                raise HTTPException(409, "A floor publisher is already connected or connecting")
+            count = await session.scalar(
+                select(func.count())
+                .select_from(Room)
                 .where(
-                    Room.id == int(room_id),
-                    Event.slug == slug,
+                    Room.program_session_id.is_not(None),
+                    Room.floor_source == "program_ingest",
                 )
             )
-        ).first()
-        if row is None:
-            deny(data.ip)
-        room, _event = row
-        if room.floor_source == "jitsi_bot":
-            # RTSP is not publicly exposed. WHIP must never impersonate the bot.
-            try:
-                private = ipaddress.ip_address(data.ip).is_private
-            except ValueError:
-                private = False
-            if data.protocol == "rtsp" and private:
-                return
-            deny(data.ip)
-        secret = data.token or data.password
-        if (
-            not settings.program_ingest_enabled
-            or data.protocol != "webrtc"
-            or data.query
-            or not key_valid(room, secret)
-        ):
-            deny(data.ip)
-        try:
-            session_id = str(UUID(data.id))
-        except ValueError:
-            deny(data.ip)
-        # A DB reservation can outlive a MediaMTX session across a process restart.
-        # Clear it immediately when the path confirms that no source remains;
-        # an active MediaMTX source retains the existing conflict response.
-        reservation = health.get(room.id)
-        reservation_recent = bool(
-            reservation and reservation.missing_since and time.monotonic() - reservation.missing_since < 5.0
-        )
-        if room.program_session_id and room.program_session_id != session_id and not reservation_recent:
-            live_path = await media_path(make_mediamtx_path(_event.slug, room.id, "floor"))
-            if live_path is None or live_path.source is None:
-                room.program_session_id = None
-                health.pop(room.id, None)
-        # Authorization reserves capacity before ICE negotiation completes.
-        if room.program_session_id and room.program_session_id != session_id:
-            raise HTTPException(409, "A floor publisher is already connected or connecting")
-        count = await session.scalar(
-            select(func.count())
-            .select_from(Room)
-            .where(
-                Room.program_session_id.is_not(None),
-                Room.floor_source == "program_ingest",
-            )
-        )
-        if not room.program_session_id and count >= settings.program_ingest_max_rooms:
-            raise HTTPException(503, "Program ingest capacity reached")
-        room.program_session_id = session_id
-        current = health.setdefault(room.id, IngestHealth())
+            if not room.program_session_id and count >= settings.program_ingest_max_rooms:
+                raise HTTPException(503, "Program ingest capacity reached")
+            room.program_session_id = session_id
+        current = health.setdefault(parsed_room_id, IngestHealth())
         if current.missing_since is None:
             current.missing_since = time.monotonic()
 
 
 async def media_path(path: str) -> MediaPath | None:
-    response = await get_http_client().get(f"{settings.mediamtx_api_base}/v3/paths/get/{path}")
+    response = await get_http_client().get(
+        f"{settings.mediamtx_api_base}/v3/paths/get/{path}", timeout=MEDIA_CONTROL_TIMEOUT
+    )
     if response.status_code == 404:
         return None
     response.raise_for_status()
     return MediaPath.model_validate(response.json())
 
 
-async def kick(source: MediaSource | None) -> None:
+async def media_paths() -> dict[str, MediaPath]:
+    """Read every active path once so idle rooms do not generate repeated 404 logs."""
+    response = await get_http_client().get(
+        f"{settings.mediamtx_api_base}/v3/paths/list?itemsPerPage=1000", timeout=MEDIA_CONTROL_TIMEOUT
+    )
+    response.raise_for_status()
+    body = response.json()
+    if not isinstance(body, dict) or not isinstance(body.get("items"), list):
+        raise ValueError("Invalid MediaMTX path list")
+    paths = [MediaPath.model_validate(item) for item in body["items"]]
+    return {path.name: path for path in paths}
+
+
+async def kick(path: str, source: MediaSource | None) -> None:
     if source is None:
         return
     endpoint = {"webRTCSession": "webrtcsessions", "rtspSession": "rtspsessions"}.get(source.type)
     if endpoint is None:
         raise HTTPException(409, "Unsupported existing floor publisher; stop it before switching source")
     session_id = str(UUID(source.id))
-    response = await get_http_client().post(f"{settings.mediamtx_api_base}/v3/{endpoint}/kick/{session_id}")
-    if response.status_code != 404:
-        response.raise_for_status()
+    response = await get_http_client().post(
+        f"{settings.mediamtx_api_base}/v3/{endpoint}/kick/{session_id}", timeout=MEDIA_CONTROL_TIMEOUT
+    )
+    if response.status_code == 404:
+        # Endpoint names are version-specific. A missing session is success,
+        # but a still-live matching source means the kick endpoint is incompatible.
+        current = await media_path(path)
+        if not current or not current.source or current.source.id != source.id:
+            return
+    response.raise_for_status()
 
 
 async def configure_source(room: Room, event: Event, action: str, offset_ms: int) -> str | None:
-    """Caller holds ownership_lock and DB transaction; return a new secret only once."""
+    """Caller holds the room lock and DB transaction; return a new secret only once."""
     path = make_mediamtx_path(event.slug, room.id, "floor")
     client = get_http_client()
     # Media-level duplicate protection also applies to named paths created by legacy helpers.
     response = await client.patch(
         f"{settings.mediamtx_api_base}/v3/config/paths/patch/{path}",
         json={"overridePublisher": False, "alwaysAvailable": False},
+        timeout=MEDIA_CONTROL_TIMEOUT,
     )
     if response.status_code == 404:
         response = await client.post(
             f"{settings.mediamtx_api_base}/v3/config/paths/add/{path}",
             json={"overridePublisher": False, "alwaysAvailable": False},
+            timeout=MEDIA_CONTROL_TIMEOUT,
         )
     response.raise_for_status()
     if room.floor_source == "jitsi_bot" and action == "enable":
-        response = await client.post(
-            f"{settings.floor_bot_base}/stop", json={"event_slug": event.slug, "room_id": room.id}
-        )
-        response.raise_for_status()
+        try:
+            response = await client.post(
+                f"{settings.floor_bot_base}/stop",
+                json={"event_slug": event.slug, "room_id": room.id},
+                timeout=MEDIA_CONTROL_TIMEOUT,
+            )
+            response.raise_for_status()
+        except httpx.RequestError:
+            # A missing bot service is equivalent to an already-stopped bot.
+            # MediaMTX ownership and the kick below remain authoritative.
+            logger.warning("program_ingest floor_bot_unreachable room_id=%s", room.id)
     current_path = await media_path(path)
     had_connection = bool(room.program_session_id or (current_path and current_path.source))
-    await kick(current_path.source if current_path else None)
+    await kick(path, current_path.source if current_path else None)
     # Also kill a reserved session that has not negotiated audio yet.
     if room.program_session_id:
-        await kick(MediaSource(type="webRTCSession", id=room.program_session_id))
+        await kick(path, MediaSource(type="webRTCSession", id=room.program_session_id))
     await stop_transcription_worker(make_booth_id(event.slug, room.id, "floor"))
     room.program_session_id = None
     if had_connection:
@@ -287,15 +344,15 @@ async def configure_source(room: Room, event: Event, action: str, offset_ms: int
     secret = None
     if action in {"enable", "rotate"}:
         secret = secrets.token_urlsafe(32)
-        room.program_key_hash = digest_program_secret(secret)
+        room.program_key_hash = await asyncio.to_thread(digest_program_secret, secret)
         room.program_key_expires_at = utc_now() + timedelta(days=30)
     logger.info("program_ingest action=%s room_id=%s", action, room.id)
     return secret
 
 
-async def reconcile_room(room: Room, event: Event) -> None:
+async def reconcile_room(room: Room, event: Event, path: MediaPath | None) -> None:
     current = health.setdefault(room.id, IngestHealth())
-    path = await media_path(make_mediamtx_path(event.slug, room.id, "floor"))
+    path_name = make_mediamtx_path(event.slug, room.id, "floor")
     booth_id = make_booth_id(event.slug, room.id, "floor")
     now = time.monotonic()
     permitted = bool(
@@ -305,7 +362,7 @@ async def reconcile_room(room: Room, event: Event) -> None:
         and aware(room.program_key_expires_at) > utc_now()
     )
     if path and path.source and (not permitted or path.source.id != room.program_session_id):
-        await kick(path.source)
+        await kick(path_name, path.source)
         path = None
     if not path or not path.ready or not path.source:
         current.missing_since = current.missing_since if current.missing_since is not None else now
@@ -319,7 +376,7 @@ async def reconcile_room(room: Room, event: Event) -> None:
             await stop_transcription_worker(booth_id)
             current.worker_config = None
             if room.program_session_id:
-                await kick(MediaSource(type="webRTCSession", id=room.program_session_id))
+                await kick(path_name, MediaSource(type="webRTCSession", id=room.program_session_id))
                 room.program_session_id = None
                 room.program_disconnected_at = utc_now()
         return
@@ -383,12 +440,24 @@ async def reconcile_room(room: Room, event: Event) -> None:
 async def reconcile_once() -> None:
     async with get_session() as session:
         ids = list(await session.scalars(select(Room.id).where(Room.floor_source == "program_ingest")))
+    try:
+        snapshots = await media_paths() if ids else {}
+    except (httpx.HTTPError, ValueError):
+        for room_id in ids:
+            current = health.setdefault(room_id, IngestHealth())
+            current.state, current.reason = (
+                "degraded",
+                "Media control unavailable; retrying automatically.",
+            )
+        logger.warning("program_ingest path_list_unavailable")
+        return
     for room_id in ids:
         try:
-            async with ownership_lock, get_session() as session:
+            async with room_lock(room_id), get_session() as session:
                 row = (await session.execute(select(Room, Event).join(Event).where(Room.id == room_id))).first()
                 if row and row[0].floor_source == "program_ingest":
-                    await reconcile_room(*row)
+                    path_name = make_mediamtx_path(row[1].slug, room_id, "floor")
+                    await reconcile_room(*row, snapshots.get(path_name))
         except (httpx.HTTPError, ValueError, SQLAlchemyError):
             current = health.setdefault(room_id, IngestHealth())
             current.state, current.reason = (

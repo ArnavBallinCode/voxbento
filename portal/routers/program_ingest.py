@@ -14,7 +14,7 @@ from portal.auth import require_event_owner
 from portal.booth_identity import make_mediamtx_path
 from portal.config import settings
 from portal.database import get_event_by_id, get_room_by_id, get_session
-from portal.program_ingest import MediaAuth, authorize_publish, configure_source, health, ownership_lock
+from portal.program_ingest import MediaAuth, authorize_publish, configure_source, health, room_lock
 
 router = APIRouter()
 
@@ -98,7 +98,7 @@ async def ingest_change(request: Request, event_id: int, room_id: int, change: I
         raise HTTPException(403, "Origin mismatch")
     if change.action in {"enable", "rotate"} and not settings.program_ingest_enabled:
         raise HTTPException(409, "Program ingest must first be enabled by the server operator")
-    async with ownership_lock, get_session() as session:
+    async with room_lock(room_id), get_session() as session:
         room = await get_room_by_id(session, room_id)
         event = await get_event_by_id(session, event_id)
         if not room or room.event_id != event_id or not event:

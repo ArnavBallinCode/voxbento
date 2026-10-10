@@ -184,7 +184,9 @@ Used by: listener pages, subtitling overlays.
 ## Program floor ingest (#690)
 
 `portal/program_ingest.py` authenticates native MediaMTX floor publishes and
-reconciles exactly one existing floor worker per room. Migration 025 selects
+reconciles exactly one existing floor worker per room from one bulk path snapshot
+per tick. Per-room locks isolate ownership work; the cross-room capacity lock
+covers only its reservation transaction. Migration 025 selects
 `jitsi_bot`/`program_ingest`; bot start is rejected for program-owned floors.
 WHIP Opus → canonical `{event}/{room}/floor` → FFmpeg first audio track → existing
 provider/aggregator/storage/translation/TTS. PCM progress drives health separately

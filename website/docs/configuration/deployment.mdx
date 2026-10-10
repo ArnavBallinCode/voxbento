@@ -227,3 +227,6 @@ The encoder sends WHIP with Opus audio and a room-scoped bearer token. It keeps
 its independent YouTube destination; VoxBento does not relay to YouTube. See
 `docs/program-stream-ingest.md` in the repository for exact setup, supported/tested
 versions, credential rotation, synchronization, rollback and event rehearsal.
+Because program-ingest credential digests are bound to `JWT_SECRET` (or its
+`SECRET_KEY` fallback), rotate each room's ingest token after changing that server
+secret and before the next event.

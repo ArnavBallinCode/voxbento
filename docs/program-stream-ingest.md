@@ -67,6 +67,9 @@ Open the event owner's room page (`/workspace/events/.../rooms/.../`).
 
 Tokens have 256 bits of randomness, a PBKDF2-HMAC-SHA256 storage digest with a
 120,000-round work factor, and a 30-day expiry.
+The digest is bound to `JWT_SECRET` (or its `SECRET_KEY` fallback). Rotating that
+secret invalidates existing program-ingest tokens, so rotate each room's ingest
+token after changing the server secret and before the next event.
 Status/HTML never returns the token or digest. Rotation/revocation disconnects the
 current session, including sessions still negotiating, and invalidates the old
 token. Revoke keeps program ownership (it does not silently restart the bot).
