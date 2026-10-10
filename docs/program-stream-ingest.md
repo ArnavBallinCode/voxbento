@@ -72,7 +72,10 @@ secret invalidates existing program-ingest tokens, so rotate each room's ingest
 token after changing the server secret and before the next event.
 Status/HTML never returns the token or digest. Rotation/revocation disconnects the
 current session, including sessions still negotiating, and invalidates the old
-token. Revoke keeps program ownership (it does not silently restart the bot).
+token. Revocation is committed before media cleanup: if MediaMTX cannot confirm
+the disconnect, the API returns `202` with `cleanup_pending: true`, the old token
+remains invalid, and reconciliation retries cleanup. Revoke keeps program
+ownership (it does not silently restart the bot).
 “Use Jitsi floor bot” explicitly returns ownership; start the bot separately.
 All source changes affect VoxBento only, not the independent YouTube output.
 

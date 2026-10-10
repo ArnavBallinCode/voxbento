@@ -3,6 +3,7 @@ from __future__ import annotations
 import hmac
 import ipaddress
 import json
+import logging
 from typing import Literal
 
 import httpx
@@ -17,6 +18,7 @@ from portal.database import get_event_by_id, get_room_by_id, get_session
 from portal.program_ingest import MediaAuth, authorize_publish, configure_source, health, room_lock
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class IngestChange(BaseModel):
@@ -98,21 +100,51 @@ async def ingest_change(request: Request, event_id: int, room_id: int, change: I
         raise HTTPException(403, "Origin mismatch")
     if change.action in {"enable", "rotate"} and not settings.program_ingest_enabled:
         raise HTTPException(409, "Program ingest must first be enabled by the server operator")
-    async with room_lock(room_id), get_session() as session:
-        room = await get_room_by_id(session, room_id)
-        event = await get_event_by_id(session, event_id)
-        if not room or room.event_id != event_id or not event:
-            raise HTTPException(404, "Room not found")
-        if change.action in {"rotate", "revoke"} and room.floor_source != "program_ingest":
-            raise HTTPException(409, "Enable program ingest first")
-        secret = None
-        if change.action == "sync":
-            room.program_sync_offset_ms = change.sync_offset_ms
-        else:
-            try:
-                secret = await configure_source(room, event, change.action, room.program_sync_offset_ms)
-            except httpx.HTTPError:
-                raise HTTPException(
-                    502, "Could not confirm floor source shutdown; no credential was issued. Retry."
-                ) from None
-    return JSONResponse({"secret": secret}, headers={"Cache-Control": "no-store", "Pragma": "no-cache"})
+    secret = None
+    cleanup_pending = False
+    async with room_lock(room_id):
+        async with get_session() as session:
+            room = await get_room_by_id(session, room_id)
+            event = await get_event_by_id(session, event_id)
+            if not room or room.event_id != event_id or not event:
+                raise HTTPException(404, "Room not found")
+            if change.action in {"rotate", "revoke"} and room.floor_source != "program_ingest":
+                raise HTTPException(409, "Enable program ingest first")
+            if change.action == "sync":
+                room.program_sync_offset_ms = change.sync_offset_ms
+            elif change.action == "revoke":
+                # Commit invalidation before network cleanup. A failed kick must
+                # never roll the old credential back into validity.
+                room.program_key_hash = None
+                room.program_key_expires_at = None
+            else:
+                try:
+                    secret = await configure_source(room, event, change.action, room.program_sync_offset_ms)
+                except httpx.HTTPError:
+                    raise HTTPException(
+                        502, "Could not confirm floor source shutdown; no credential was issued. Retry."
+                    ) from None
+
+        if change.action == "revoke":
+            async with get_session() as session:
+                room = await get_room_by_id(session, room_id)
+                event = await get_event_by_id(session, event_id)
+                if room is None or event is None:
+                    raise HTTPException(404, "Room not found")
+                try:
+                    await configure_source(room, event, change.action, room.program_sync_offset_ms)
+                except (httpx.HTTPError, HTTPException) as exc:
+                    cleanup_pending = True
+                    logger.warning(
+                        "program_ingest revoke_cleanup_pending room_id=%s error=%s",
+                        room_id,
+                        type(exc).__name__,
+                    )
+    body = {"secret": secret}
+    if cleanup_pending:
+        body["cleanup_pending"] = True
+    return JSONResponse(
+        body,
+        status_code=202 if cleanup_pending else 200,
+        headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+    )

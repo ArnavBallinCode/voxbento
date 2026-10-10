@@ -112,12 +112,8 @@ async def test_media_auth_requires_shared_hook_secret(environment, monkeypatch):
     payload = credentials(room, token)
 
     assert (await client.post("/internal/media-auth", json=payload)).status_code == 401
-    assert (
-        await client.post("/internal/media-auth?key=wrong", json=payload)
-    ).status_code == 401
-    assert (
-        await client.post("/internal/media-auth?key=control-plane-secret", json=payload)
-    ).status_code == 204
+    assert (await client.post("/internal/media-auth?key=wrong", json=payload)).status_code == 401
+    assert (await client.post("/internal/media-auth?key=control-plane-secret", json=payload)).status_code == 204
 
 
 @pytest.mark.anyio
@@ -170,7 +166,7 @@ async def test_enable_tolerates_absent_floor_bot_but_not_http_rejection(environm
 
 
 @pytest.mark.anyio
-async def test_kick_404_fails_closed_while_same_source_is_live(environment, monkeypatch):
+async def test_revoke_is_durable_when_kick_404_leaves_same_source_live(environment, monkeypatch):
     client, event, rooms, media, *_ = environment
     room = rooms[0]
     token = await enable(client, event, room)
@@ -194,10 +190,12 @@ async def test_kick_404_fails_closed_while_same_source_is_live(environment, monk
     async with httpx.AsyncClient(transport=httpx.MockTransport(missing_kick_endpoint)) as media_client:
         monkeypatch.setattr(ingest, "get_http_client", lambda: media_client)
         response = await client.post(admin_url(event, room), json={"action": "revoke"})
-    assert response.status_code == 502
+    assert response.status_code == 202
+    assert response.json() == {"secret": None, "cleanup_pending": True}
     async with get_session() as session:
         saved = await session.get(Room, room.id)
-        assert ingest.key_valid(saved, token)
+        assert not ingest.key_valid(saved, token)
+    assert (await client.post("/internal/media-auth", json=auth)).status_code == 401
 
 
 @pytest.mark.anyio
@@ -357,8 +355,13 @@ async def test_reconnect_reuses_room_worker_without_duplicate_start(environment)
     auth = credentials(room, token)
     assert (await client.post("/internal/media-auth", json=auth)).status_code == 204
     path = auth["path"]
-    media[path] = {"name": path, "ready": True, "source": {"type": "webRTCSession", "id": auth["id"]},
-                   "tracks": ["Opus"], "bytesReceived": 10}
+    media[path] = {
+        "name": path,
+        "ready": True,
+        "source": {"type": "webRTCSession", "id": auth["id"]},
+        "tracks": ["Opus"],
+        "bytesReceived": 10,
+    }
     await ingest.reconcile_once()
     first_count = start.await_count
     media.clear()
@@ -366,10 +369,44 @@ async def test_reconnect_reuses_room_worker_without_duplicate_start(environment)
     assert stop.await_count == stop_before + 1
     reconnect = credentials(room, token)
     assert (await client.post("/internal/media-auth", json=reconnect)).status_code == 204
-    media[path] = {"name": path, "ready": True, "source": {"type": "webRTCSession", "id": reconnect["id"]},
-                   "tracks": ["Opus"], "bytesReceived": 20}
+    media[path] = {
+        "name": path,
+        "ready": True,
+        "source": {"type": "webRTCSession", "id": reconnect["id"]},
+        "tracks": ["Opus"],
+        "bytesReceived": 20,
+    }
     await ingest.reconcile_once()
     assert start.await_count == first_count + 1
+
+
+@pytest.mark.anyio
+async def test_reconnect_gets_fresh_negotiation_grace_after_previous_grace_elapsed(environment, monkeypatch):
+    client, event, rooms, *_ = environment
+    room = rooms[0]
+    monkeypatch.setattr(settings, "program_ingest_disconnect_grace_secs", 30)
+    token = await enable(client, event, room)
+    original = credentials(room, token)
+    assert (await client.post("/internal/media-auth", json=original)).status_code == 204
+
+    # Reproduce a reservation whose publisher never completed negotiation and
+    # whose grace period elapsed. Reconciliation clears the DB reservation but
+    # deliberately keeps room health for the status surface.
+    elapsed = ingest.time.monotonic() - 31
+    ingest.health[room.id].reservation_started_at = elapsed
+    ingest.health[room.id].missing_since = elapsed
+    await ingest.reconcile_once()
+    async with get_session() as session:
+        saved = await session.get(Room, room.id)
+        assert saved.program_session_id is None
+
+    reconnect = credentials(room, token)
+    assert (await client.post("/internal/media-auth", json=reconnect)).status_code == 204
+    await ingest.reconcile_once()
+
+    async with get_session() as session:
+        saved = await session.get(Room, room.id)
+        assert saved.program_session_id == reconnect["id"]
 
 
 @pytest.mark.anyio

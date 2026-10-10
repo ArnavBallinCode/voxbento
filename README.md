@@ -120,4 +120,6 @@ Event owners can add VoxBento as a second **HTTPS WHIP** destination alongside
 YouTube. Their encoder remains the production tool; no YouTube key is needed.
 Room-scoped tokens feed the existing floor transcription, translation and TTS
 pipeline without the Jitsi bot. Operator activation is required and defaults off.
+Revocation invalidates a room token before attempting MediaMTX cleanup, so a
+temporary control-plane failure cannot restore an old credential.
 See [setup, security, synchronization and verification](docs/program-stream-ingest.md).

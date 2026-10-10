@@ -78,7 +78,9 @@ class MediaPath(BaseModel):
         if "available" not in normalized:
             normalized["available"] = normalized.get("ready", False)
         if not normalized.get("tracks") and normalized.get("tracks2"):
-            normalized["tracks"] = [track.get("codec", "") for track in normalized["tracks2"] if isinstance(track, dict)]
+            normalized["tracks"] = [
+                track.get("codec", "") for track in normalized["tracks2"] if isinstance(track, dict)
+            ]
         if "inboundBytes" not in normalized and "bytesReceived" in normalized:
             normalized["inboundBytes"] = normalized["bytesReceived"]
         return normalized
@@ -100,6 +102,7 @@ class IngestHealth:
     last_bytes: int = -1
     last_progress: float = field(default_factory=time.monotonic)
     missing_since: float | None = None
+    reservation_started_at: float | None = None
     worker_config: tuple | None = None
     worker_started_at: float | None = None
 
@@ -221,7 +224,9 @@ async def authorize_publish(data: MediaAuth) -> None:
             # an active MediaMTX source retains the existing conflict response.
             reservation = health.get(room.id)
             reservation_recent = bool(
-                reservation and reservation.missing_since and time.monotonic() - reservation.missing_since < 5.0
+                reservation
+                and reservation.reservation_started_at
+                and time.monotonic() - reservation.reservation_started_at < 5.0
             )
             if room.program_session_id and room.program_session_id != session_id and not reservation_recent:
                 live_path = await media_path(make_mediamtx_path(event.slug, room.id, "floor"))
@@ -251,8 +256,8 @@ async def authorize_publish(data: MediaAuth) -> None:
                 raise HTTPException(503, "Program ingest capacity reached")
             room.program_session_id = session_id
         current = health.setdefault(parsed_room_id, IngestHealth())
-        if current.missing_since is None:
-            current.missing_since = time.monotonic()
+        current.reservation_started_at = time.monotonic()
+        current.missing_since = None
 
 
 async def media_path(path: str) -> MediaPath | None:
@@ -365,25 +370,31 @@ async def reconcile_room(room: Room, event: Event, path: MediaPath | None) -> No
         await kick(path_name, path.source)
         path = None
     if not path or not path.ready or not path.source:
-        current.missing_since = current.missing_since if current.missing_since is not None else now
+        if current.reservation_started_at is not None:
+            grace_started_at = current.reservation_started_at
+        else:
+            current.missing_since = current.missing_since if current.missing_since is not None else now
+            grace_started_at = current.missing_since
         current.state = "disconnected" if room.program_connected_at else "waiting"
         current.reason = (
             "No publisher. Reconnect the encoder."
             if permitted
             else "Credential revoked or expired; rotate it to publish."
         )
-        if now - current.missing_since >= settings.program_ingest_disconnect_grace_secs:
+        if now - grace_started_at >= settings.program_ingest_disconnect_grace_secs:
             await stop_transcription_worker(booth_id)
             current.worker_config = None
             if room.program_session_id:
                 await kick(path_name, MediaSource(type="webRTCSession", id=room.program_session_id))
                 room.program_session_id = None
                 room.program_disconnected_at = utc_now()
+            current.reservation_started_at = None
         return
-    if current.missing_since is not None or current.last_bytes == -1:
+    if current.missing_since is not None or current.reservation_started_at is not None or current.last_bytes == -1:
         room.program_connected_at = utc_now()
         current.last_progress = now
     current.missing_since = None
+    current.reservation_started_at = None
     current.codecs = path.tracks
     if path.bytesReceived != current.last_bytes:
         current.last_bytes = path.bytesReceived

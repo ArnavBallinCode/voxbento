@@ -188,6 +188,8 @@ reconciles exactly one existing floor worker per room from one bulk path snapsho
 per tick. Per-room locks isolate ownership work; the cross-room capacity lock
 covers only its reservation transaction. Migration 025 selects
 `jitsi_bot`/`program_ingest`; bot start is rejected for program-owned floors.
+Credential invalidation commits before MediaMTX cleanup, and publisher
+negotiation grace is tracked separately from an established stream disconnect.
 WHIP Opus → canonical `{event}/{room}/floor` → FFmpeg first audio track → existing
 provider/aggregator/storage/translation/TTS. PCM progress drives health separately
 from video byte progress. Partial captions never synthesize speech.
