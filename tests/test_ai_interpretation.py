@@ -571,3 +571,64 @@ async def test_resolver_prefers_room_entries_and_limits_prompt_size():
         ]
     finally:
         await dispose()
+
+
+@pytest.mark.anyio
+async def test_large_glossary_stays_bounded_and_yields_the_event_loop():
+    """A huge matching glossary must not block the loop and must respect the cap."""
+    import asyncio
+    import time
+
+    from portal.database import configure, dispose, init_db
+
+    configure("sqlite+aiosqlite://")
+    await init_db()
+    try:
+        async with get_session() as session:
+            event = Event(slug="ai-big", display_name="AI Big")
+            session.add(event)
+            await session.flush()
+            words = [f"term{i}" for i in range(10000)]
+            session.add_all(
+                [
+                    AIVocabularyEntry(
+                        event_id=event.id,
+                        source_term=w,
+                        target_language="de",
+                        target_term=w,
+                        priority=100,
+                    )
+                    for w in words
+                ]
+            )
+            await session.flush()
+            transcript = " ".join(words)
+
+            ticks = 0
+            running = True
+
+            async def heartbeat():
+                nonlocal ticks
+                while running:
+                    ticks += 1
+                    await asyncio.sleep(0)
+
+            hb = asyncio.create_task(heartbeat())
+            started = time.perf_counter()
+            entries = await resolve_vocabulary_entries(
+                session,
+                event_id=event.id,
+                room_id=None,
+                booth_id=None,
+                target_language="de",
+                transcript_text=transcript,
+            )
+            elapsed = time.perf_counter() - started
+            running = False
+            await hb
+
+        assert len(entries) == 80
+        assert elapsed < 2.0, f"resolution took {elapsed:.2f}s"
+        assert ticks > 0
+    finally:
+        await dispose()

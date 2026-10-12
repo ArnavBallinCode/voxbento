@@ -16,6 +16,7 @@ REQUIRED_COLUMNS = {"source_term", "target_language", "target_term"}
 MAX_ROWS = 5000
 SUPPORTED_MATCH_TYPES = {"exact", "phrase"}
 HIGH_PRIORITY_THRESHOLD = 90
+MAX_RESOLVER_CANDIDATES = 2000
 _TRUE_VALUES = {"true", "yes", "1"}
 _FALSE_VALUES = {"false", "no", "0", ""}
 _CSV_FORMULA_PREFIXES = ("=", "+", "-", "@")
@@ -44,14 +45,19 @@ def vocabulary_terms_overlap(
 class VocabularyOverlapIndex:
     """Constant-time equivalent of vocabulary_terms_overlap over a growing set of entries."""
 
-    def __init__(self) -> None:
+    def __init__(self, per_language: bool = True) -> None:
+        self._per_language = per_language
         self._case_sensitive_terms: set[tuple[str, str]] = set()
         self._case_sensitive_folded: set[tuple[str, str]] = set()
         self._case_insensitive_folded: set[tuple[str, str]] = set()
 
+    def _lang(self, entry: VocabularyEntryInput | AIVocabularyEntry) -> str:
+        return entry.target_language if self._per_language else ""
+
     def conflicts(self, entry: VocabularyEntryInput | AIVocabularyEntry) -> bool:
-        exact = (entry.target_language, entry.source_term)
-        folded = (entry.target_language, entry.source_term.casefold())
+        lang = self._lang(entry)
+        exact = (lang, entry.source_term)
+        folded = (lang, entry.source_term.casefold())
         if folded in self._case_insensitive_folded:
             return True
         if entry.case_sensitive:
@@ -59,9 +65,10 @@ class VocabularyOverlapIndex:
         return folded in self._case_sensitive_folded
 
     def add(self, entry: VocabularyEntryInput | AIVocabularyEntry) -> None:
-        folded = (entry.target_language, entry.source_term.casefold())
+        lang = self._lang(entry)
+        folded = (lang, entry.source_term.casefold())
         if entry.case_sensitive:
-            self._case_sensitive_terms.add((entry.target_language, entry.source_term))
+            self._case_sensitive_terms.add((lang, entry.source_term))
             self._case_sensitive_folded.add(folded)
         else:
             self._case_insensitive_folded.add(folded)
@@ -223,11 +230,14 @@ async def resolve_vocabulary_entries(
             )
         scope_filters.append(booth_filter)
     result = await session.scalars(
-        select(AIVocabularyEntry).where(
+        select(AIVocabularyEntry)
+        .where(
             AIVocabularyEntry.event_id == event_id,
             AIVocabularyEntry.target_language.in_(("all", target_language)),
             or_(*scope_filters),
         )
+        .order_by(AIVocabularyEntry.priority.desc(), AIVocabularyEntry.id)
+        .limit(MAX_RESOLVER_CANDIDATES)
     )
 
     candidates = [entry for entry in result if _term_matches(entry, transcript_text)]
@@ -243,9 +253,11 @@ async def resolve_vocabulary_entries(
     # priority decides which translation wins, before any cap is applied.
     candidates.sort(key=lambda entry: (scope_rank(entry), entry.priority, entry.id), reverse=True)
     deduplicated: list[AIVocabularyEntry] = []
+    seen = VocabularyOverlapIndex(per_language=False)
     for entry in candidates:
-        if any(vocabulary_terms_overlap(prior, entry) for prior in deduplicated):
+        if seen.conflicts(entry):
             continue
+        seen.add(entry)
         deduplicated.append(entry)
 
     # High-priority entries are documented as always included, so they take the cap first.

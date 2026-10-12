@@ -201,31 +201,31 @@ class TranslationWorker:
             return
 
         LANGUAGE_QUEUES[lang_code] += 1
-
-        # Resolved before taking an inference slot: the glossary is optional context, and a slow
-        # lookup must not occupy one of the two per-language slots while other rooms wait.
-        vocabulary_entries = []
-        if room.floor_ai_vocabulary_enabled:
-            try:
-                async with asyncio.timeout(VOCABULARY_LOOKUP_TIMEOUT):
-                    async with get_session() as vocabulary_session:
-                        vocabulary_entries = await resolve_vocabulary_entries(
-                            vocabulary_session,
-                            event_id=event.id,
-                            room_id=room.id,
-                            booth_id=source_booth_id,
-                            target_language=lang_code,
-                            transcript_text=text,
-                        )
-            except (Exception, asyncio.TimeoutError) as e:
-                logger.warning(
-                    f"[{booth_id_str}] Vocabulary lookup failed for {lang_code}: {e!r}. "
-                    "Translating without glossary entries."
-                )
-                vocabulary_entries = []
+        queue_decremented = False
 
         try:
-            queue_decremented = False
+            # Resolved before taking an inference slot: the glossary is optional context, and a slow
+            # lookup must not occupy one of the two per-language slots while other rooms wait.
+            vocabulary_entries = []
+            if room.floor_ai_vocabulary_enabled:
+                try:
+                    async with asyncio.timeout(VOCABULARY_LOOKUP_TIMEOUT):
+                        async with get_session() as vocabulary_session:
+                            vocabulary_entries = await resolve_vocabulary_entries(
+                                vocabulary_session,
+                                event_id=event.id,
+                                room_id=room.id,
+                                booth_id=source_booth_id,
+                                target_language=lang_code,
+                                transcript_text=text,
+                            )
+                except (Exception, asyncio.TimeoutError) as e:
+                    logger.warning(
+                        f"[{booth_id_str}] Vocabulary lookup failed for {lang_code}: {e!r}. "
+                        "Translating without glossary entries."
+                    )
+                    vocabulary_entries = []
+
             async with sem:
                 try:
                     # Enforce a strict timeout on LLM inference (12s for cloud, 60s for local).

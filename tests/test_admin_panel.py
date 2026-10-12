@@ -670,6 +670,30 @@ class TestRoomCRUD:
         assert upload.status_code == 404
 
     @pytest.mark.anyio
+    async def test_vocabulary_export_delete_reject_cross_event_room(self, admin_cookie, seed_event):
+        """Export and delete must 404 for a room belonging to another event."""
+        from portal.database import create_event, create_room, get_session
+
+        event, _, _ = seed_event
+        async with get_session() as s:
+            other_event = await create_event(s, slug="xcon", display_name="XCon")
+            other_room = await create_room(s, event_id=other_event.id, display_name="X Hall")
+
+        async with _client() as c:
+            export = await c.get(
+                f"/admin/events/{event.id}/rooms/{other_room.id}/ai-vocabulary/export",
+                cookies=admin_cookie,
+            )
+            delete = await c.post(
+                f"/admin/events/{event.id}/rooms/{other_room.id}/ai-vocabulary/delete",
+                data={"entry_id": "all"},
+                cookies=admin_cookie,
+                follow_redirects=False,
+            )
+        assert export.status_code == 404
+        assert delete.status_code == 404
+
+    @pytest.mark.anyio
     async def test_validate_vocabulary_scope_enforces_hierarchy(self, seed_event):
         """The scope validator rejects a booth that belongs to another room/event."""
         from portal.database import create_booth, create_event, create_room, get_session

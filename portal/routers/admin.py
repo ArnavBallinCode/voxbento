@@ -1009,9 +1009,10 @@ async def admin_upload_ai_vocabulary(request: Request, event_id: int, room_id: i
 )
 async def admin_export_ai_vocabulary(event_id: int, room_id: int):
     async with get_session() as session:
-        room = await get_room_by_id(session, room_id)
-        if room is None or room.event_id != event_id:
-            raise HTTPException(status_code=404, detail="Room not found.")
+        try:
+            await validate_vocabulary_scope(session, event_id, room_id=room_id)
+        except VocabularyScopeError as exc:
+            raise HTTPException(status_code=404, detail="Room not found.") from exc
         entries = list(
             await session.scalars(
                 select(AIVocabularyEntry)
@@ -1034,9 +1035,10 @@ async def admin_delete_ai_vocabulary(request: Request, event_id: int, room_id: i
     form = await request.form()
     entry_id = form.get("entry_id", "").strip()
     async with get_session() as session:
-        room = await get_room_by_id(session, room_id)
-        if room is None or room.event_id != event_id:
-            raise HTTPException(status_code=404, detail="Room not found.")
+        try:
+            await validate_vocabulary_scope(session, event_id, room_id=room_id)
+        except VocabularyScopeError as exc:
+            raise HTTPException(status_code=404, detail="Room not found.") from exc
         statement = delete(AIVocabularyEntry).where(
             AIVocabularyEntry.event_id == event_id,
             AIVocabularyEntry.room_id == room_id,
