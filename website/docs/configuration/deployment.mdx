@@ -67,6 +67,9 @@ Open `.env` in a text editor and configure at minimum the following variables be
     # API key encryption — generate with: openssl rand -hex 32
     API_KEY_ENCRYPTION_KEY=your-32-char-minimum-key
 
+    # Private portal-to-MediaMTX authentication — generate with: openssl rand -hex 32
+    MEDIAMTX_AUTH_HOOK_SECRET=your-64-char-random-string
+
     ```
 
     Set the existing `JVB_ADVERTISE_IPS=` entry to the server's reachable public IP before starting services:
@@ -140,6 +143,22 @@ If `mediamtx_ok` is `false`, the portal is running but MediaMTX is not reachable
 :::info
 Database migrations run automatically on container startup. You do not need to run any migration commands manually when using Docker Compose.
 :::
+
+## Deployment preflight
+
+The production GitHub Actions workflow builds the candidate images and validates
+the server's current `.env` before replacing any running container. If a required
+secret is missing or unsafe, the deployment stops and the existing stack remains
+running. Old images are retained until the replacement portal passes `/healthz`,
+then dangling images are pruned.
+
+You can run the same configuration check manually from the deployment directory:
+
+```bash
+docker compose run --rm --no-deps portal \
+  uv run python -c \
+  "from portal.config import settings; settings.validate_production_secrets()"
+```
 
 ## Production Considerations
 

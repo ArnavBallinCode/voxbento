@@ -50,29 +50,30 @@ jobs:
             git checkout main
             git pull origin main
 
+            # Build without replacing the running containers. The preflight uses
+            # the newly built portal image plus the production .env, so a missing
+            # required setting fails the deployment while the old stack stays up.
+            echo "--- building deployment images ---"
+            docker compose build
+
+            echo "--- validating production configuration ---"
+            docker compose run --rm --no-deps portal \
+              uv run python -c \
+              "from portal.config import settings; settings.validate_production_secrets()"
+
             # ── Copy Caddyfile to system location ──────────────────────────
             if [ -f Caddyfile ]; then
+              sudo caddy validate --config Caddyfile --adapter caddyfile
               sudo cp Caddyfile /etc/caddy/Caddyfile
               sudo systemctl reload caddy
               echo "Caddy config updated and reloaded"
             fi
 
             # ── Apply changes from docker-compose.yml ──────────────────────
-            # Running 'up -d --build' ensures new environment variables, port mappings,
-            # and Dockerfile changes are applied to services without volume mounts.
-            echo "--- docker compose up -d --build ---"
-            docker compose up -d --build --remove-orphans
-
-            # ── Clean up dangling images ────────────────────────────────────
-            # Prevents storage from filling up with old <none> images created by --build
-            echo "--- cleaning up unused images ---"
-            docker image prune -f
-
-            # ── Restart portal (loads fresh code since --reload is disabled) ────
-            # Because we disabled uvicorn --reload for production performance,
-            # this explicit restart is required for the FastAPI app to load new code.
-            echo "--- docker compose restart portal ---"
-            docker compose restart portal
+            # Images were built and validated above. 'up' recreates changed services,
+            # including the portal, so a second explicit restart is unnecessary.
+            echo "--- docker compose up -d ---"
+            docker compose up -d --no-build --remove-orphans
 
             # ── Wait for portal health ──────────────────────────────────────
             echo "--- waiting for portal health ---"
@@ -90,6 +91,11 @@ jobs:
               fi
               sleep 3
             done
+
+            # Keep the previous images available until the replacement stack is
+            # healthy. This preserves rollback options during a failed rollout.
+            echo "--- cleaning up unused images ---"
+            docker image prune -f
 
             # The rootless Jitsi layout uses new volumes. Remove the five
             # pre-rootless generated-config volumes once no container uses them.
