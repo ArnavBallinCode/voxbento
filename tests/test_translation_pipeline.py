@@ -405,7 +405,8 @@ async def test_queue_counter_restored_when_glossary_lookup_cancelled(db_data, mo
 
     worker = TranslationWorker(mock_broadcast)
     lang = "zz-cancel"
-    worker_module.LANGUAGE_QUEUES[lang] = 0
+    queue_key = f"floor:{lang}"
+    worker_module.LANGUAGE_QUEUES[queue_key] = 0
 
     async with get_session() as s:
         room = await s.get(Room, db_data["room"].id)
@@ -436,7 +437,7 @@ async def test_queue_counter_restored_when_glossary_lookup_cancelled(db_data, mo
         with pytest.raises(asyncio.CancelledError):
             await task
 
-    assert worker_module.LANGUAGE_QUEUES[lang] == 0
+    assert worker_module.LANGUAGE_QUEUES[queue_key] == 0
 
     # A subsequent translation for the same language is still accepted.
     with patch.object(worker, "_call_llm", new=fake_call_llm):
@@ -451,4 +452,4 @@ async def test_queue_counter_restored_when_glossary_lookup_cancelled(db_data, mo
                         db_data["segment"].id, "Hello", "floor", "uuid2", 2,
                     )
     assert bundle.call_count >= 1
-    assert worker_module.LANGUAGE_QUEUES[lang] == 0
+    assert worker_module.LANGUAGE_QUEUES[queue_key] == 0
