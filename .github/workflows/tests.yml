@@ -58,6 +58,10 @@ jobs:
           node --check portal/static/js/interpreter-booth.js
           node --check portal/static/js/whep-listener.js
           node --check portal/static/js/admin.js
+      - name: run node tests
+        run: |
+          node tests/test_audio_scheduler.js
+          node tests/test_tts_parser.js
 
       - name: Run unit tests
         run: uv run pytest tests/ -v
@@ -77,7 +81,7 @@ jobs:
       JITSI_HTTP_PORT: 8080
       SECRET_KEY: ci-test-secret-key-not-for-production
       BOOTH_ACCESS_TOKEN: ci-test-token
-      DOCKER_HOST_ADDRESS: 127.0.0.1
+      JVB_ADVERTISE_IPS: 127.0.0.1
       JITSI_DOMAIN: localhost:8080
       MEDIAMTX_WHIP_BASE: http://localhost:8889
       MEDIAMTX_API_BASE: http://mediamtx:9997
@@ -90,6 +94,9 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
+
+      - name: Validate Docker Compose configuration
+        run: docker compose config --quiet
 
       # ── Shared helpers ──────────────────────────────────────
       # wait_for_url  URL  LABEL  [MAX_ATTEMPTS]  [ACCEPT_CODES]
