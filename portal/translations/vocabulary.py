@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import re
@@ -16,7 +17,7 @@ REQUIRED_COLUMNS = {"source_term", "target_language", "target_term"}
 MAX_ROWS = 5000
 SUPPORTED_MATCH_TYPES = {"exact", "phrase"}
 HIGH_PRIORITY_THRESHOLD = 90
-MAX_RESOLVER_CANDIDATES = 2000
+_RESOLVER_YIELD_EVERY = 500
 _TRUE_VALUES = {"true", "yes", "1"}
 _FALSE_VALUES = {"false", "no", "0", ""}
 _CSV_FORMULA_PREFIXES = ("=", "+", "-", "@")
@@ -229,18 +230,21 @@ async def resolve_vocabulary_entries(
                 AIVocabularyEntry.room_id.is_(None) | (AIVocabularyEntry.room_id == room_id)
             )
         scope_filters.append(booth_filter)
-    result = await session.scalars(
-        select(AIVocabularyEntry)
-        .where(
+    stream = await session.stream_scalars(
+        select(AIVocabularyEntry).where(
             AIVocabularyEntry.event_id == event_id,
             AIVocabularyEntry.target_language.in_(("all", target_language)),
             or_(*scope_filters),
         )
-        .order_by(AIVocabularyEntry.priority.desc(), AIVocabularyEntry.id)
-        .limit(MAX_RESOLVER_CANDIDATES)
     )
-
-    candidates = [entry for entry in result if _term_matches(entry, transcript_text)]
+    candidates: list[AIVocabularyEntry] = []
+    processed = 0
+    async for entry in stream:
+        if _term_matches(entry, transcript_text):
+            candidates.append(entry)
+        processed += 1
+        if processed % _RESOLVER_YIELD_EVERY == 0:
+            await asyncio.sleep(0)
 
     def scope_rank(entry: AIVocabularyEntry) -> int:
         if booth_id is not None and entry.booth_id == booth_id:

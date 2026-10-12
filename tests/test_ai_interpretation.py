@@ -632,3 +632,106 @@ async def test_large_glossary_stays_bounded_and_yields_the_event_loop():
         assert ticks > 0
     finally:
         await dispose()
+
+
+@pytest.mark.anyio
+async def test_matching_term_beyond_initial_window_is_selected():
+    """A matching term is returned even when thousands of nonmatching rows precede it."""
+    from portal.database import configure, dispose, init_db
+
+    configure("sqlite+aiosqlite://")
+    await init_db()
+    try:
+        async with get_session() as session:
+            event = Event(slug="ai-window", display_name="AI Window")
+            session.add(event)
+            await session.flush()
+            session.add_all(
+                [
+                    AIVocabularyEntry(
+                        event_id=event.id,
+                        source_term=f"noise{i}",
+                        target_language="de",
+                        target_term=f"noise{i}",
+                        priority=0,
+                    )
+                    for i in range(2500)
+                ]
+            )
+            session.add(
+                AIVocabularyEntry(
+                    event_id=event.id,
+                    source_term="Voxbento",
+                    target_language="de",
+                    target_term="Voxbento",
+                    priority=10,
+                )
+            )
+            await session.flush()
+
+            entries = await resolve_vocabulary_entries(
+                session,
+                event_id=event.id,
+                room_id=None,
+                booth_id=None,
+                target_language="de",
+                transcript_text="Welcome to Voxbento",
+            )
+
+        assert [e.source_term for e in entries] == ["Voxbento"]
+    finally:
+        await dispose()
+
+
+@pytest.mark.anyio
+async def test_room_override_wins_over_higher_priority_event_duplicate():
+    """Scope precedence must hold even when event duplicates have higher priority and fill the window."""
+    from portal.database import configure, dispose, init_db
+
+    configure("sqlite+aiosqlite://")
+    await init_db()
+    try:
+        async with get_session() as session:
+            event = Event(slug="ai-override", display_name="AI Override")
+            session.add(event)
+            await session.flush()
+            room = Room(event_id=event.id, display_name="Main Hall")
+            session.add(room)
+            await session.flush()
+            session.add_all(
+                [
+                    AIVocabularyEntry(
+                        event_id=event.id,
+                        source_term=f"term{i}",
+                        target_language="de",
+                        target_term="Event term",
+                        priority=100,
+                    )
+                    for i in range(2000)
+                ]
+            )
+            session.add(
+                AIVocabularyEntry(
+                    event_id=event.id,
+                    room_id=room.id,
+                    source_term="term1999",
+                    target_language="de",
+                    target_term="Room override",
+                    priority=90,
+                )
+            )
+            await session.flush()
+
+            entries = await resolve_vocabulary_entries(
+                session,
+                event_id=event.id,
+                room_id=room.id,
+                booth_id=None,
+                target_language="de",
+                transcript_text="term1999",
+            )
+
+        matches = [e for e in entries if e.source_term == "term1999"]
+        assert matches and matches[0].target_term == "Room override"
+    finally:
+        await dispose()
