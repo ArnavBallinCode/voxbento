@@ -12,7 +12,7 @@ Before deploying, confirm that your server meets the following requirements:
 
 ### Docker & Docker Compose
 
-    Install the latest stable versions of Docker Engine and the Docker Compose plugin. Voxbento uses Compose v2 syntax (`docker compose`, not `docker-compose`).
+    Install the latest stable versions of Docker Engine and the Docker Compose plugin (Compose 2.24.0 or newer for optional environment files). Voxbento uses Compose v2 syntax (`docker compose`, not `docker-compose`).
   
   ### Public IP or Domain
 
@@ -146,11 +146,15 @@ Database migrations run automatically on container startup. You do not need to r
 
 ## Deployment preflight
 
-The production GitHub Actions workflow builds the candidate images and validates
-the server's current `.env` before replacing any running container. If a required
+The production GitHub Actions workflow builds candidate images in a temporary Git
+worktree and validates the server's current `.env` and candidate Caddy configuration
+before updating the live checkout or replacing any running container. If a required
 secret is missing or unsafe, the deployment stops and the existing stack remains
 running. Old images are retained until the replacement portal passes `/healthz`,
-then dangling images are pruned.
+then dangling images are pruned. The temporary worktree is removed on exit.
+Compose always uses the `voxbento` project name to retain existing volumes and
+networks. The portal runs source and dependencies from its image, with `.env`
+loaded as container environment variables; rebuild the image to apply code changes.
 
 You can run the same configuration check manually from the deployment directory:
 
