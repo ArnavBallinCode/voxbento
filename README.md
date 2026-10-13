@@ -60,6 +60,10 @@ Floor Audio Bot (floor-bot)
 
 ### Option 1 — Docker Compose (everything in containers)
 
+The portal runs code from its image; rebuild to apply changes. Production updates
+validate a separate candidate checkout before replacing services; see the
+[deployment guide](website/docs/configuration/deployment.mdx#deployment-preflight).
+
 All services (portal, MediaMTX, Jitsi) start with one command:
 
 ```bash
@@ -101,6 +105,13 @@ rollout and break-glass recovery procedure.
 
 Admin login requires verified email and shares the normal login limit of 10 attempts
 per email address per hour.
+
+### Single sign-in page
+
+Admins, organizers and attendees all sign in at `/login`. The separate admin form is
+gone: `/admin/login` now redirects to `/login?next=/admin/`, so update bookmarks or
+scripts that posted to it. Entering an email that has no account continues to
+`/register` with the email filled in.
 
 ### API Key Encryption & Rotation
 A mandatory environment variable `API_KEY_ENCRYPTION_KEY` securely encrypts third-party API keys in the database. 
