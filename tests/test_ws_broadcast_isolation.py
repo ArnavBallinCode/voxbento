@@ -10,11 +10,7 @@ booth:state or booth:chat broadcasts, even when BOOTH_ACCESS_TOKEN is unset.
 from __future__ import annotations
 
 import json
-import os
 import threading
-
-# Unset access token: the configuration under test (open handshake mode).
-os.environ["BOOTH_ACCESS_TOKEN"] = ""
 
 import pytest
 from fastapi.testclient import TestClient
@@ -24,6 +20,15 @@ from portal.auth import create_participant_token, create_user_token
 from portal.websockets.manager import manager
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def isolated_booth_token(monkeypatch):
+    """Ensure BOOTH_ACCESS_TOKEN is unset for isolation tests without polluting other suites."""
+    from portal.config import settings
+
+    monkeypatch.setattr(settings, "booth_access_token", "")
+    monkeypatch.setenv("BOOTH_ACCESS_TOKEN", "")
 
 
 @pytest.fixture(autouse=True)
@@ -217,3 +222,144 @@ def test_coordinator_join_behavior_intact():
         _join(ws, display_name="Coord", role="room_coordinator", language="French")
         ws.send_text(json.dumps({"type": "booth:chat", "body": "coord note"}))
         assert json.loads(ws.receive_text())["type"] == "booth:chat"
+
+
+def test_captions_listener_receives_sanitized_state_without_chat_or_participants():
+    """Event listeners on /ws/captions receive only broadcast_unlocked & ingest_status.
+
+    Private chat logs and participant rosters must never leak to listener feeds.
+    """
+    bid = "iso-20-en"
+    with client.websocket_connect(f"/ws/captions/{bid}") as listener_ws:
+        with client.websocket_connect(f"/ws/booth/{bid}", cookies=_admin_cookie()) as coord:
+            _join(coord, display_name="Coordinator", role="room_coordinator", language="English")
+            coord.send_text(json.dumps({"type": "booth:chat", "body": "confidential interpreter talk"}))
+            chat_msg = json.loads(coord.receive_text())
+            assert chat_msg["type"] == "booth:chat"
+            chat_state = json.loads(coord.receive_text())
+            assert "participants" in chat_state["state"]
+            assert "chat_messages" in chat_state["state"]
+
+            # Coordinator toggles broadcast unlock
+            coord.send_text(json.dumps({"type": "booth:set-broadcast-unlocked", "unlocked": True}))
+            coord_unlocked_state = json.loads(coord.receive_text())
+            assert coord_unlocked_state["type"] == "booth:state"
+            assert "participants" in coord_unlocked_state["state"]
+            assert "chat_messages" in coord_unlocked_state["state"]
+
+        # Listener receives sanitized state
+        got = [json.loads(m) for m in _try_receive(listener_ws, timeout=2.0)]
+        state_msgs = [m for m in got if m.get("type") == "booth:state"]
+        assert len(state_msgs) >= 1
+        for msg in state_msgs:
+            state = msg["state"]
+            assert state.get("broadcast_unlocked") is True
+            assert "participants" not in state
+            assert "chat_messages" not in state
+            assert "active_interpreter_id" not in state
+            assert "handoff_state" not in state
+
+
+def test_unsupported_role_token_receives_no_broadcasts():
+    """A socket holding an unsupported role token receives no private broadcasts."""
+    bid = "iso-21-en"
+    guest_tok = create_participant_token(
+        booth_id=1,
+        role="guest",
+        event_slug="iso",
+        room_id=21,
+        language_code="en",
+    )
+    with client.websocket_connect(f"/ws/booth/{bid}", cookies={"session_token": guest_tok}) as guest_ws:
+        guest_ws.send_text(json.dumps({"type": "booth:ping-sync"}))
+        reply = json.loads(guest_ws.receive_text())
+        assert reply["type"] == "booth:error"
+
+        with client.websocket_connect(f"/ws/booth/{bid}", cookies=_admin_cookie()) as actor:
+            _join(actor, display_name="Actor", language="English")
+            actor.send_text(json.dumps({"type": "booth:chat", "body": "for members only"}))
+            assert json.loads(actor.receive_text())["type"] == "booth:chat"
+
+        got = _try_receive(guest_ws, timeout=2.0)
+        assert got == []
+
+
+def test_legitimate_observer_roles_continue_receiving_broadcasts():
+    """All supported roles (interpreter, room_coordinator, super_admin, support) receive broadcasts."""
+    for i, role in enumerate(("interpreter", "room_coordinator", "super_admin", "support"), start=30):
+        bid = f"iso-{i}-en"
+        if role == "super_admin":
+            cookie = _admin_cookie()
+        else:
+            tok = create_participant_token(
+                booth_id=1,
+                role=role,
+                event_slug="iso",
+                room_id=i,
+                language_code="en",
+            )
+            cookie = {"session_token": tok}
+
+        with client.websocket_connect(f"/ws/booth/{bid}", cookies=cookie) as observer:
+            observer.send_text(json.dumps({"type": "booth:ping-sync"}))
+            assert json.loads(observer.receive_text())["type"] == "booth:error"
+
+            with client.websocket_connect(f"/ws/booth/{bid}", cookies=_admin_cookie()) as actor:
+                _join(actor, display_name="Actor", language="English")
+
+            got = _try_receive(observer, timeout=2.0)
+            assert any(json.loads(m).get("type") == "booth:state" for m in got)
+
+
+def test_revoked_session_receives_no_broadcasts():
+    """A session whose authorization is revoked stops receiving private broadcasts."""
+    bid = "iso-23-en"
+    with client.websocket_connect(f"/ws/booth/{bid}", cookies=_admin_cookie()) as ws:
+        ws.send_text(json.dumps({"type": "booth:ping-sync"}))
+        assert json.loads(ws.receive_text())["type"] == "booth:error"
+
+        # Locate the session in manager and revoke it
+        room_sockets = list(manager._rooms.get(bid, set()))
+        assert len(room_sockets) == 1
+        target_ws = room_sockets[0]
+        manager.revoke_session(target_ws)
+
+        # Trigger a broadcast
+        with client.websocket_connect(f"/ws/booth/{bid}", cookies=_admin_cookie()) as actor:
+            _join(actor, display_name="Actor", language="English")
+            actor.send_text(json.dumps({"type": "booth:chat", "body": "after revocation"}))
+            assert json.loads(actor.receive_text())["type"] == "booth:chat"
+
+        # The revoked socket receives no broadcasts
+        got = _try_receive(ws, timeout=2.0)
+        assert got == []
+
+
+def test_revoked_session_send_is_rejected_and_closed():
+    """A revoked socket attempting to send is closed with 4003."""
+    from starlette.websockets import WebSocketDisconnect
+
+    bid = "iso-24-en"
+    with client.websocket_connect(f"/ws/booth/{bid}", cookies=_admin_cookie()) as ws:
+        ws.send_text(json.dumps({"type": "booth:ping-sync"}))
+        assert json.loads(ws.receive_text())["type"] == "booth:error"
+
+        room_sockets = list(manager._rooms.get(bid, set()))
+        assert len(room_sockets) == 1
+        target_ws = room_sockets[0]
+        manager.revoke_session(target_ws)
+
+        ws.send_text(json.dumps({"type": "booth:chat", "body": "blocked"}))
+        err = json.loads(ws.receive_text())
+        assert err["type"] == "booth:error"
+        assert "revoked" in err["message"]
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            ws.receive_text()
+        assert exc_info.value.code == 4003
+
+
+def test_fixture_restores_booth_access_token(monkeypatch):
+    """Verify test fixture isolation: settings.booth_access_token is empty in test scope."""
+    from portal.config import settings
+
+    assert settings.booth_access_token == ""
