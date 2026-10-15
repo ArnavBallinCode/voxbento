@@ -45,9 +45,20 @@ class ConnectionManager:
         return self._sessions.get(id(ws))
 
     async def broadcast(self, booth_id: str, message: dict) -> None:
+        """Send *message* to booth members authorized for *booth_id*.
+
+        Sockets are added to the room at WebSocket-connect time so late
+        joiners observe membership changes, but delivery is limited to
+        sockets whose session carries a role granted for this booth. A
+        socket with no booth role (unauthenticated, or holding only another
+        booth's invitation) stays connected yet receives nothing.
+        """
         payload = json.dumps(message)
         dead: list[WebSocket] = []
         for ws in list(self._rooms.get(booth_id, set())):
+            session = self._sessions.get(id(ws))
+            if session is None or session.granted_role is None:
+                continue
             try:
                 await ws.send_text(payload)
             except (WebSocketDisconnect, RuntimeError, OSError):

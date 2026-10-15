@@ -35,8 +35,14 @@ def _dropped_websocket() -> WebSocket:
     return ws
 
 
-def _session(booth_id: str) -> Session:
-    return Session(booth_id=booth_id, participant_id=None, language="English", channel_id=f"{booth_id}-audio")
+def _session(booth_id: str, granted_role: str | None = "interpreter") -> Session:
+    return Session(
+        booth_id=booth_id,
+        participant_id=None,
+        language="English",
+        channel_id=f"{booth_id}-audio",
+        granted_role=granted_role,
+    )
 
 
 @pytest.mark.anyio
@@ -64,3 +70,24 @@ async def test_broadcast_removes_the_dropped_socket():
 
     assert manager.get_session(dropped) is None
     assert manager.get_session(alive) is not None
+
+
+@pytest.mark.anyio
+async def test_broadcast_skips_sockets_without_a_booth_role():
+    """Sockets whose session carries no granted booth role receive nothing.
+
+    They stay connected (cleanup semantics unchanged) but are excluded from
+    booth:state/chat delivery.
+    """
+    manager = ConnectionManager()
+    outsider = MockWebSocket()
+    member = MockWebSocket()
+    manager.add(outsider, _session("pycon2026-1-en", granted_role=None))
+    manager.add(member, _session("pycon2026-1-en", granted_role="interpreter"))
+
+    await manager.broadcast("pycon2026-1-en", {"type": "booth:chat", "message": "hi"})
+
+    assert outsider.sent_messages == []
+    assert [json.loads(m) for m in member.sent_messages] == [{"type": "booth:chat", "message": "hi"}]
+    # The skipped socket is not treated as dead: membership is unchanged.
+    assert manager.get_session(outsider) is not None
