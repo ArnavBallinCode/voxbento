@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 
@@ -1053,6 +1054,60 @@ async def test_listener_status_uses_newest_booth_state():
         listener_manager.remove(ws, booth)
 
     assert json.loads(ws.sent[-1])["state"]["broadcast_unlocked"] is True
+
+
+def test_ws_captions_unknown_booth_leaves_no_state_lock():
+    """Connections to arbitrary booth IDs must not leave per-booth locks behind."""
+    from portal.websockets.manager import listener_manager
+
+    for i in range(3):
+        with client.websocket_connect(f"/ws/captions/no-such-booth-{i}", cookies=_ws_auth()):
+            pass
+
+    assert not any(key.startswith("no-such-booth-") for key in listener_manager._state_locks)
+
+
+class _BlockingWebSocket(_RecordingWebSocket):
+    def __init__(self) -> None:
+        super().__init__()
+        self.entered = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def send_text(self, text: str) -> None:
+        self.entered.set()
+        await self.release.wait()
+        await super().send_text(text)
+
+
+@pytest.mark.anyio
+async def test_listener_state_lock_serializes_then_cleans_up():
+    """Overlapping status sends for one booth share a lock, which is dropped once idle."""
+    from portal.globals import booths
+    from portal.websockets.manager import listener_manager
+
+    booth = "golive-1-nl"
+    _participant, state = await booths.join_participant(
+        booth_id=booth, display_name="Eve", role="interpreter", language="Dutch", channel_id=f"{booth}-audio"
+    )
+    first = _BlockingWebSocket()
+    other = _RecordingWebSocket()
+    listener_manager.add(other, booth)
+    try:
+        initial = asyncio.create_task(listener_manager.send_booth_state(first, booth))
+        await first.entered.wait()
+        broadcast = asyncio.create_task(listener_manager.broadcast_booth_state(booth, state))
+        await asyncio.sleep(0)
+
+        assert listener_manager._state_locks[booth].users == 2
+        assert other.sent == []
+
+        first.release.set()
+        await asyncio.gather(initial, broadcast)
+    finally:
+        listener_manager.remove(other, booth)
+
+    assert len(other.sent) == 1
+    assert booth not in listener_manager._state_locks
 
 
 def test_ws_initiate_handoff_active_interpreter_sets_offered_state():

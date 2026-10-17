@@ -4,7 +4,9 @@ import asyncio
 import json
 import logging
 import struct
-from dataclasses import dataclass
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -76,6 +78,13 @@ def _current_listener_state(booth_id: str, fallback: dict | None = None) -> dict
     return listener_booth_state(fallback) if fallback is not None else None
 
 
+@dataclass
+class _StateLock:
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    # Operations holding or waiting on ``lock``.
+    users: int = 0
+
+
 class ListenerConnectionManager:
     def __init__(self) -> None:
         self._rooms: dict[str, set[WebSocket]] = {}
@@ -84,7 +93,9 @@ class ListenerConnectionManager:
         self._last_state: dict[str, dict] = {}
         # Serializes status sends per booth. Combined with reading the registry
         # inside the lock, overlapping updates can't deliver an older status last.
-        self._state_locks: dict[str, asyncio.Lock] = {}
+        # Entries only live while an operation holds or waits on them, so arbitrary
+        # booth IDs from the captions endpoint don't accumulate.
+        self._state_locks: dict[str, _StateLock] = {}
 
     def add(self, ws: WebSocket, booth_id: str) -> None:
         self._rooms.setdefault(booth_id, set()).add(ws)
@@ -98,6 +109,20 @@ class ListenerConnectionManager:
         if not room:
             self._rooms.pop(booth_id, None)
             self._last_state.pop(booth_id, None)
+
+    @asynccontextmanager
+    async def _state_lock(self, booth_id: str) -> AsyncIterator[None]:
+        # No await between lookup and increment, so every operation that overlaps
+        # an existing holder or waiter for this booth shares the same lock.
+        entry = self._state_locks.setdefault(booth_id, _StateLock())
+        entry.users += 1
+        try:
+            async with entry.lock:
+                yield
+        finally:
+            entry.users -= 1
+            if entry.users == 0:
+                del self._state_locks[booth_id]
 
     async def broadcast(self, booth_id: str, message: dict) -> None:
         payload = json.dumps(message)
@@ -116,7 +141,7 @@ class ListenerConnectionManager:
         ``state`` is only used if the booth has left the registry; otherwise the
         newest status is read under the booth's lock.
         """
-        async with self._state_locks.setdefault(booth_id, asyncio.Lock()):
+        async with self._state_lock(booth_id):
             if not self.has_listeners(booth_id):
                 return
             listener_state = _current_listener_state(booth_id, state)
@@ -127,7 +152,7 @@ class ListenerConnectionManager:
 
     async def send_booth_state(self, ws: WebSocket, booth_id: str) -> None:
         """Send one newly connected listener the booth's current status, if the booth exists."""
-        async with self._state_locks.setdefault(booth_id, asyncio.Lock()):
+        async with self._state_lock(booth_id):
             listener_state = _current_listener_state(booth_id)
             if listener_state is not None:
                 await ws.send_text(json.dumps({"type": "booth:state", "state": listener_state}))
