@@ -189,6 +189,7 @@ async def test_status_reports_only_the_requested_rooms_booths(real_db, running_w
 
 @pytest.mark.anyio
 async def test_export_returns_segments_for_a_booth(event):
+    """Source segments are returned chronologically in a structured envelope."""
     booth = SimpleNamespace(id=10, room_id=ROOM_ID, language_code="en")
     now = datetime(2026, 8, 1, 12, 0, 0, tzinfo=timezone.utc)
     segments = [
@@ -213,6 +214,7 @@ async def test_export_returns_segments_for_a_booth(event):
 
 @pytest.mark.anyio
 async def test_export_returns_empty_list_when_no_segments(event):
+    """An empty segment list is returned when no transcript rows exist."""
     booth = SimpleNamespace(id=10, room_id=ROOM_ID, language_code="en")
     db = _db(_result(first=event), _result(first=booth), _result(all_=[]))
 
@@ -223,6 +225,17 @@ async def test_export_returns_empty_list_when_no_segments(event):
 
 @pytest.mark.anyio
 async def test_export_404_for_unknown_event():
+    """Missing event raises HTTP 404."""
+    with pytest.raises(api_v1.HTTPException) as exc_info:
+        await api_v1.export_transcript(EVENT_SLUG, ROOM_ID, "en", db=_db(_result(first=None)), token=object())
+
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "Event not found"
+
+
+@pytest.mark.anyio
+async def test_export_404_for_soft_deleted_event():
+    """Soft-deleted event is excluded by deleted_at filter and raises HTTP 404."""
     with pytest.raises(api_v1.HTTPException) as exc_info:
         await api_v1.export_transcript(EVENT_SLUG, ROOM_ID, "en", db=_db(_result(first=None)), token=object())
 
@@ -232,6 +245,7 @@ async def test_export_404_for_unknown_event():
 
 @pytest.mark.anyio
 async def test_export_404_for_unknown_booth(event):
+    """Missing booth in event/room raises HTTP 404."""
     with pytest.raises(api_v1.HTTPException) as exc_info:
         await api_v1.export_transcript(
             EVENT_SLUG, ROOM_ID, "en", db=_db(_result(first=event), _result(first=None)), token=object()
@@ -243,12 +257,14 @@ async def test_export_404_for_unknown_booth(event):
 
 @pytest.mark.anyio
 async def test_export_returns_translations_when_target_lang_given(event):
+    """Target language query returns translation text with source segment id and created_at."""
     booth = SimpleNamespace(id=10, room_id=ROOM_ID, language_code="en")
     now = datetime(2026, 8, 1, 12, 0, 0, tzinfo=timezone.utc)
-    translations = [
-        SimpleNamespace(id=101, text="Bonjour le monde", created_at=now),
-    ]
-    db = _db(_result(first=event), _result(first=booth), _result(all_=translations))
+    segment = SimpleNamespace(id=5, created_at=now)
+    translation = SimpleNamespace(id=101, text="Bonjour le monde")
+    result_mock = MagicMock()
+    result_mock.all.return_value = [(segment, translation)]
+    db = _db(_result(first=event), _result(first=booth), result_mock)
 
     response = await api_v1.export_transcript(EVENT_SLUG, ROOM_ID, "en", target_lang="fr", db=db, token=object())
 
@@ -258,15 +274,18 @@ async def test_export_returns_translations_when_target_lang_given(event):
         "language_code": "en",
         "target_lang": "fr",
         "segments": [
-            {"id": 101, "text": "Bonjour le monde", "created_at": now.isoformat()},
+            {"id": 5, "text": "Bonjour le monde", "created_at": now.isoformat()},
         ],
     }
 
 
 @pytest.mark.anyio
 async def test_export_returns_empty_when_no_translations_for_target_lang(event):
+    """Target language query returns empty segments when no translations match."""
     booth = SimpleNamespace(id=10, room_id=ROOM_ID, language_code="en")
-    db = _db(_result(first=event), _result(first=booth), _result(all_=[]))
+    result_mock = MagicMock()
+    result_mock.all.return_value = []
+    db = _db(_result(first=event), _result(first=booth), result_mock)
 
     response = await api_v1.export_transcript(EVENT_SLUG, ROOM_ID, "en", target_lang="fr", db=db, token=object())
 
@@ -275,6 +294,7 @@ async def test_export_returns_empty_when_no_translations_for_target_lang(event):
 
 @pytest.mark.anyio
 async def test_export_segments_ordered_by_created_at(real_db):
+    """Segments and translations are ordered chronologically and tie-broken by id."""
     event = await create_event(real_db, slug=EVENT_SLUG, display_name="PyCon 2026")
     room = await create_room(real_db, event_id=event.id, display_name="Hall A")
     await create_booth(real_db, event_id=event.id, room_id=room.id, language_code="en", language_name="English")
@@ -294,8 +314,8 @@ async def test_export_segments_ordered_by_created_at(real_db):
 
     assert [s["text"] for s in response["segments"]] == ["First", "Second", "Third"]
 
-    # Now add translation and verify target_lang
-    trans = TranscriptTranslation(segment_id=seg1.id, language_code="es", text="Primero", created_at=t1)
+    # Now add translation with a later created_at and verify target_lang returns source segment id & created_at
+    trans = TranscriptTranslation(segment_id=seg1.id, language_code="es", text="Primero", created_at=t2)
     real_db.add(trans)
     await real_db.flush()
 
@@ -303,4 +323,6 @@ async def test_export_segments_ordered_by_created_at(real_db):
         EVENT_SLUG, room.id, "en", target_lang="es", db=real_db, token=object()
     )
     assert len(response_es["segments"]) == 1
+    assert response_es["segments"][0]["id"] == seg1.id
     assert response_es["segments"][0]["text"] == "Primero"
+    assert response_es["segments"][0]["created_at"] == t1.isoformat()

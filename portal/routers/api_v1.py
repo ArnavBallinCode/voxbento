@@ -829,9 +829,10 @@ async def export_transcript(
     db: AsyncSession = Depends(get_db_session),
     token: OAuthToken = Depends(require_oauth_scope("transcripts:read")),
 ):
+    """Export source transcript segments or translations for a room booth in chronological order."""
     target_lang = target_lang if isinstance(target_lang, str) else None
 
-    result = await db.execute(select(Event).where(Event.slug == event_slug))
+    result = await db.execute(select(Event).where(Event.slug == event_slug, Event.deleted_at.is_(None)))
     event = result.scalars().first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -852,18 +853,20 @@ async def export_transcript(
 
     if target_lang:
         stmt = (
-            select(TranscriptTranslation)
+            select(TranscriptSegment, TranscriptTranslation)
             .join(TranscriptSegment, TranscriptTranslation.segment_id == TranscriptSegment.id)
             .where(
                 TranscriptSegment.room_id == room_id,
                 TranscriptSegment.language_code == language_code,
                 TranscriptTranslation.language_code == target_lang,
             )
-            .order_by(TranscriptSegment.created_at)
+            .order_by(TranscriptSegment.created_at, TranscriptSegment.id)
         )
         result = await db.execute(stmt)
-        rows = result.scalars().all()
-        segments = [{"id": r.id, "text": r.text, "created_at": r.created_at.isoformat()} for r in rows]
+        segments = [
+            {"id": seg.id, "text": tr.text, "created_at": seg.created_at.isoformat()}
+            for seg, tr in result.all()
+        ]
     else:
         stmt = (
             select(TranscriptSegment)
@@ -871,7 +874,7 @@ async def export_transcript(
                 TranscriptSegment.room_id == room_id,
                 TranscriptSegment.language_code == language_code,
             )
-            .order_by(TranscriptSegment.created_at)
+            .order_by(TranscriptSegment.created_at, TranscriptSegment.id)
         )
         result = await db.execute(stmt)
         rows = result.scalars().all()
