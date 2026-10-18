@@ -305,31 +305,44 @@ async def test_export_segments_ordered_by_created_at(real_db):
 
     t1 = datetime(2026, 8, 1, 10, 0, 0, tzinfo=timezone.utc)
     t2 = datetime(2026, 8, 1, 10, 1, 0, tzinfo=timezone.utc)
+    t3 = datetime(2026, 8, 1, 10, 2, 0, tzinfo=timezone.utc)
 
-    # Insert segments with tied timestamps and distinct IDs
-    seg1 = TranscriptSegment(room_id=room.id, language_code="en", text="First", created_at=t1)
-    seg2 = TranscriptSegment(room_id=room.id, language_code="en", text="Second", created_at=t1)
-    seg3 = TranscriptSegment(room_id=room.id, language_code="en", text="Third", created_at=t2)
-    seg4 = TranscriptSegment(room_id=room.id, language_code="en", text="Fourth", created_at=t2)
+    # Insert out of chronological order so insertion order (seg1, seg2, seg3, seg4)
+    # differs from expected chronological order (seg2, seg3, seg1, seg4).
+    seg1 = TranscriptSegment(room_id=room.id, language_code="en", text="Later timestamp, inserted first", created_at=t2)
+    seg2 = TranscriptSegment(
+        room_id=room.id, language_code="en", text="Earlier timestamp, inserted second", created_at=t1
+    )
+    seg3 = TranscriptSegment(
+        room_id=room.id, language_code="en", text="Earlier timestamp tie, inserted third", created_at=t1
+    )
+    seg4 = TranscriptSegment(
+        room_id=room.id, language_code="en", text="Latest timestamp, inserted fourth", created_at=t3
+    )
     real_db.add_all([seg1, seg2, seg3, seg4])
     await real_db.flush()
 
     response = await api_v1.export_transcript(EVENT_SLUG, room.id, "en", db=real_db, token=object())
 
-    # Verify ordered by (created_at, id)
-    assert [s["id"] for s in response["segments"]] == [seg1.id, seg2.id, seg3.id, seg4.id]
-    assert [s["text"] for s in response["segments"]] == ["First", "Second", "Third", "Fourth"]
+    # Verified ordered by (created_at, id), NOT insertion/id order [seg1, seg2, seg3, seg4]
+    assert [s["id"] for s in response["segments"]] == [seg2.id, seg3.id, seg1.id, seg4.id]
+    assert [s["text"] for s in response["segments"]] == [
+        "Earlier timestamp, inserted second",
+        "Earlier timestamp tie, inserted third",
+        "Later timestamp, inserted first",
+        "Latest timestamp, inserted fourth",
+    ]
 
-    # Add translations with varying created_at to verify tie-breaking and timestamp propagation
-    trans1 = TranscriptTranslation(segment_id=seg1.id, language_code="es", text="Primero", created_at=t2)
-    trans2 = TranscriptTranslation(segment_id=seg2.id, language_code="es", text="Segundo", created_at=t1)
-    trans3 = TranscriptTranslation(segment_id=seg3.id, language_code="es", text="Tercero", created_at=t2)
+    # Add translations out of order with varying translation timestamps
+    trans1 = TranscriptTranslation(segment_id=seg1.id, language_code="es", text="Medio", created_at=t3)
+    trans2 = TranscriptTranslation(segment_id=seg2.id, language_code="es", text="Primero", created_at=t2)
+    trans3 = TranscriptTranslation(segment_id=seg3.id, language_code="es", text="Primero-atado", created_at=t1)
     real_db.add_all([trans1, trans2, trans3])
     await real_db.flush()
 
     response_es = await api_v1.export_transcript(
         EVENT_SLUG, room.id, "en", target_lang="es", db=real_db, token=object()
     )
-    assert [s["id"] for s in response_es["segments"]] == [seg1.id, seg2.id, seg3.id]
-    assert [s["text"] for s in response_es["segments"]] == ["Primero", "Segundo", "Tercero"]
+    assert [s["id"] for s in response_es["segments"]] == [seg2.id, seg3.id, seg1.id]
+    assert [s["text"] for s in response_es["segments"]] == ["Primero", "Primero-atado", "Medio"]
     assert [s["created_at"] for s in response_es["segments"]] == [t1.isoformat(), t1.isoformat(), t2.isoformat()]
