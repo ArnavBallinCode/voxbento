@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +24,8 @@ from portal.models import (
     Room,
     RoomMembership,
     RoomTranslationLanguage,
+    TranscriptSegment,
+    TranscriptTranslation,
 )
 from portal.rate_limit import auth_rate_limiter
 from portal.transcription.constants import ProviderEnum
@@ -820,9 +823,14 @@ async def export_transcript(
     event_slug: str,
     room_id: int,
     language_code: str,
+    target_lang: Annotated[
+        str | None, Query(description="Return translations in this language instead of source segments")
+    ] = None,
     db: AsyncSession = Depends(get_db_session),
     token: OAuthToken = Depends(require_oauth_scope("transcripts:read")),
 ):
+    target_lang = target_lang if isinstance(target_lang, str) else None
+
     result = await db.execute(select(Event).where(Event.slug == event_slug))
     event = result.scalars().first()
     if not event:
@@ -830,7 +838,52 @@ async def export_transcript(
 
     await _verify_token_rbac(db, token, event, room_id)
 
-    return {"status": "success", "content": "Transcription export not fully implemented"}
+    # Validate that the booth exists within this event/room
+    result = await db.execute(
+        select(DBBooth).where(
+            DBBooth.room_id == room_id,
+            DBBooth.language_code == language_code,
+            DBBooth.event_id == event.id,
+        )
+    )
+    booth = result.scalars().first()
+    if not booth:
+        raise HTTPException(status_code=404, detail="Booth not found")
+
+    if target_lang:
+        stmt = (
+            select(TranscriptTranslation)
+            .join(TranscriptSegment, TranscriptTranslation.segment_id == TranscriptSegment.id)
+            .where(
+                TranscriptSegment.room_id == room_id,
+                TranscriptSegment.language_code == language_code,
+                TranscriptTranslation.language_code == target_lang,
+            )
+            .order_by(TranscriptSegment.created_at)
+        )
+        result = await db.execute(stmt)
+        rows = result.scalars().all()
+        segments = [{"id": r.id, "text": r.text, "created_at": r.created_at.isoformat()} for r in rows]
+    else:
+        stmt = (
+            select(TranscriptSegment)
+            .where(
+                TranscriptSegment.room_id == room_id,
+                TranscriptSegment.language_code == language_code,
+            )
+            .order_by(TranscriptSegment.created_at)
+        )
+        result = await db.execute(stmt)
+        rows = result.scalars().all()
+        segments = [{"id": r.id, "text": r.text, "created_at": r.created_at.isoformat()} for r in rows]
+
+    return {
+        "event_slug": event_slug,
+        "room_id": room_id,
+        "language_code": language_code,
+        "target_lang": target_lang,
+        "segments": segments,
+    }
 
 
 @router.post("/events/{event_slug}/rooms/{room_id}/listener-token")

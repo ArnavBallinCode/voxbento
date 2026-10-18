@@ -7,6 +7,7 @@ does not exist, and read transcription state from an attribute nothing sets.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -15,7 +16,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import portal.routers.api_v1 as api_v1
 from portal.database import create_booth, create_event, create_room
-from portal.models import Base
+from portal.models import Base, TranscriptSegment, TranscriptTranslation
 from portal.transcription.worker import active_workers
 
 EVENT_SLUG = "pycon2026"
@@ -181,3 +182,125 @@ async def test_status_reports_only_the_requested_rooms_booths(real_db, running_w
     assert response["room_id"] == room_a.id
     assert set(response["statuses"]) == {"en"}
     assert response["statuses"]["en"]["transcription_running"] is False
+
+
+# ── export ────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_export_returns_segments_for_a_booth(event):
+    booth = SimpleNamespace(id=10, room_id=ROOM_ID, language_code="en")
+    now = datetime(2026, 8, 1, 12, 0, 0, tzinfo=timezone.utc)
+    segments = [
+        SimpleNamespace(id=1, text="Hello world", created_at=now),
+        SimpleNamespace(id=2, text="Second segment", created_at=now),
+    ]
+    db = _db(_result(first=event), _result(first=booth), _result(all_=segments))
+
+    response = await api_v1.export_transcript(EVENT_SLUG, ROOM_ID, "en", db=db, token=object())
+
+    assert response == {
+        "event_slug": EVENT_SLUG,
+        "room_id": ROOM_ID,
+        "language_code": "en",
+        "target_lang": None,
+        "segments": [
+            {"id": 1, "text": "Hello world", "created_at": now.isoformat()},
+            {"id": 2, "text": "Second segment", "created_at": now.isoformat()},
+        ],
+    }
+
+
+@pytest.mark.anyio
+async def test_export_returns_empty_list_when_no_segments(event):
+    booth = SimpleNamespace(id=10, room_id=ROOM_ID, language_code="en")
+    db = _db(_result(first=event), _result(first=booth), _result(all_=[]))
+
+    response = await api_v1.export_transcript(EVENT_SLUG, ROOM_ID, "en", db=db, token=object())
+
+    assert response["segments"] == []
+
+
+@pytest.mark.anyio
+async def test_export_404_for_unknown_event():
+    with pytest.raises(api_v1.HTTPException) as exc_info:
+        await api_v1.export_transcript(EVENT_SLUG, ROOM_ID, "en", db=_db(_result(first=None)), token=object())
+
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "Event not found"
+
+
+@pytest.mark.anyio
+async def test_export_404_for_unknown_booth(event):
+    with pytest.raises(api_v1.HTTPException) as exc_info:
+        await api_v1.export_transcript(
+            EVENT_SLUG, ROOM_ID, "en", db=_db(_result(first=event), _result(first=None)), token=object()
+        )
+
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "Booth not found"
+
+
+@pytest.mark.anyio
+async def test_export_returns_translations_when_target_lang_given(event):
+    booth = SimpleNamespace(id=10, room_id=ROOM_ID, language_code="en")
+    now = datetime(2026, 8, 1, 12, 0, 0, tzinfo=timezone.utc)
+    translations = [
+        SimpleNamespace(id=101, text="Bonjour le monde", created_at=now),
+    ]
+    db = _db(_result(first=event), _result(first=booth), _result(all_=translations))
+
+    response = await api_v1.export_transcript(EVENT_SLUG, ROOM_ID, "en", target_lang="fr", db=db, token=object())
+
+    assert response == {
+        "event_slug": EVENT_SLUG,
+        "room_id": ROOM_ID,
+        "language_code": "en",
+        "target_lang": "fr",
+        "segments": [
+            {"id": 101, "text": "Bonjour le monde", "created_at": now.isoformat()},
+        ],
+    }
+
+
+@pytest.mark.anyio
+async def test_export_returns_empty_when_no_translations_for_target_lang(event):
+    booth = SimpleNamespace(id=10, room_id=ROOM_ID, language_code="en")
+    db = _db(_result(first=event), _result(first=booth), _result(all_=[]))
+
+    response = await api_v1.export_transcript(EVENT_SLUG, ROOM_ID, "en", target_lang="fr", db=db, token=object())
+
+    assert response["segments"] == []
+
+
+@pytest.mark.anyio
+async def test_export_segments_ordered_by_created_at(real_db):
+    event = await create_event(real_db, slug=EVENT_SLUG, display_name="PyCon 2026")
+    room = await create_room(real_db, event_id=event.id, display_name="Hall A")
+    await create_booth(real_db, event_id=event.id, room_id=room.id, language_code="en", language_name="English")
+
+    t1 = datetime(2026, 8, 1, 10, 0, 0, tzinfo=timezone.utc)
+    t2 = datetime(2026, 8, 1, 10, 1, 0, tzinfo=timezone.utc)
+    t3 = datetime(2026, 8, 1, 10, 2, 0, tzinfo=timezone.utc)
+
+    # Insert out of order
+    seg2 = TranscriptSegment(room_id=room.id, language_code="en", text="Second", created_at=t2)
+    seg1 = TranscriptSegment(room_id=room.id, language_code="en", text="First", created_at=t1)
+    seg3 = TranscriptSegment(room_id=room.id, language_code="en", text="Third", created_at=t3)
+    real_db.add_all([seg2, seg1, seg3])
+    await real_db.flush()
+
+    response = await api_v1.export_transcript(EVENT_SLUG, room.id, "en", db=real_db, token=object())
+
+    assert [s["text"] for s in response["segments"]] == ["First", "Second", "Third"]
+
+    # Now add translation and verify target_lang
+    trans = TranscriptTranslation(segment_id=seg1.id, language_code="es", text="Primero", created_at=t1)
+    real_db.add(trans)
+    await real_db.flush()
+
+    response_es = await api_v1.export_transcript(
+        EVENT_SLUG, room.id, "en", target_lang="es", db=real_db, token=object()
+    )
+    assert len(response_es["segments"]) == 1
+    assert response_es["segments"][0]["text"] == "Primero"
