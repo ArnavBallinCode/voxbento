@@ -234,10 +234,14 @@ async def test_export_404_for_unknown_event():
 
 
 @pytest.mark.anyio
-async def test_export_404_for_soft_deleted_event():
+async def test_export_404_for_soft_deleted_event(real_db):
     """Soft-deleted event is excluded by deleted_at filter and raises HTTP 404."""
+    event = await create_event(real_db, slug=EVENT_SLUG, display_name="PyCon 2026")
+    event.deleted_at = datetime.now(timezone.utc)
+    await real_db.flush()
+
     with pytest.raises(api_v1.HTTPException) as exc_info:
-        await api_v1.export_transcript(EVENT_SLUG, ROOM_ID, "en", db=_db(_result(first=None)), token=object())
+        await api_v1.export_transcript(EVENT_SLUG, ROOM_ID, "en", db=real_db, token=object())
 
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "Event not found"
@@ -301,28 +305,31 @@ async def test_export_segments_ordered_by_created_at(real_db):
 
     t1 = datetime(2026, 8, 1, 10, 0, 0, tzinfo=timezone.utc)
     t2 = datetime(2026, 8, 1, 10, 1, 0, tzinfo=timezone.utc)
-    t3 = datetime(2026, 8, 1, 10, 2, 0, tzinfo=timezone.utc)
 
-    # Insert out of order
-    seg2 = TranscriptSegment(room_id=room.id, language_code="en", text="Second", created_at=t2)
+    # Insert segments with tied timestamps and distinct IDs
     seg1 = TranscriptSegment(room_id=room.id, language_code="en", text="First", created_at=t1)
-    seg3 = TranscriptSegment(room_id=room.id, language_code="en", text="Third", created_at=t3)
-    real_db.add_all([seg2, seg1, seg3])
+    seg2 = TranscriptSegment(room_id=room.id, language_code="en", text="Second", created_at=t1)
+    seg3 = TranscriptSegment(room_id=room.id, language_code="en", text="Third", created_at=t2)
+    seg4 = TranscriptSegment(room_id=room.id, language_code="en", text="Fourth", created_at=t2)
+    real_db.add_all([seg1, seg2, seg3, seg4])
     await real_db.flush()
 
     response = await api_v1.export_transcript(EVENT_SLUG, room.id, "en", db=real_db, token=object())
 
-    assert [s["text"] for s in response["segments"]] == ["First", "Second", "Third"]
+    # Verify ordered by (created_at, id)
+    assert [s["id"] for s in response["segments"]] == [seg1.id, seg2.id, seg3.id, seg4.id]
+    assert [s["text"] for s in response["segments"]] == ["First", "Second", "Third", "Fourth"]
 
-    # Now add translation with a later created_at and verify target_lang returns source segment id & created_at
-    trans = TranscriptTranslation(segment_id=seg1.id, language_code="es", text="Primero", created_at=t2)
-    real_db.add(trans)
+    # Add translations with varying created_at to verify tie-breaking and timestamp propagation
+    trans1 = TranscriptTranslation(segment_id=seg1.id, language_code="es", text="Primero", created_at=t2)
+    trans2 = TranscriptTranslation(segment_id=seg2.id, language_code="es", text="Segundo", created_at=t1)
+    trans3 = TranscriptTranslation(segment_id=seg3.id, language_code="es", text="Tercero", created_at=t2)
+    real_db.add_all([trans1, trans2, trans3])
     await real_db.flush()
 
     response_es = await api_v1.export_transcript(
         EVENT_SLUG, room.id, "en", target_lang="es", db=real_db, token=object()
     )
-    assert len(response_es["segments"]) == 1
-    assert response_es["segments"][0]["id"] == seg1.id
-    assert response_es["segments"][0]["text"] == "Primero"
-    assert response_es["segments"][0]["created_at"] == t1.isoformat()
+    assert [s["id"] for s in response_es["segments"]] == [seg1.id, seg2.id, seg3.id]
+    assert [s["text"] for s in response_es["segments"]] == ["Primero", "Segundo", "Tercero"]
+    assert [s["created_at"] for s in response_es["segments"]] == [t1.isoformat(), t1.isoformat(), t2.isoformat()]
