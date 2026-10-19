@@ -53,6 +53,7 @@ from portal.database import (
     get_db_session,
     get_event_by_id,
     get_event_by_slug,
+    get_invite_token,
     get_room_by_id,
     get_session,
     get_user_by_email,
@@ -85,9 +86,12 @@ from portal.models import (
     TOKEN_TYPE_HOSTING_INVITE,
     TOKEN_TYPE_MAGIC_LINK,
     AuthToken,
+    BoothMembership,
     BoothTranslationLanguage,
     DBBooth,
     Event,
+    EventMembership,
+    RoomMembership,
     RoomTranslationLanguage,
     TranscriptSegment,
     TranscriptTranslation,
@@ -1372,6 +1376,14 @@ async def admin_invite_room_member(request: Request, event_id: int, room_id: int
 )
 async def admin_remove_room_member(request: Request, event_id: int, room_id: int, membership_id: int):
     async with get_session() as session:
+        room = await get_room_by_id(session, room_id)
+        if room is None or room.event_id != event_id:
+            raise HTTPException(status_code=404, detail="Room not found.")
+        membership = await session.scalar(
+            select(RoomMembership).where(RoomMembership.id == membership_id, RoomMembership.room_id == room_id)
+        )
+        if membership is None:
+            raise HTTPException(status_code=404, detail="Membership not found.")
         await remove_room_membership(session, membership_id)
     return safe_redirect(
         url=management_url(request, f"events/{event_id}/rooms/{room_id}/"),
@@ -1458,6 +1470,17 @@ async def admin_invite_booth_member(request: Request, event_id: int, room_id: in
 )
 async def admin_remove_booth_member(request: Request, event_id: int, room_id: int, booth_id: int, membership_id: int):
     async with get_session() as session:
+        room = await get_room_by_id(session, room_id)
+        if room is None or room.event_id != event_id:
+            raise HTTPException(status_code=404, detail="Room not found.")
+        booth = await get_booth_by_id(session, booth_id)
+        if booth is None or booth.room_id != room_id or booth.event_id != event_id:
+            raise HTTPException(status_code=404, detail="Booth not found.")
+        membership = await session.scalar(
+            select(BoothMembership).where(BoothMembership.id == membership_id, BoothMembership.booth_id == booth_id)
+        )
+        if membership is None:
+            raise HTTPException(status_code=404, detail="Membership not found.")
         await remove_booth_membership(session, membership_id)
     return safe_redirect(
         url=management_url(request, f"events/{event_id}/rooms/{room_id}/booths/{booth_id}/"),
@@ -1468,6 +1491,12 @@ async def admin_remove_booth_member(request: Request, event_id: int, room_id: in
 @router.post("/admin/events/{event_id}/rooms/{room_id}/booths/{booth_id}/delete", dependencies=[Depends(require_admin)])
 async def admin_delete_booth(request: Request, event_id: int, room_id: int, booth_id: int):
     async with get_session() as session:
+        room = await get_room_by_id(session, room_id)
+        if room is None or room.event_id != event_id:
+            raise HTTPException(status_code=404, detail="Room not found.")
+        booth = await get_booth_by_id(session, booth_id)
+        if booth is None or booth.room_id != room_id or booth.event_id != event_id:
+            raise HTTPException(status_code=404, detail="Booth not found.")
         await delete_booth(session, booth_id)
     return safe_redirect(
         url=management_url(request, f"events/{event_id}/rooms/{room_id}/booths/"),
@@ -2038,6 +2067,14 @@ async def admin_invite_event_member(request: Request, event_id: int, membership_
 @router.post("/admin/events/{event_id}/members/{membership_id}/delete", dependencies=[Depends(require_admin)])
 async def admin_remove_event_member(request: Request, event_id: int, membership_id: int):
     async with get_session() as session:
+        event = await get_event_by_id(session, event_id)
+        if event is None:
+            raise HTTPException(status_code=404, detail="Event not found.")
+        membership = await session.scalar(
+            select(EventMembership).where(EventMembership.id == membership_id, EventMembership.event_id == event_id)
+        )
+        if membership is None:
+            raise HTTPException(status_code=404, detail="Membership not found.")
         await remove_event_membership(session, membership_id)
     return safe_redirect(
         url=management_url(request, f"events/{event_id}/members/"), status_code=status.HTTP_303_SEE_OTHER
@@ -2073,6 +2110,15 @@ async def admin_create_token(request: Request, event_id: int, room_id: int, boot
 )
 async def admin_revoke_token(request: Request, event_id: int, room_id: int, booth_id: int, token_id: str):
     async with get_session() as session:
+        room = await get_room_by_id(session, room_id)
+        if room is None or room.event_id != event_id:
+            raise HTTPException(status_code=404, detail="Room not found.")
+        booth = await get_booth_by_id(session, booth_id)
+        if booth is None or booth.room_id != room_id or booth.event_id != event_id:
+            raise HTTPException(status_code=404, detail="Booth not found.")
+        tok = await get_invite_token(session, token_id)
+        if tok is None or tok.booth_id != booth_id:
+            raise HTTPException(status_code=404, detail="Token not found.")
         await revoke_invite_token(session, token_id)
     return safe_redirect(
         url=management_url(request, f"events/{event_id}/rooms/{room_id}/booths/{booth_id}/"),
