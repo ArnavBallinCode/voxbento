@@ -1309,11 +1309,18 @@ async def admin_booth_detail(request: Request, event_id: int, room_id: int, boot
 
 @router.post("/admin/events/{event_id}/rooms/{room_id}/members/", dependencies=[Depends(require_admin)])
 async def admin_add_room_member(request: Request, event_id: int, room_id: int):
+    async with get_session() as session:
+        room = await get_room_by_id(session, room_id)
+        if room is None or room.event_id != event_id:
+            raise HTTPException(status_code=404, detail="Room not found.")
     form = await request.form()
     email = form.get("email", "").strip()
     role = form.get("role", "").strip()
     if email:
         async with get_session() as session:
+            room = await get_room_by_id(session, room_id)
+            if room is None or room.event_id != event_id:
+                raise HTTPException(status_code=404, detail="Room not found.")
             user = await get_user_by_email(session, email)
             if not user:
                 display_name = email.split("@")[0]
@@ -1325,7 +1332,6 @@ async def admin_add_room_member(request: Request, event_id: int, room_id: int):
                     await set_room_membership(session, user_id=uid, room_id=room_id, role=role)
                     # Send invite
                     event = await get_event_by_id(session, event_id)
-                    room = await get_room_by_id(session, room_id)
                     if event and room:
                         target_url = "/account"
                         await _send_admin_invite(
@@ -1353,18 +1359,21 @@ async def admin_add_room_member(request: Request, event_id: int, room_id: int):
 )
 async def admin_invite_room_member(request: Request, event_id: int, room_id: int, membership_id: int):
     async with get_session() as session:
-        memberships = await list_memberships_for_room(session, room_id)
-        for m in memberships:
-            if m.id == membership_id:
-                user = await get_user_by_id(session, m.user_id)
-                event = await get_event_by_id(session, event_id)
-                room = await get_room_by_id(session, room_id)
-                if user and event and room:
-                    target_url = "/account"
-                    await _send_admin_invite(
-                        session, user, m.role, f"room ({room.display_name}) for {event.display_name}", target_url
-                    )
-                break
+        room = await get_room_by_id(session, room_id)
+        if room is None or room.event_id != event_id:
+            raise HTTPException(status_code=404, detail="Room not found.")
+        membership = await session.scalar(
+            select(RoomMembership).where(RoomMembership.id == membership_id, RoomMembership.room_id == room_id)
+        )
+        if membership is None:
+            raise HTTPException(status_code=404, detail="Membership not found.")
+        user = await get_user_by_id(session, membership.user_id)
+        event = await get_event_by_id(session, event_id)
+        if user and event and room:
+            target_url = "/account"
+            await _send_admin_invite(
+                session, user, membership.role, f"room ({room.display_name}) for {event.display_name}", target_url
+            )
     return safe_redirect(
         url=management_url(request, f"events/{event_id}/rooms/{room_id}/?success=invite_sent"),
         status_code=status.HTTP_303_SEE_OTHER,
@@ -1395,11 +1404,24 @@ async def admin_remove_room_member(request: Request, event_id: int, room_id: int
     "/admin/events/{event_id}/rooms/{room_id}/booths/{booth_id}/members/", dependencies=[Depends(require_admin)]
 )
 async def admin_add_booth_member(request: Request, event_id: int, room_id: int, booth_id: int):
+    async with get_session() as session:
+        room = await get_room_by_id(session, room_id)
+        if room is None or room.event_id != event_id:
+            raise HTTPException(status_code=404, detail="Room not found.")
+        booth = await get_booth_by_id(session, booth_id)
+        if booth is None or booth.room_id != room_id or booth.event_id != event_id:
+            raise HTTPException(status_code=404, detail="Booth not found.")
     form = await request.form()
     email = form.get("email", "").strip()
     role = form.get("role", "").strip()
     if email:
         async with get_session() as session:
+            room = await get_room_by_id(session, room_id)
+            if room is None or room.event_id != event_id:
+                raise HTTPException(status_code=404, detail="Room not found.")
+            booth = await get_booth_by_id(session, booth_id)
+            if booth is None or booth.room_id != room_id or booth.event_id != event_id:
+                raise HTTPException(status_code=404, detail="Booth not found.")
             user = await get_user_by_email(session, email)
             if not user:
                 display_name = email.split("@")[0]
@@ -1411,12 +1433,11 @@ async def admin_add_booth_member(request: Request, event_id: int, room_id: int, 
                     await set_booth_membership(session, user_id=uid, booth_id=booth_id, role=role)
                     # Send invite
                     event = await get_event_by_id(session, event_id)
-                    booth = await get_booth_by_id(session, booth_id)
                     if event and booth:
                         target_url = "/interpreter"
                         await _send_admin_invite(
                             session, user, role, f"booth ({booth.language_code}) for {event.display_name}", target_url
-                        )
+                         )
                 except ValueError:
                     return safe_redirect(
                         url=management_url(
@@ -1443,18 +1464,24 @@ async def admin_add_booth_member(request: Request, event_id: int, room_id: int, 
 )
 async def admin_invite_booth_member(request: Request, event_id: int, room_id: int, booth_id: int, membership_id: int):
     async with get_session() as session:
-        memberships = await list_memberships_for_booth(session, booth_id)
-        for m in memberships:
-            if m.id == membership_id:
-                user = await get_user_by_id(session, m.user_id)
-                event = await get_event_by_id(session, event_id)
-                booth = await get_booth_by_id(session, booth_id)
-                if user and event and booth:
-                    target_url = "/interpreter"
-                    await _send_admin_invite(
-                        session, user, m.role, f"booth ({booth.language_code}) for {event.display_name}", target_url
-                    )
-                break
+        room = await get_room_by_id(session, room_id)
+        if room is None or room.event_id != event_id:
+            raise HTTPException(status_code=404, detail="Room not found.")
+        booth = await get_booth_by_id(session, booth_id)
+        if booth is None or booth.room_id != room_id or booth.event_id != event_id:
+            raise HTTPException(status_code=404, detail="Booth not found.")
+        membership = await session.scalar(
+            select(BoothMembership).where(BoothMembership.id == membership_id, BoothMembership.booth_id == booth_id)
+        )
+        if membership is None:
+            raise HTTPException(status_code=404, detail="Membership not found.")
+        user = await get_user_by_id(session, membership.user_id)
+        event = await get_event_by_id(session, event_id)
+        if user and event and booth:
+            target_url = "/interpreter"
+            await _send_admin_invite(
+                session, user, membership.role, f"booth ({booth.language_code}) for {event.display_name}", target_url
+            )
     return safe_redirect(
         url=management_url(
             request,
@@ -2011,11 +2038,18 @@ async def admin_event_members(request: Request, event_id: int):
 
 @router.post("/admin/events/{event_id}/members/", dependencies=[Depends(require_admin)])
 async def admin_add_event_member(request: Request, event_id: int):
+    async with get_session() as session:
+        event = await get_event_by_id(session, event_id)
+        if event is None:
+            raise HTTPException(status_code=404, detail="Event not found.")
     form = await request.form()
     email = form.get("email", "").strip()
     role = form.get("role", "").strip()
     if email:
         async with get_session() as session:
+            event = await get_event_by_id(session, event_id)
+            if event is None:
+                raise HTTPException(status_code=404, detail="Event not found.")
             user = await get_user_by_email(session, email)
             if not user:
                 display_name = email.split("@")[0]
@@ -2026,7 +2060,6 @@ async def admin_add_event_member(request: Request, event_id: int):
                 try:
                     await set_event_membership(session, user_id=uid, event_id=event_id, role=role)
                     # Send invite
-                    event = await get_event_by_id(session, event_id)
                     if event:
                         target_url = "/account"
                         await _send_admin_invite(session, user, role, f"event {event.display_name}", target_url)
@@ -2049,15 +2082,18 @@ async def admin_add_event_member(request: Request, event_id: int):
 @router.post("/admin/events/{event_id}/members/{membership_id}/invite", dependencies=[Depends(require_admin)])
 async def admin_invite_event_member(request: Request, event_id: int, membership_id: int):
     async with get_session() as session:
-        memberships = await list_memberships_for_event(session, event_id)
-        for m in memberships:
-            if m.id == membership_id:
-                user = await get_user_by_id(session, m.user_id)
-                event = await get_event_by_id(session, event_id)
-                if user and event:
-                    target_url = "/account"
-                    await _send_admin_invite(session, user, m.role, f"event {event.display_name}", target_url)
-                break
+        event = await get_event_by_id(session, event_id)
+        if event is None:
+            raise HTTPException(status_code=404, detail="Event not found.")
+        membership = await session.scalar(
+            select(EventMembership).where(EventMembership.id == membership_id, EventMembership.event_id == event_id)
+        )
+        if membership is None:
+            raise HTTPException(status_code=404, detail="Membership not found.")
+        user = await get_user_by_id(session, membership.user_id)
+        if user and event:
+            target_url = "/account"
+            await _send_admin_invite(session, user, membership.role, f"event {event.display_name}", target_url)
     return safe_redirect(
         url=management_url(request, f"events/{event_id}/members/?success=invite_sent"),
         status_code=status.HTTP_303_SEE_OTHER,
@@ -2085,6 +2121,13 @@ async def admin_remove_event_member(request: Request, event_id: int, membership_
     "/admin/events/{event_id}/rooms/{room_id}/booths/{booth_id}/tokens/", dependencies=[Depends(require_admin)]
 )
 async def admin_create_token(request: Request, event_id: int, room_id: int, booth_id: int):
+    async with get_session() as session:
+        room = await get_room_by_id(session, room_id)
+        if room is None or room.event_id != event_id:
+            raise HTTPException(status_code=404, detail="Room not found.")
+        booth = await get_booth_by_id(session, booth_id)
+        if booth is None or booth.room_id != room_id or booth.event_id != event_id:
+            raise HTTPException(status_code=404, detail="Booth not found.")
     form = await request.form()
     role = form.get("role", "").strip()
     label = form.get("label", "").strip()
@@ -2097,6 +2140,12 @@ async def admin_create_token(request: Request, event_id: int, room_id: int, boot
             pass
     if role:
         async with get_session() as session:
+            room = await get_room_by_id(session, room_id)
+            if room is None or room.event_id != event_id:
+                raise HTTPException(status_code=404, detail="Room not found.")
+            booth = await get_booth_by_id(session, booth_id)
+            if booth is None or booth.room_id != room_id or booth.event_id != event_id:
+                raise HTTPException(status_code=404, detail="Booth not found.")
             await create_invite_token(session, booth_id=booth_id, role=role, label=label, expires_at=expires_at)
     return safe_redirect(
         url=management_url(request, f"events/{event_id}/rooms/{room_id}/booths/{booth_id}/"),

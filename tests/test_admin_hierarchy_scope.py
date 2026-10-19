@@ -769,3 +769,159 @@ class TestSiblingSubresourceSecurity:
             sibling_b = await s.get(InviteToken, scope["invite_b"])
             assert sibling_a2 is not None and sibling_a2.is_used is False
             assert sibling_b is not None and sibling_b.is_used is False
+
+    @pytest.mark.anyio
+    async def test_owner_cross_event_token_creation_rejected(self, booth_scope):
+        """Owner A cannot create a token for Booth B via mismatched URL parameters."""
+        from portal.database import get_session, list_tokens_for_booth
+
+        scope = booth_scope
+        async with get_session() as s:
+            tokens_before = await list_tokens_for_booth(s, scope["booth_b"])
+
+        async with _client() as c:
+            resp = await c.post(
+                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_a1']}/booths/{scope['booth_b']}/tokens/",
+                data={"role": "interpreter", "label": "malicious token"},
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+        assert resp.status_code == 404
+        async with get_session() as s:
+            tokens_after = await list_tokens_for_booth(s, scope["booth_b"])
+            assert len(tokens_after) == len(tokens_before)
+
+    @pytest.mark.anyio
+    async def test_owner_same_event_wrong_room_token_creation_rejected(self, booth_scope):
+        """Owner A cannot create a token for Booth A2 via Room A1 URL parameters."""
+        from portal.database import get_session, list_tokens_for_booth
+
+        scope = booth_scope
+        async with get_session() as s:
+            tokens_before = await list_tokens_for_booth(s, scope["booth_a2"])
+
+        async with _client() as c:
+            resp = await c.post(
+                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_a1']}/booths/{scope['booth_a2']}/tokens/",
+                data={"role": "interpreter", "label": "wrong room token"},
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+        assert resp.status_code == 404
+        async with get_session() as s:
+            tokens_after = await list_tokens_for_booth(s, scope["booth_a2"])
+            assert len(tokens_after) == len(tokens_before)
+
+    @pytest.mark.anyio
+    async def test_owner_cross_event_booth_member_add_rejected(self, booth_scope):
+        """Owner A cannot add a member to Booth B via mismatched URL parameters."""
+        from portal.database import get_session, list_memberships_for_booth
+
+        scope = booth_scope
+        async with get_session() as s:
+            members_before = await list_memberships_for_booth(s, scope["booth_b"])
+
+        async with _client() as c:
+            resp = await c.post(
+                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_a1']}/booths/{scope['booth_b']}/members/",
+                data={"email": "new-interp@example.com", "role": "interpreter"},
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+        assert resp.status_code == 404
+        async with get_session() as s:
+            members_after = await list_memberships_for_booth(s, scope["booth_b"])
+            assert len(members_after) == len(members_before)
+
+    @pytest.mark.anyio
+    async def test_owner_cross_event_room_member_add_rejected(self, booth_scope):
+        """Owner A cannot add a room coordinator to Room B via mismatched URL parameters."""
+        from portal.database import get_session, list_memberships_for_room
+
+        scope = booth_scope
+        async with get_session() as s:
+            members_before = await list_memberships_for_room(s, scope["room_b"])
+
+        async with _client() as c:
+            resp = await c.post(
+                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_b']}/members/",
+                data={"email": "new-coord@example.com", "role": "room_coordinator"},
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+        assert resp.status_code == 404
+        async with get_session() as s:
+            members_after = await list_memberships_for_room(s, scope["room_b"])
+            assert len(members_after) == len(members_before)
+
+    @pytest.mark.anyio
+    async def test_owner_cross_event_booth_member_invite_rejected(self, booth_scope):
+        """Owner A cannot trigger invite for Booth B member via mismatched URL parameters."""
+        scope = booth_scope
+        async with _client() as c:
+            resp = await c.post(
+                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_a1']}/booths/{scope['booth_b']}/members/{scope['membership_b']}/invite",
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+        assert resp.status_code == 404
+
+    @pytest.mark.anyio
+    async def test_owner_cross_event_room_member_invite_rejected(self, booth_scope):
+        """Owner A cannot trigger invite for Room B member via mismatched URL parameters."""
+        scope = booth_scope
+        async with _client() as c:
+            resp = await c.post(
+                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_b']}/members/{scope['rm_b']}/invite",
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+        assert resp.status_code == 404
+
+    @pytest.mark.anyio
+    async def test_owner_cross_event_event_member_invite_rejected(self, booth_scope):
+        """Owner A cannot trigger invite for Event B member via mismatched URL parameters."""
+        scope = booth_scope
+        async with _client() as c:
+            resp = await c.post(
+                f"/workspace/events/{scope['event_a']}/members/{scope['em_b']}/invite",
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+        assert resp.status_code == 404
+
+    @pytest.mark.anyio
+    async def test_legitimate_token_creation_succeeds(self, booth_scope):
+        """Owner A can create a token for Booth A1."""
+        from portal.database import get_session, list_tokens_for_booth
+
+        scope = booth_scope
+        async with _client() as c:
+            resp = await c.post(
+                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_a1']}/booths/{scope['booth_a1']}/tokens/",
+                data={"role": "interpreter", "label": "fresh token"},
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+        assert resp.status_code == 303
+        async with get_session() as s:
+            tokens = await list_tokens_for_booth(s, scope["booth_a1"])
+            assert any(t.label == "fresh token" for t in tokens)
+
+    @pytest.mark.anyio
+    async def test_legitimate_booth_member_add_succeeds(self, booth_scope):
+        """Owner A can add a member to Booth A1."""
+        from portal.database import get_session, list_memberships_for_booth
+
+        scope = booth_scope
+        async with _client() as c:
+            resp = await c.post(
+                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_a1']}/booths/{scope['booth_a1']}/members/",
+                data={"email": "legit-interp@example.com", "role": "interpreter"},
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+        assert resp.status_code == 303
+        async with get_session() as s:
+            members = await list_memberships_for_booth(s, scope["booth_a1"])
+            assert any(m.role == "interpreter" for m in members)
