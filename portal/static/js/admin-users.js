@@ -20,6 +20,8 @@ function confirmChange(message) {
   if (!message) return Promise.resolve(true);
   if (!dialog || typeof dialog.showModal !== 'function') return Promise.resolve(window.confirm(message));
   dialog.querySelector('[data-confirm-text]').textContent = message;
+  // Escape closes the dialog without setting returnValue, so clear the previous answer.
+  dialog.returnValue = '';
   return new Promise((resolve) => {
     dialog.addEventListener('close', () => resolve(dialog.returnValue === 'confirm'), { once: true });
     dialog.showModal();
