@@ -21,7 +21,10 @@
   background: var(--ah-surface);
   border-bottom: 1px solid var(--ah-border);
   font-family: Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
 }
+.app-header p { line-height: 1.4; }
 
 .app-header-inner {
   width: min(1280px, 100% - 2 * var(--ah-gutter));

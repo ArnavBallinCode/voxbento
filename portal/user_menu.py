@@ -56,6 +56,20 @@ class UserMenu:
     def area_label(self) -> str:
         return AREA_LABELS[self.area]
 
+    @property
+    def short_name(self) -> str:
+        return short_user_label(self.display_name, self.email)
+
+
+SHORT_LABEL_MAX = 11
+
+
+def short_user_label(display_name: str, email: str) -> str:
+    """Name on the menu button, as in Eventyay: first name, else the email's local part, at most 11 characters."""
+    parts = (display_name or "").split()
+    label = parts[0] if parts else (email or "").split("@")[0]
+    return label if len(label) <= SHORT_LABEL_MAX else f"{label[:SHORT_LABEL_MAX]}…"
+
 
 def area_for_request(request: Request, *, is_super_admin: bool) -> str:
     """Name the area a page belongs to from its path."""

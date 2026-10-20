@@ -41,9 +41,9 @@
     {% endif %}
     {% if user_menu %}
     <div class="app-user" data-user-menu>
-      <button type="button" class="app-user-button" aria-expanded="false" aria-controls="app-user-menu" aria-label="{{ user_menu.display_name }}, user menu" data-user-menu-button>
+      <button type="button" class="app-user-button" aria-expanded="false" aria-controls="app-user-menu" aria-label="User menu - {{ user_menu.display_name }}" data-user-menu-button>
         {{ menu_icon('user') }}
-        <span class="app-user-name">{{ user_menu.display_name }}</span>
+        <span class="app-user-name">{{ user_menu.short_name }}</span>
         <span class="app-user-chevron">{{ menu_icon('chevron') }}</span>
       </button>
       <div class="app-user-menu" id="app-user-menu" hidden>

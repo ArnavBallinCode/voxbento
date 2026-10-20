@@ -91,7 +91,7 @@ async def test_menu_shows_name_email_and_everyone_entries():
     async with client() as http:
         res = await http.get("/account", cookies=cookies)
     assert res.status_code == 200
-    assert 'aria-label="Priya, user menu"' in res.text
+    assert 'aria-label="User menu - Priya"' in res.text
     assert '<span class="app-user-name">Priya</span>' in res.text
     assert '<p class="app-user-head-name">Priya</p>' in res.text
     assert '<p class="app-user-head-email">priya@example.org</p>' in res.text
@@ -269,3 +269,22 @@ async def test_my_events_hides_deleted_events():
         res = await http.get("/workspace/", cookies=cookies)
     assert "Gone Event" not in res.text
     assert "No events yet" in res.text
+
+
+@pytest.mark.anyio
+async def test_menu_button_shows_a_short_name_like_eventyay():
+    _, cookies = await make_user("alexandra@example.org", "Alexandrakonstantinou Papadopoulou")
+    async with client() as http:
+        res = await http.get("/account", cookies=cookies)
+    assert '<span class="app-user-name">Alexandrako…</span>' in res.text
+    assert '<p class="app-user-head-name">Alexandrakonstantinou Papadopoulou</p>' in res.text
+    assert 'aria-label="User menu - Alexandrakonstantinou Papadopoulou"' in res.text
+
+
+@pytest.mark.anyio
+async def test_short_user_label():
+    from portal.user_menu import short_user_label
+
+    assert short_user_label("Lukas Becker", "lukas@example.org") == "Lukas"
+    assert short_user_label("", "priya.k@example.org") == "priya.k"
+    assert short_user_label("Hong", "hong@example.org") == "Hong"
