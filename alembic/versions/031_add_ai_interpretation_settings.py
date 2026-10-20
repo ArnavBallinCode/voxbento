@@ -1,7 +1,7 @@
 """Add AI interpretation settings and vocabulary entries.
 
-Revision ID: 028
-Revises: 027
+Revision ID: 031
+Revises: 030
 Create Date: 2026-09-28
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = "028"
-down_revision: Union[str, Sequence[str], None] = "027"
+revision: str = "031"
+down_revision: Union[str, Sequence[str], None] = "030"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
