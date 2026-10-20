@@ -17,7 +17,6 @@ on:
 
 permissions:
   pull-requests: write
-  issues: write
   contents: read
 
 jobs:
@@ -70,6 +69,12 @@ jobs:
                 // Skip draft PRs
                 if (pr.draft) {
                   core.info(`#${n}: draft PR, skipping.`);
+                  continue;
+                }
+
+                // Only check PRs targeting the main integration branches (dev or main)
+                if (!['dev', 'main'].includes(pr.base?.ref)) {
+                  core.info(`#${n}: base branch '${pr.base?.ref}' is not dev or main, skipping.`);
                   continue;
                 }
 
