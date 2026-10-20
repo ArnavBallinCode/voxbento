@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, sta
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -98,12 +98,12 @@ from portal.email import (
 from portal.globals import _JS_CACHE_BUST, asset_version_context, booths
 from portal.hosting_requests import DECLINE_REASON_MAX, format_event_dates, multi_line
 from portal.models import (
-    AIVocabularyEntry,
     HOSTING_REQUEST_DECLINED,
     HOSTING_REQUEST_GRANTED,
     HOSTING_REQUEST_OPEN,
     TOKEN_TYPE_HOSTING_INVITE,
     TOKEN_TYPE_MAGIC_LINK,
+    AIVocabularyEntry,
     AuthToken,
     BoothTranslationLanguage,
     DBBooth,
