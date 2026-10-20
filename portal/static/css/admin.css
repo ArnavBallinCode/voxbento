@@ -1488,7 +1488,7 @@ code { font-family: var(--font-mono); font-size: 0.85em; background: var(--color
 .ud-pill--off { background: #eef1f6; color: #475467; }
 
 .ud-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; }
-.ud-main, .ud-side { display: grid; gap: 24px; min-width: 0; }
+.ud-main, .ud-side { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; min-width: 0; }
 .ud-card-title { margin: 0; padding: 16px 24px; border-bottom: 1px solid var(--color-border); font-size: 1.125rem; font-weight: 700; color: var(--color-text); }
 .ud-card-note { margin: 0; padding: 16px 24px 12px; color: var(--color-text-secondary); font-size: 0.9375rem; }
 .ud-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 16px 24px; flex-wrap: wrap; }
@@ -1525,7 +1525,7 @@ code { font-family: var(--font-mono); font-size: 0.85em; background: var(--color
 .ud-confirm-input:focus { outline: none; border-color: #b42318; box-shadow: 0 0 0 3px #fee4e2; }
 
 @media (max-width: 960px) {
-  .ud-layout { grid-template-columns: 1fr; }
+  .ud-layout { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 640px) {
   .ul-count { margin-left: 0; width: 100%; }
