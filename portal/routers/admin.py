@@ -179,6 +179,9 @@ async def _create_booth_unless_duplicate(
 ) -> bool:
     try:
         async with get_session() as session:
+            room = await get_room_by_id(session, room_id)
+            if room is None or room.event_id != event_id:
+                raise ValueError(f"Room {room_id} does not belong to event {event_id}.")
             if await _room_has_booth_language(session, room_id, language_code):
                 return False
             await create_booth(
@@ -572,6 +575,10 @@ async def admin_setup_booths(request: Request, event_id: int):
 
 @router.post("/admin/events/{event_id}/setup/booths", dependencies=[Depends(require_admin)])
 async def admin_setup_add_booth(request: Request, event_id: int):
+    async with get_session() as session:
+        event = await get_event_by_id(session, event_id)
+        if event is None:
+            raise HTTPException(status_code=404, detail="Event not found.")
     form = await request.form()
     room_id_str = form.get("room_id", "").strip()
     language_code = form.get("language_code", "").strip().lower()
@@ -1003,48 +1010,57 @@ async def admin_edit_room(request: Request, event_id: int, room_id: int):
         floor_tts_voice = "M1"
     async with get_session() as session:
         room = await get_room_by_id(session, room_id)
-        if room and room.event_id == event_id:
-            if not form_section or form_section == "general":
-                if display_name:
-                    room.display_name = display_name
-                room.jitsi_url = jitsi_url if jitsi_url else None
-                room.audio_delay_ms = audio_delay_ms
+        if room is None or room.event_id != event_id:
+            raise HTTPException(status_code=404, detail="Room not found.")
 
-            if not form_section or form_section == "relay":
-                room.relay_booth_id = relay_booth_id
+        if not form_section or form_section == "general":
+            if display_name:
+                room.display_name = display_name
+            room.jitsi_url = jitsi_url if jitsi_url else None
+            room.audio_delay_ms = audio_delay_ms
 
-            if not form_section or form_section == "transcription":
-                room.floor_transcription_enabled = floor_transcription_enabled
-                room.floor_transcription_provider = floor_transcription_provider
-                room.floor_transcription_model = floor_transcription_model
-                room.floor_language_code = floor_language_code
+        if not form_section or form_section == "relay":
+            if relay_booth_id is not None:
+                relay_booth = await get_booth_by_id(session, relay_booth_id)
+                if relay_booth is None or relay_booth.event_id != event_id:
+                    raise HTTPException(status_code=404, detail="Booth not found.")
+                relay_room = await get_room_by_id(session, relay_booth.room_id)
+                if relay_room is None or relay_room.event_id != event_id:
+                    raise HTTPException(status_code=404, detail="Booth not found.")
+            room.relay_booth_id = relay_booth_id
 
-            if not form_section or form_section == "translation":
-                room.floor_translation_enabled = floor_translation_enabled
-                room.floor_translation_provider = floor_translation_provider
-                room.floor_translation_model = floor_translation_model
+        if not form_section or form_section == "transcription":
+            room.floor_transcription_enabled = floor_transcription_enabled
+            room.floor_transcription_provider = floor_transcription_provider
+            room.floor_transcription_model = floor_transcription_model
+            room.floor_language_code = floor_language_code
 
-                existing_langs = {lang.language_code: lang for lang in room.translation_languages}
-                requested_codes = set(floor_translation_languages)
-                for code, lang in existing_langs.items():
-                    if code not in requested_codes:
-                        lang.enabled = False
-                for code in requested_codes:
-                    if code in existing_langs:
-                        existing_langs[code].enabled = True
-                    else:
-                        lang_obj = pycountry.languages.get(alpha_2=code)
-                        lang_name = lang_obj.name if lang_obj else code
-                        new_lang = RoomTranslationLanguage(
-                            room_id=room_id, language_code=code, language_name=lang_name, enabled=True
-                        )
-                        session.add(new_lang)
+        if not form_section or form_section == "translation":
+            room.floor_translation_enabled = floor_translation_enabled
+            room.floor_translation_provider = floor_translation_provider
+            room.floor_translation_model = floor_translation_model
 
-            if not form_section or form_section == "tts":
-                room.floor_tts_enabled = floor_tts_enabled
-                room.floor_tts_provider = floor_tts_provider
-                room.floor_tts_voice = floor_tts_voice
-            await session.flush()
+            existing_langs = {lang.language_code: lang for lang in room.translation_languages}
+            requested_codes = set(floor_translation_languages)
+            for code, lang in existing_langs.items():
+                if code not in requested_codes:
+                    lang.enabled = False
+            for code in requested_codes:
+                if code in existing_langs:
+                    existing_langs[code].enabled = True
+                else:
+                    lang_obj = pycountry.languages.get(alpha_2=code)
+                    lang_name = lang_obj.name if lang_obj else code
+                    new_lang = RoomTranslationLanguage(
+                        room_id=room_id, language_code=code, language_name=lang_name, enabled=True
+                    )
+                    session.add(new_lang)
+
+        if not form_section or form_section == "tts":
+            room.floor_tts_enabled = floor_tts_enabled
+            room.floor_tts_provider = floor_tts_provider
+            room.floor_tts_voice = floor_tts_voice
+        await session.flush()
     return safe_redirect(
         url=management_url(request, f"events/{event_id}/rooms/{room_id}/"),
         status_code=status.HTTP_303_SEE_OTHER,

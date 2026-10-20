@@ -904,9 +904,10 @@ class TestSiblingSubresourceSecurity:
                 follow_redirects=False,
             )
         assert resp.status_code == 303
+        assert "error=" not in resp.headers["location"]
         async with get_session() as s:
             tokens = await list_tokens_for_booth(s, scope["booth_a1"])
-            assert any(t.label == "fresh token" for t in tokens)
+            assert any(t.label == "fresh token" and t.role == "interpreter" for t in tokens)
 
     @pytest.mark.anyio
     async def test_legitimate_booth_member_add_succeeds(self, booth_scope):
@@ -922,6 +923,178 @@ class TestSiblingSubresourceSecurity:
                 follow_redirects=False,
             )
         assert resp.status_code == 303
+        assert "error=" not in resp.headers["location"]
         async with get_session() as s:
             members = await list_memberships_for_booth(s, scope["booth_a1"])
-            assert any(m.role == "interpreter" for m in members)
+            assert any(m.user.email == "legit-interp@example.com" and m.role == "interpreter" for m in members)
+
+    @pytest.mark.anyio
+    async def test_cross_event_setup_add_booth_rejected(self, booth_scope):
+        """Owner A cannot add a booth to Room B via the setup wizard."""
+        from sqlalchemy import select
+
+        from portal.database import get_session
+        from portal.models import DBBooth
+
+        scope = booth_scope
+        async with _client() as c:
+            resp = await c.post(
+                f"/workspace/events/{scope['event_a']}/setup/booths",
+                data={"room_id": str(scope["room_b"]), "language_code": "it", "language_name": "Italian"},
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+        assert resp.status_code == 303
+        assert "duplicate_language" not in resp.headers.get("location", "")
+        async with get_session() as s:
+            created = (
+                (
+                    await s.execute(
+                        select(DBBooth).where(DBBooth.room_id == scope["room_b"], DBBooth.language_code == "it")
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            assert created is None
+
+    @pytest.mark.anyio
+    async def test_cross_event_create_booth_rejected(self, booth_scope):
+        """Owner A cannot create a booth under Room B via the direct booth creation route."""
+        from sqlalchemy import select
+
+        from portal.database import get_session
+        from portal.models import DBBooth
+
+        scope = booth_scope
+        async with _client() as c:
+            resp = await c.post(
+                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_b']}/booths/",
+                data={"language_code": "nl", "language_name": "Dutch"},
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+        assert resp.status_code == 303
+        assert "duplicate_language" not in resp.headers.get("location", "")
+        async with get_session() as s:
+            created = (
+                (
+                    await s.execute(
+                        select(DBBooth).where(DBBooth.room_id == scope["room_b"], DBBooth.language_code == "nl")
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            assert created is None
+
+    @pytest.mark.anyio
+    async def test_cross_event_relay_booth_assignment_rejected(self, booth_scope):
+        """Owner A cannot assign a booth from Event B as relay booth for Room A1."""
+        from portal.database import get_room_by_id, get_session
+
+        scope = booth_scope
+        async with _client() as c:
+            resp = await c.post(
+                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_a1']}/edit",
+                data={"form_section": "relay", "relay_booth_id": str(scope["booth_b"])},
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+        assert resp.status_code == 404
+        async with get_session() as s:
+            room = await get_room_by_id(s, scope["room_a1"])
+            assert room is not None
+            assert room.relay_booth_id != scope["booth_b"]
+
+    @pytest.mark.anyio
+    async def test_nonexistent_relay_booth_assignment_rejected(self, booth_scope):
+        """Assigning a nonexistent relay booth ID is rejected with 404."""
+        from portal.database import get_room_by_id, get_session
+
+        scope = booth_scope
+        async with _client() as c:
+            resp = await c.post(
+                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_a1']}/edit",
+                data={"form_section": "relay", "relay_booth_id": "999999"},
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+        assert resp.status_code == 404
+        async with get_session() as s:
+            room = await get_room_by_id(s, scope["room_a1"])
+            assert room is not None
+            assert room.relay_booth_id != 999999
+
+    @pytest.mark.anyio
+    async def test_same_event_relay_booth_assignment_succeeds(self, booth_scope):
+        """Owner A can assign a booth in the same event (same room or cross-room) as relay booth."""
+        from portal.database import get_room_by_id, get_session
+
+        scope = booth_scope
+        async with _client() as c:
+            # 1. Assign same-room booth A1
+            resp = await c.post(
+                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_a1']}/edit",
+                data={"form_section": "relay", "relay_booth_id": str(scope["booth_a1"])},
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+            assert resp.status_code == 303
+        async with get_session() as s:
+            room = await get_room_by_id(s, scope["room_a1"])
+            assert room.relay_booth_id == scope["booth_a1"]
+
+        async with _client() as c:
+            # 2. Assign same-event cross-room booth A2
+            resp = await c.post(
+                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_a1']}/edit",
+                data={"form_section": "relay", "relay_booth_id": str(scope["booth_a2"])},
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+            assert resp.status_code == 303
+        async with get_session() as s:
+            room = await get_room_by_id(s, scope["room_a1"])
+            assert room.relay_booth_id == scope["booth_a2"]
+
+        async with _client() as c:
+            # 3. Clear relay booth with 'none'
+            resp = await c.post(
+                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_a1']}/edit",
+                data={"form_section": "relay", "relay_booth_id": "none"},
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+            assert resp.status_code == 303
+        async with get_session() as s:
+            room = await get_room_by_id(s, scope["room_a1"])
+            assert room.relay_booth_id is None
+
+    @pytest.mark.anyio
+    async def test_room_edit_transcription_section_updates_fields(self, booth_scope):
+        """Updating room with form_section='transcription' updates transcription settings independently of relay."""
+        from portal.database import get_room_by_id, get_session
+
+        scope = booth_scope
+        async with _client() as c:
+            resp = await c.post(
+                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_a1']}/edit",
+                data={
+                    "form_section": "transcription",
+                    "floor_transcription_enabled": "on",
+                    "floor_transcription_provider": "openai",
+                    "floor_transcription_model": "whisper-1",
+                    "floor_language_code": "es",
+                },
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+            assert resp.status_code == 303
+        async with get_session() as s:
+            room = await get_room_by_id(s, scope["room_a1"])
+            assert room is not None
+            assert room.floor_transcription_enabled is True
+            assert room.floor_transcription_provider == "openai"
+            assert room.floor_transcription_model == "whisper-1"
+            assert room.floor_language_code == "es"
