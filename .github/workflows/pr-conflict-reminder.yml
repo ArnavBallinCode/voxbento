@@ -110,8 +110,9 @@ jobs:
 
                 core.warning(`#${n} (@${author}): has merge conflicts with ${baseRef} on commit ${headSha.slice(0, 7)}`);
 
-                // Check if a reminder for this exact commit was already posted to avoid hourly spam
-                const { data: comments } = await github.rest.issues.listComments({
+                // Check if a reminder for this exact commit was already posted to avoid hourly spam.
+                // We paginate all comments so we never miss the marker on PRs with >100 comments.
+                const comments = await github.paginate(github.rest.issues.listComments, {
                   owner,
                   repo,
                   issue_number: n,
@@ -120,7 +121,7 @@ jobs:
 
                 const alreadyNotified = comments.some((c) => c.body?.includes(marker));
                 if (alreadyNotified) {
-                  core.info(`#${n}: conflict reminder already posted for commit ${headSha.slice(0, 7)}.`);
+                  core.info(`#${n}: conflict reminder already posted for commit ${headSha.slice(0, 7)}. Skipping.`);
                   continue;
                 }
 
