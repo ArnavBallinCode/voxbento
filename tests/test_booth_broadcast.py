@@ -11,9 +11,13 @@ from portal.websockets.manager import ConnectionManager, Session
 class MockWebSocket:
     def __init__(self):
         self.sent_messages = []
+        self.closed_with = None
 
     async def send_text(self, data):
         self.sent_messages.append(data)
+
+    async def close(self, code=1000, reason=""):
+        self.closed_with = (code, reason)
 
 
 def _dropped_websocket() -> WebSocket:
@@ -146,3 +150,38 @@ async def test_revoke_user_sessions():
     assert sess1.revoked is True
     assert sess2.revoked is False
     assert sess3.revoked is False
+
+
+@pytest.mark.anyio
+async def test_close_user_sessions_closes_only_that_users_sockets():
+    manager = ConnectionManager()
+    target = MockWebSocket()
+    other_user = MockWebSocket()
+    invite = MockWebSocket()
+
+    target_session = _session("b1", granted_role="interpreter")
+    target_session.user_id = 7
+    other_session = _session("b1", granted_role="interpreter")
+    other_session.user_id = 8
+    # Invite tokens are bearer capabilities: their UUID ``sub`` never yields a
+    # numeric user_id, so account revocation must not touch them.
+    invite_session = _session("b1", granted_role="interpreter")
+    invite_session.user_id = None
+
+    manager.add(target, target_session)
+    manager.add(other_user, other_session)
+    manager.add(invite, invite_session)
+
+    await manager.close_user_sessions(7)
+
+    assert target.closed_with == (4003, "Authorization revoked")
+    assert target_session.revoked is True
+    assert manager.get_session(target) is None
+
+    assert other_user.closed_with is None
+    assert other_session.revoked is False
+    assert manager.get_session(other_user) is not None
+
+    assert invite.closed_with is None
+    assert invite_session.revoked is False
+    assert manager.get_session(invite) is not None

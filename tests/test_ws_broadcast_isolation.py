@@ -55,7 +55,24 @@ def _invite_cookie(event_slug: str, room_id: int, language_code: str) -> dict:
 
 
 def _admin_cookie() -> dict:
-    return {"user_token": create_user_token(user_id=1, email="admin@test.com", is_admin=True)}
+    """A user_token for a real, database-backed Admin.
+
+    Admin authorization is read from the live user row at WebSocket connect
+    time (#757), so the account must exist and be active — an ``is_admin``
+    claim alone is not enough.
+    """
+    import anyio
+
+    from portal.database import create_user, get_session, get_user_by_email
+
+    async def admin_id() -> int:
+        async with get_session() as session:
+            user = await get_user_by_email(session, "admin@test.com")
+            if user is None:
+                user = await create_user(session, email="admin@test.com", display_name="Admin", is_admin=True)
+            return user.id
+
+    return {"user_token": create_user_token(user_id=anyio.run(admin_id), email="admin@test.com", is_admin=True)}
 
 
 def _join(ws, display_name: str = "Pat", role: str = "interpreter", language: str = "French") -> dict:
@@ -253,6 +270,9 @@ def test_captions_listener_receives_sanitized_state_without_chat_or_participants
         assert len(state_msgs) >= 1
         for msg in state_msgs:
             state = msg["state"]
+            # The listener feed is a deliberately narrow projection: adding any
+            # other booth field here would leak private coordination data.
+            assert set(state) == {"booth_id", "broadcast_unlocked", "ingest_status"}
             assert state.get("broadcast_unlocked") is True
             assert "participants" not in state
             assert "chat_messages" not in state
@@ -285,10 +305,10 @@ def test_unsupported_role_token_receives_no_broadcasts():
 
 
 def test_legitimate_observer_roles_continue_receiving_broadcasts():
-    """All supported roles (interpreter, room_coordinator, super_admin, support) receive broadcasts."""
-    for i, role in enumerate(("interpreter", "room_coordinator", "super_admin", "support"), start=30):
+    """Every supported role (admin, event_owner, room_coordinator, interpreter) receives broadcasts."""
+    for i, role in enumerate(("admin", "event_owner", "room_coordinator", "interpreter"), start=30):
         bid = f"iso-{i}-en"
-        if role == "super_admin":
+        if role == "admin":
             cookie = _admin_cookie()
         else:
             tok = create_participant_token(
@@ -358,8 +378,138 @@ def test_revoked_session_send_is_rejected_and_closed():
         assert exc_info.value.code == 4003
 
 
+def test_revoked_invite_session_receives_no_broadcasts():
+    """An invite-authenticated socket (no account user_id) can still be revoked."""
+    bid = "iso-25-en"
+    with client.websocket_connect(f"/ws/booth/{bid}", cookies=_invite_cookie("iso", 25, "en")) as ws:
+        ws.send_text(json.dumps({"type": "booth:ping-sync"}))
+        assert json.loads(ws.receive_text())["type"] == "booth:error"
+
+        room_sockets = list(manager._rooms.get(bid, set()))
+        assert len(room_sockets) == 1
+        target_ws = room_sockets[0]
+        session = manager.get_session(target_ws)
+        assert session is not None
+        # Invite tokens carry a UUID ``sub``; they are not account sessions.
+        assert session.user_id is None
+        manager.revoke_session(target_ws)
+
+        with client.websocket_connect(f"/ws/booth/{bid}", cookies=_admin_cookie()) as actor:
+            _join(actor, display_name="Actor", language="English")
+            actor.send_text(json.dumps({"type": "booth:chat", "body": "after invite revocation"}))
+            assert json.loads(actor.receive_text())["type"] == "booth:chat"
+
+        got = _try_receive(ws, timeout=2.0)
+        assert got == []
+
+
+def _seed_booth_user(email: str) -> tuple[int, str]:
+    """Create an event/room/booth and an interpreter booth membership for *email*."""
+    import anyio
+
+    from portal.database import (
+        create_booth,
+        create_event,
+        create_room,
+        create_user,
+        get_session,
+        set_booth_membership,
+    )
+
+    async def seed() -> tuple[int, str]:
+        async with get_session() as session:
+            event = await create_event(session, slug="revoke", display_name="Revocation")
+            room = await create_room(session, event_id=event.id, display_name="Revocation Room")
+            booth = await create_booth(
+                session,
+                event_id=event.id,
+                room_id=room.id,
+                language_code="en",
+                language_name="English",
+            )
+            user = await create_user(session, email=email, display_name="Target", password_hash="hash")
+            await set_booth_membership(session, user_id=user.id, booth_id=booth.id, role="interpreter")
+            return user.id, f"revoke-{room.id}-en"
+
+    return anyio.run(seed)
+
+
+def test_deactivating_user_closes_live_booth_session():
+    """Deactivating an account ends its live booth session immediately (#809).
+
+    The Admin Users flow is the production authorization-change path; it must
+    revoke sockets opened before the change, not only affect future logins.
+    """
+    from starlette.websockets import WebSocketDisconnect
+
+    user_id, bid = _seed_booth_user("revoked@test.com")
+    cookie = {"user_token": create_user_token(user_id=user_id, email="revoked@test.com")}
+    with client.websocket_connect(f"/ws/booth/{bid}", cookies=cookie) as ws:
+        ws.send_text(json.dumps({"type": "booth:ping-sync"}))
+        assert json.loads(ws.receive_text())["type"] == "booth:error"
+
+        response = client.post(
+            f"/admin/users/{user_id}/access",
+            data={"field": "active", "value": "false"},
+            cookies=_admin_cookie(),
+            headers={"origin": "http://testserver", "accept": "application/json"},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["ok"] is True
+
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            ws.receive_text()
+        assert exc_info.value.code == 4003
+
+
 def test_fixture_restores_booth_access_token(monkeypatch):
     """Verify test fixture isolation: settings.booth_access_token is empty in test scope."""
     from portal.config import settings
 
     assert settings.booth_access_token == ""
+
+
+def test_deactivated_user_cannot_reconnect_over_websocket():
+    """Assert deactivated user cannot reconnect over WebSocket with a valid token."""
+    from starlette.websockets import WebSocketDisconnect
+
+    user_id, bid = _seed_booth_user("reconnect@test.com")
+    cookie = {"user_token": create_user_token(user_id=user_id, email="reconnect@test.com")}
+    with client.websocket_connect(f"/ws/booth/{bid}", cookies=cookie) as ws:
+        ws.send_text(json.dumps({"type": "booth:ping-sync"}))
+        assert json.loads(ws.receive_text())["type"] == "booth:error"
+
+        response = client.post(
+            f"/admin/users/{user_id}/access",
+            data={"field": "active", "value": "false"},
+            cookies=_admin_cookie(),
+            headers={"origin": "http://testserver", "accept": "application/json"},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["ok"] is True
+
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            ws.receive_text()
+        assert exc_info.value.code == 4003
+
+    with pytest.raises(WebSocketDisconnect) as exc_info:
+        with client.websocket_connect(f"/ws/booth/{bid}", cookies=cookie):
+            pass
+    assert exc_info.value.code == 4003
+
+
+def test_active_user_and_invite_token_connect_successfully():
+    """Assert active user with membership and invite token can connect."""
+    user_id, bid = _seed_booth_user("active@test.com")
+    cookie = {"user_token": create_user_token(user_id=user_id, email="active@test.com")}
+    with client.websocket_connect(f"/ws/booth/{bid}", cookies=cookie) as ws:
+        _join(ws, display_name="Active User", language="English")
+        assert _room_size(bid) == 1
+
+    from portal.booth_identity import parse_booth_id
+
+    event_slug, room_id, lang_code = parse_booth_id(bid)
+    invite_cookies = _invite_cookie(event_slug, room_id, lang_code)
+    with client.websocket_connect(f"/ws/booth/{bid}", cookies=invite_cookies) as ws:
+        _join(ws, display_name="Invited User", language="English")
+        assert _room_size(bid) == 1
