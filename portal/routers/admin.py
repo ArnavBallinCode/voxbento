@@ -225,6 +225,7 @@ async def _room_has_booth_language(session: AsyncSession, room_id: int, language
 async def _create_booth_unless_duplicate(
     *, event_id: int, room_id: int, language_code: str, language_name: str
 ) -> bool:
+    """Create a booth for a room unless a booth with that language already exists."""
     try:
         async with get_session() as session:
             room = await get_room_by_id(session, room_id)
@@ -638,6 +639,7 @@ async def admin_setup_booths(request: Request, event_id: int):
 
 @router.post("/admin/events/{event_id}/setup/booths", dependencies=[Depends(require_event_owner)])
 async def admin_setup_add_booth(request: Request, event_id: int):
+    """Add a booth to a room during event setup."""
     async with get_session() as session:
         event = await get_event_by_id(session, event_id)
         if event is None:
@@ -1069,6 +1071,7 @@ async def admin_room_transcripts(request: Request, event_id: int, room_id: int):
 
 @router.post("/admin/events/{event_id}/rooms/{room_id}/edit", dependencies=[Depends(require_event_owner)])
 async def admin_edit_room(request: Request, event_id: int, room_id: int):
+    """Update settings and configuration for an event room."""
     form = await request.form()
     form_section = form.get("form_section", "").strip()
     display_name = form.get("display_name", "").strip()
@@ -1555,22 +1558,17 @@ async def admin_booth_detail(request: Request, event_id: int, room_id: int, boot
 
 @router.post("/admin/events/{event_id}/rooms/{room_id}/members/", dependencies=[Depends(require_event_owner)])
 async def admin_add_room_member(request: Request, event_id: int, room_id: int):
+    """Add or update a room membership assignment for a user."""
     async with get_session() as session:
-        room = await get_room_by_id(session, room_id)
-        if room is None or room.event_id != event_id:
-            raise HTTPException(status_code=404, detail="Room not found.")
+        await room_in_event(session, event_id, room_id)
     form = await request.form()
     email = form.get("email", "").strip()
     role = form.get("role", "").strip()
     if role and assignment_error(role, "room"):
         return invalid_role_redirect(request, f"events/{event_id}/rooms/{room_id}/", role)
-    async with get_session() as session:
-        await room_in_event(session, event_id, room_id)
     if email:
         async with get_session() as session:
-            room = await get_room_by_id(session, room_id)
-            if room is None or room.event_id != event_id:
-                raise HTTPException(status_code=404, detail="Room not found.")
+            room = await room_in_event(session, event_id, room_id)
             user = await get_user_by_email(session, email)
             if not user:
                 display_name = email.split("@")[0]
@@ -1608,6 +1606,7 @@ async def admin_add_room_member(request: Request, event_id: int, room_id: int):
     "/admin/events/{event_id}/rooms/{room_id}/members/{membership_id}/invite", dependencies=[Depends(require_event_owner)]
 )
 async def admin_invite_room_member(request: Request, event_id: int, room_id: int, membership_id: int):
+    """Send an invitation email to a room member."""
     async with get_session() as session:
         room = await room_in_event(session, event_id, room_id)
         membership = await session.scalar(
@@ -1632,6 +1631,7 @@ async def admin_invite_room_member(request: Request, event_id: int, room_id: int
     "/admin/events/{event_id}/rooms/{room_id}/members/{membership_id}/delete", dependencies=[Depends(require_event_owner)]
 )
 async def admin_remove_room_member(request: Request, event_id: int, room_id: int, membership_id: int):
+    """Remove a room membership assignment."""
     try:
         async with get_session() as session:
             await room_in_event(session, event_id, room_id)
@@ -1653,28 +1653,19 @@ async def admin_remove_room_member(request: Request, event_id: int, room_id: int
     "/admin/events/{event_id}/rooms/{room_id}/booths/{booth_id}/members/", dependencies=[Depends(require_event_owner)]
 )
 async def admin_add_booth_member(request: Request, event_id: int, room_id: int, booth_id: int):
+    """Add or update a booth membership assignment for a user."""
     async with get_session() as session:
-        room = await get_room_by_id(session, room_id)
-        if room is None or room.event_id != event_id:
-            raise HTTPException(status_code=404, detail="Room not found.")
-        booth = await get_booth_by_id(session, booth_id)
-        if booth is None or booth.room_id != room_id or booth.event_id != event_id:
-            raise HTTPException(status_code=404, detail="Booth not found.")
+        await room_in_event(session, event_id, room_id)
+        await booth_in_room(session, event_id, room_id, booth_id)
     form = await request.form()
     email = form.get("email", "").strip()
     role = form.get("role", "").strip()
     if role and assignment_error(role, "booth"):
         return invalid_role_redirect(request, f"events/{event_id}/rooms/{room_id}/booths/{booth_id}/", role)
-    async with get_session() as session:
-        await booth_in_room(session, event_id, room_id, booth_id)
     if email:
         async with get_session() as session:
-            room = await get_room_by_id(session, room_id)
-            if room is None or room.event_id != event_id:
-                raise HTTPException(status_code=404, detail="Room not found.")
-            booth = await get_booth_by_id(session, booth_id)
-            if booth is None or booth.room_id != room_id or booth.event_id != event_id:
-                raise HTTPException(status_code=404, detail="Booth not found.")
+            await room_in_event(session, event_id, room_id)
+            booth = await booth_in_room(session, event_id, room_id, booth_id)
             user = await get_user_by_email(session, email)
             if not user:
                 display_name = email.split("@")[0]
@@ -1716,6 +1707,7 @@ async def admin_add_booth_member(request: Request, event_id: int, room_id: int, 
     dependencies=[Depends(require_event_owner)],
 )
 async def admin_invite_booth_member(request: Request, event_id: int, room_id: int, booth_id: int, membership_id: int):
+    """Send an invitation email to a booth member."""
     async with get_session() as session:
         booth = await booth_in_room(session, event_id, room_id, booth_id)
         membership = await session.scalar(
@@ -1744,6 +1736,7 @@ async def admin_invite_booth_member(request: Request, event_id: int, room_id: in
     dependencies=[Depends(require_event_owner)],
 )
 async def admin_remove_booth_member(request: Request, event_id: int, room_id: int, booth_id: int, membership_id: int):
+    """Remove a booth membership assignment."""
     try:
         async with get_session() as session:
             await booth_in_room(session, event_id, room_id, booth_id)
@@ -1763,6 +1756,7 @@ async def admin_remove_booth_member(request: Request, event_id: int, room_id: in
 
 @router.post("/admin/events/{event_id}/rooms/{room_id}/booths/{booth_id}/delete", dependencies=[Depends(require_event_owner)])
 async def admin_delete_booth(request: Request, event_id: int, room_id: int, booth_id: int):
+    """Delete an interpretation booth from a room."""
     async with get_session() as session:
         await room_in_event(session, event_id, room_id)
         await booth_in_room(session, event_id, room_id, booth_id)
@@ -2725,6 +2719,7 @@ async def admin_event_members(request: Request, event_id: int):
 
 @router.post("/admin/events/{event_id}/members/", dependencies=[Depends(require_event_owner)])
 async def admin_add_event_member(request: Request, event_id: int):
+    """Add or update an event membership assignment for a user."""
     async with get_session() as session:
         event = await get_event_by_id(session, event_id)
         if event is None:
@@ -2770,6 +2765,7 @@ async def admin_add_event_member(request: Request, event_id: int):
 
 @router.post("/admin/events/{event_id}/members/{membership_id}/invite", dependencies=[Depends(require_event_owner)])
 async def admin_invite_event_member(request: Request, event_id: int, membership_id: int):
+    """Send an invitation email to an event member."""
     async with get_session() as session:
         event = await get_event_by_id(session, event_id)
         if event is None:
@@ -2791,12 +2787,18 @@ async def admin_invite_event_member(request: Request, event_id: int, membership_
 
 @router.post("/admin/events/{event_id}/members/{membership_id}/delete", dependencies=[Depends(require_event_owner)])
 async def admin_remove_event_member(request: Request, event_id: int, membership_id: int):
+    """Remove an event membership assignment."""
     try:
         async with get_session() as session:
             event = await get_event_by_id(session, event_id)
             if event is None:
                 raise HTTPException(status_code=404, detail="Event not found.")
-            membership = await session.get(EventMembership, membership_id)
+            membership = await session.scalar(
+                select(EventMembership).where(
+                    EventMembership.id == membership_id,
+                    EventMembership.event_id == event_id,
+                )
+            )
             if membership is None:
                 raise HTTPException(status_code=404, detail="Membership not found.")
             await remove_team_assignment(session, event_id=event_id, level="event", membership_id=membership_id)
@@ -2811,13 +2813,10 @@ async def admin_remove_event_member(request: Request, event_id: int, membership_
     "/admin/events/{event_id}/rooms/{room_id}/booths/{booth_id}/tokens/", dependencies=[Depends(require_event_owner)]
 )
 async def admin_create_token(request: Request, event_id: int, room_id: int, booth_id: int):
+    """Create an invite token for a booth."""
     async with get_session() as session:
-        room = await get_room_by_id(session, room_id)
-        if room is None or room.event_id != event_id:
-            raise HTTPException(status_code=404, detail="Room not found.")
-        booth = await get_booth_by_id(session, booth_id)
-        if booth is None or booth.room_id != room_id or booth.event_id != event_id:
-            raise HTTPException(status_code=404, detail="Booth not found.")
+        await room_in_event(session, event_id, room_id)
+        await booth_in_room(session, event_id, room_id, booth_id)
     form = await request.form()
     role = form.get("role", "").strip()
     if role and assignment_error(role, "booth"):

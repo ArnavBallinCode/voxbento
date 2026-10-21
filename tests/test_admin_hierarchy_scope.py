@@ -20,6 +20,7 @@ from portal.models import BoothMembership, EventMembership, InviteToken, RoomMem
 
 @pytest.fixture(autouse=True)
 async def setup_db():
+    """Configure an in-memory SQLite database and tear it down after each test."""
     from portal.database import configure, dispose, init_db
 
     configure("sqlite+aiosqlite://")
@@ -124,6 +125,7 @@ async def booth_scope():
 
 
 def _client():
+    """Create an async test client configured for the FastAPI app."""
     from httpx import ASGITransport, AsyncClient
 
     from fastapi_app import app
@@ -132,6 +134,7 @@ def _client():
 
 
 async def _booth_exists(booth_id: int) -> bool:
+    """Return True if a booth row exists for the given booth ID."""
     from portal.database import get_session
     from portal.models import DBBooth
 
@@ -229,6 +232,7 @@ class TestResourceValidation:
 
     @pytest.mark.anyio
     async def test_nonexistent_room_returns_404(self, booth_scope):
+        """Reject booth deletion with 404 when the room ID does not exist."""
         scope = booth_scope
         async with _client() as c:
             resp = await c.post(
@@ -241,6 +245,7 @@ class TestResourceValidation:
 
     @pytest.mark.anyio
     async def test_nonexistent_booth_returns_404(self, booth_scope):
+        """Reject booth deletion with 404 when the booth ID does not exist."""
         scope = booth_scope
         async with _client() as c:
             resp = await c.post(
@@ -303,6 +308,7 @@ class TestMissingSubresources:
     async def test_missing_subresource_returns_404_without_mutation(
         self, booth_scope, path_template, model, target_key
     ):
+        """Reject mutations with 404 when targeted subresource does not exist."""
         from portal.database import get_session
 
         scope = booth_scope
@@ -318,6 +324,7 @@ class TestMissingSubresources:
 
     @pytest.mark.anyio
     async def test_missing_event_returns_404_without_mutation(self, admin_cookie, booth_scope):
+        """Reject member deletion with 404 when the event ID does not exist."""
         from portal.database import get_session
 
         scope = booth_scope
@@ -394,7 +401,7 @@ class TestSuperAdminConsistency:
                 "/admin/events/{event_a}/members/{em_b}/delete",
                 EventMembership,
                 "em_b",
-                400,
+                404,
             ),
         ],
         ids=["booth-member", "token", "room-member", "event-member"],
@@ -607,7 +614,7 @@ class TestSiblingSubresourceSecurity:
             )
         async with get_session() as s:
             assert await s.get(EventMembership, scope["em_b"]) is not None
-        assert resp.status_code == 400
+        assert resp.status_code == 404
 
     @pytest.mark.anyio
     async def test_owner_same_event_wrong_room_booth_member_deletion_rejected(self, booth_scope):
