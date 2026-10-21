@@ -194,7 +194,7 @@ class TestSecurityInvariants:
 
     @pytest.mark.anyio
     async def test_coordinator_cross_event_booth_deletion_rejected(self, booth_scope):
-        """Room Coordinator A1 cannot delete Booth B via legacy /admin using Room A1."""
+        """Room Coordinator A1 is denied by the event-owner gate and cannot delete Booth B."""
         scope = booth_scope
         async with _client() as c:
             resp = await c.post(
@@ -203,7 +203,7 @@ class TestSecurityInvariants:
                 follow_redirects=False,
             )
         assert await _booth_exists(scope["booth_b"]) is True
-        assert resp.status_code == 404
+        assert resp.status_code == 403
 
     @pytest.mark.anyio
     async def test_coordinator_same_event_unauthorized_room_booth_deletion_rejected(self, booth_scope):
@@ -216,7 +216,7 @@ class TestSecurityInvariants:
                 follow_redirects=False,
             )
         assert await _booth_exists(scope["booth_a2"]) is True
-        assert resp.status_code == 404
+        assert resp.status_code == 403
 
 
 # ===========================================================================
@@ -370,34 +370,38 @@ class TestSuperAdminConsistency:
         assert await _booth_exists(scope["booth_b"]) is True
 
     @pytest.mark.parametrize(
-        ("path_template", "model", "target_key"),
+        ("path_template", "model", "target_key", "expected_status"),
         [
             (
                 "/admin/events/{event_a}/rooms/{room_a1}/booths/{booth_a1}/members/{membership_b}/delete",
                 BoothMembership,
                 "membership_b",
+                404,
             ),
             (
                 "/admin/events/{event_a}/rooms/{room_a1}/booths/{booth_a1}/tokens/{invite_b}/revoke",
                 InviteToken,
                 "invite_b",
+                404,
             ),
             (
                 "/admin/events/{event_a}/rooms/{room_a1}/members/{rm_b}/delete",
                 RoomMembership,
                 "rm_b",
+                404,
             ),
             (
                 "/admin/events/{event_a}/members/{em_b}/delete",
                 EventMembership,
                 "em_b",
+                400,
             ),
         ],
         ids=["booth-member", "token", "room-member", "event-member"],
     )
     @pytest.mark.anyio
     async def test_super_admin_cross_event_subresource_rejected(
-        self, admin_cookie, booth_scope, path_template, model, target_key
+        self, admin_cookie, booth_scope, path_template, model, target_key, expected_status
     ):
         """Global admin auth must not bypass the resource hierarchy checks."""
         from portal.database import get_session
@@ -410,7 +414,7 @@ class TestSuperAdminConsistency:
             assert row is not None
             if model is InviteToken:
                 assert row.is_used is False
-        assert resp.status_code == 404
+        assert resp.status_code == expected_status
 
 
 # ===========================================================================
@@ -474,8 +478,8 @@ class TestAuthorizationControls:
             assert await s.get(BoothMembership, scope["membership_b"]) is not None
 
     @pytest.mark.anyio
-    async def test_legitimate_coordinator_booth_deletion_succeeds(self, booth_scope):
-        """Coordinator A1 deletes Booth A1 in Room A1 via /admin: succeeds (303)."""
+    async def test_coordinator_booth_deletion_denied(self, booth_scope):
+        """Coordinators cannot delete booths; the event-owner gate returns 403 and mutates nothing."""
         scope = booth_scope
         async with _client() as c:
             resp = await c.post(
@@ -483,9 +487,8 @@ class TestAuthorizationControls:
                 cookies=scope["coordinator_cookie"],
                 follow_redirects=False,
             )
-        assert resp.status_code == 303
-        assert resp.headers["location"] == f"/admin/events/{scope['event_a']}/rooms/{scope['room_a1']}/booths/"
-        assert await _booth_exists(scope["booth_a1"]) is False
+        assert resp.status_code == 403
+        assert await _booth_exists(scope["booth_a1"]) is True
         assert await _booth_exists(scope["booth_a2"]) is True
         assert await _booth_exists(scope["booth_b"]) is True
 
@@ -511,10 +514,8 @@ class TestAuthorizationControls:
         ids=["booth-member", "token", "room-member"],
     )
     @pytest.mark.anyio
-    async def test_legitimate_coordinator_subresource_operations_succeed(
-        self, booth_scope, path_template, model, target_key
-    ):
-        """The legacy coordinator policy keeps working for hierarchy-consistent URLs."""
+    async def test_coordinator_subresource_operations_denied(self, booth_scope, path_template, model, target_key):
+        """Coordinators cannot manage team members or tokens; the event-owner gate returns 403."""
         from portal.database import get_session
 
         scope = booth_scope
@@ -522,14 +523,12 @@ class TestAuthorizationControls:
             resp = await c.post(
                 path_template.format(**scope), cookies=scope["coordinator_cookie"], follow_redirects=False
             )
-        assert resp.status_code == 303
+        assert resp.status_code == 403
         async with get_session() as s:
             row = await s.get(model, scope[target_key])
+            assert row is not None
             if model is InviteToken:
-                assert row is not None
-                assert row.is_used is True
-            else:
-                assert row is None
+                assert row.is_used is False
 
 
 # ===========================================================================
@@ -608,7 +607,7 @@ class TestSiblingSubresourceSecurity:
             )
         async with get_session() as s:
             assert await s.get(EventMembership, scope["em_b"]) is not None
-        assert resp.status_code == 404
+        assert resp.status_code == 400
 
     @pytest.mark.anyio
     async def test_owner_same_event_wrong_room_booth_member_deletion_rejected(self, booth_scope):
@@ -974,8 +973,7 @@ class TestSiblingSubresourceSecurity:
                 cookies=scope["owner_cookie"],
                 follow_redirects=False,
             )
-        assert resp.status_code == 303
-        assert "duplicate_language" not in resp.headers.get("location", "")
+        assert resp.status_code == 404
         async with get_session() as s:
             created = (
                 (
