@@ -6,6 +6,7 @@ import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from portal.auth import WSAuthError, is_listener_token, resolve_booth_role, resolve_ws_auth
+from portal.database import get_booth_language_name, get_session, get_user_by_id
 from portal.globals import booths
 from portal.websockets.manager import (
     Session,
@@ -45,15 +46,13 @@ async def ws_booth(websocket: WebSocket, booth_id: str) -> None:
     user_id: int | None = None
     if payload:
         sub = payload.get("sub")
-        if sub is not None:
+        if sub is not None and not isinstance(sub, bool):
             try:
                 user_id = int(sub)
             except (ValueError, TypeError):
                 pass
 
     if user_id is not None:
-        from portal.database import get_session, get_user_by_id
-
         async with get_session() as db_session:
             user = await get_user_by_id(db_session, user_id)
         if user is None or not user.is_active:
@@ -62,8 +61,6 @@ async def ws_booth(websocket: WebSocket, booth_id: str) -> None:
 
     ws_granted_role = await resolve_booth_role(payload, booth_id)
     await websocket.accept()
-
-    from portal.database import get_booth_language_name
 
     language_name = await get_booth_language_name(booth_id)
 

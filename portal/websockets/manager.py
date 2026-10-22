@@ -64,7 +64,10 @@ class ConnectionManager:
         except (WebSocketDisconnect, RuntimeError, OSError):
             # Already closing or the peer vanished; revocation above still holds.
             logger.debug("Booth session closed before revocation could notify it", exc_info=True)
-        self.remove(ws)
+        except Exception:
+            logger.exception("Unexpected error closing booth session")
+        finally:
+            self.remove(ws)
 
     def revoke_user_sessions(self, user_id: int, booth_id: str | None = None) -> list[WebSocket]:
         """Revoke authorization for all active sessions of a user (optionally scoped to a booth)."""
@@ -84,11 +87,7 @@ class ConnectionManager:
     ) -> None:
         """Revoke authorization and disconnect all active sessions of a user."""
         for ws in self.revoke_user_sessions(user_id, booth_id):
-            try:
-                await ws.close(code=code, reason=reason)
-            except (WebSocketDisconnect, RuntimeError, OSError):
-                logger.debug("Booth session closed before revocation could notify it", exc_info=True)
-            self.remove(ws)
+            await self.close_session(ws, code=code, reason=reason)
 
     async def broadcast(self, booth_id: str, message: dict) -> None:
         """Send *message* to booth members authorized for *booth_id*.

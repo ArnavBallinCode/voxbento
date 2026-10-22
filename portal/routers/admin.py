@@ -2047,7 +2047,7 @@ async def apply_user_access(request: Request, user_id: int, field: str, value: b
                 "verified": user.email_verified,
             }[field]
         change = await set_user_access(session, actor_id=actor_id, user_id=user_id, field=field, value=value)
-    if change.changed and field in ("admin", "active"):
+    if change.changed and field in ("admin", "active") and not value:
         # Demotion or deactivation invalidates every live booth session for this
         # account. Close them after the change commits so no socket keeps the
         # access it had at connect time. Invite-link sockets carry a bearer

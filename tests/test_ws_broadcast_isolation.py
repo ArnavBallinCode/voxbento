@@ -33,6 +33,7 @@ def isolated_booth_token(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def setup_db():
+    """Initialize an in-memory SQLite database for test isolation."""
     import anyio
 
     from portal.database import configure, dispose, init_db
@@ -44,6 +45,7 @@ def setup_db():
 
 
 def _invite_cookie(event_slug: str, room_id: int, language_code: str) -> dict:
+    """Create a participant session token cookie for a booth."""
     tok = create_participant_token(
         booth_id=1,
         role="interpreter",
@@ -66,6 +68,7 @@ def _admin_cookie() -> dict:
     from portal.database import create_user, get_session, get_user_by_email
 
     async def admin_id() -> int:
+        """Resolve or create an admin user and return their database ID."""
         async with get_session() as session:
             user = await get_user_by_email(session, "admin@test.com")
             if user is None:
@@ -76,6 +79,7 @@ def _admin_cookie() -> dict:
 
 
 def _join(ws, display_name: str = "Pat", role: str = "interpreter", language: str = "French") -> dict:
+    """Send a booth join message and consume the join response and initial state."""
     ws.send_text(
         json.dumps(
             {
@@ -96,6 +100,7 @@ def _join(ws, display_name: str = "Pat", role: str = "interpreter", language: st
 
 
 def _room_size(bid: str) -> int:
+    """Return the number of connected sockets in a booth room."""
     return len(manager._rooms.get(bid, set()))
 
 
@@ -105,6 +110,7 @@ def _try_receive(ws, timeout: float) -> list:
     stop = threading.Event()
 
     def _recv() -> None:
+        """Thread worker to collect incoming WebSocket messages until stopped."""
         try:
             while not stop.is_set():
                 got.append(ws.receive_text())
@@ -403,7 +409,7 @@ def test_revoked_invite_session_receives_no_broadcasts():
         assert got == []
 
 
-def _seed_booth_user(email: str) -> tuple[int, str]:
+def _seed_booth_user(email: str, slug: str = "revoke") -> tuple[int, str]:
     """Create an event/room/booth and an interpreter booth membership for *email*."""
     import anyio
 
@@ -417,8 +423,9 @@ def _seed_booth_user(email: str) -> tuple[int, str]:
     )
 
     async def seed() -> tuple[int, str]:
+        """Seed event, room, booth, and user membership rows in the test database."""
         async with get_session() as session:
-            event = await create_event(session, slug="revoke", display_name="Revocation")
+            event = await create_event(session, slug=slug, display_name="Revocation")
             room = await create_room(session, event_id=event.id, display_name="Revocation Room")
             booth = await create_booth(
                 session,
@@ -429,7 +436,7 @@ def _seed_booth_user(email: str) -> tuple[int, str]:
             )
             user = await create_user(session, email=email, display_name="Target", password_hash="hash")
             await set_booth_membership(session, user_id=user.id, booth_id=booth.id, role="interpreter")
-            return user.id, f"revoke-{room.id}-en"
+            return user.id, f"{slug}-{room.id}-en"
 
     return anyio.run(seed)
 
@@ -513,3 +520,80 @@ def test_active_user_and_invite_token_connect_successfully():
     with client.websocket_connect(f"/ws/booth/{bid}", cookies=invite_cookies) as ws:
         _join(ws, display_name="Invited User", language="English")
         assert _room_size(bid) == 1
+
+
+def test_demoting_admin_closes_live_booth_session():
+    """Demoting an admin ends its live booth session immediately."""
+    from starlette.websockets import WebSocketDisconnect
+
+    user_id, bid = _seed_booth_user("demoted_admin@test.com")
+    # Grant admin access
+    resp = client.post(
+        f"/admin/users/{user_id}/access",
+        data={"field": "admin", "value": "true"},
+        cookies=_admin_cookie(),
+        headers={"origin": "http://testserver", "accept": "application/json"},
+    )
+    assert resp.status_code == 200
+
+    cookie = {"user_token": create_user_token(user_id=user_id, email="demoted_admin@test.com", is_admin=True)}
+    with client.websocket_connect(f"/ws/booth/{bid}", cookies=cookie) as ws:
+        ws.send_text(json.dumps({"type": "booth:ping-sync"}))
+        assert json.loads(ws.receive_text())["type"] == "booth:error"
+
+        response = client.post(
+            f"/admin/users/{user_id}/access",
+            data={"field": "admin", "value": "false"},
+            cookies=_admin_cookie(),
+            headers={"origin": "http://testserver", "accept": "application/json"},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["ok"] is True
+
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            ws.receive_text()
+        assert exc_info.value.code == 4003
+
+
+def test_promotion_and_reactivation_do_not_close_live_booth_session():
+    """Promoting or re-activating an account does not disconnect its live booth sessions."""
+    user_id, bid = _seed_booth_user("keepalive@test.com")
+    cookie = {"user_token": create_user_token(user_id=user_id, email="keepalive@test.com")}
+    with client.websocket_connect(f"/ws/booth/{bid}", cookies=cookie) as ws:
+        ws.send_text(json.dumps({"type": "booth:ping-sync"}))
+        assert json.loads(ws.receive_text())["type"] == "booth:error"
+
+        # Promoting to admin must NOT close the live socket
+        response = client.post(
+            f"/admin/users/{user_id}/access",
+            data={"field": "admin", "value": "true"},
+            cookies=_admin_cookie(),
+            headers={"origin": "http://testserver", "accept": "application/json"},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["ok"] is True
+
+        # Socket is still responsive
+        ws.send_text(json.dumps({"type": "booth:ping-sync"}))
+        assert json.loads(ws.receive_text())["type"] == "booth:error"
+
+        # Seed another user, deactivate, then reactivate with changed=True
+        other_id, _ = _seed_booth_user("other_reactivate@test.com", slug="revoke-other")
+        client.post(
+            f"/admin/users/{other_id}/access",
+            data={"field": "active", "value": "false"},
+            cookies=_admin_cookie(),
+            headers={"origin": "http://testserver", "accept": "application/json"},
+        )
+        reactivate_resp = client.post(
+            f"/admin/users/{other_id}/access",
+            data={"field": "active", "value": "true"},
+            cookies=_admin_cookie(),
+            headers={"origin": "http://testserver", "accept": "application/json"},
+        )
+        assert reactivate_resp.status_code == 200
+        assert reactivate_resp.json()["ok"] is True
+
+        # User's socket is still alive after other user's reactivation
+        ws.send_text(json.dumps({"type": "booth:ping-sync"}))
+        assert json.loads(ws.receive_text())["type"] == "booth:error"

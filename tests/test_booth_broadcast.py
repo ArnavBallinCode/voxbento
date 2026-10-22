@@ -9,14 +9,19 @@ from portal.websockets.manager import ConnectionManager, Session
 
 
 class MockWebSocket:
+    """Mock WebSocket for manager unit tests."""
+
     def __init__(self):
+        """Initialize mock WebSocket."""
         self.sent_messages = []
         self.closed_with = None
 
     async def send_text(self, data):
+        """Record sent text message."""
         self.sent_messages.append(data)
 
     async def close(self, code=1000, reason=""):
+        """Record close code and reason."""
         self.closed_with = (code, reason)
 
 
@@ -40,6 +45,7 @@ def _dropped_websocket() -> WebSocket:
 
 
 def _session(booth_id: str, granted_role: str | None = "interpreter") -> Session:
+    """Create a mock session for testing."""
     return Session(
         booth_id=booth_id,
         participant_id=None,
@@ -51,6 +57,7 @@ def _session(booth_id: str, granted_role: str | None = "interpreter") -> Session
 
 @pytest.mark.anyio
 async def test_broadcast_reaches_other_sockets_after_a_dropped_one():
+    """Verify broadcast delivers to surviving sockets after one drops."""
     manager = ConnectionManager()
     dropped = _dropped_websocket()
     alive = MockWebSocket()
@@ -64,6 +71,7 @@ async def test_broadcast_reaches_other_sockets_after_a_dropped_one():
 
 @pytest.mark.anyio
 async def test_broadcast_removes_the_dropped_socket():
+    """Verify dropped socket is pruned from the room after failed broadcast."""
     manager = ConnectionManager()
     dropped = _dropped_websocket()
     alive = MockWebSocket()
@@ -99,6 +107,7 @@ async def test_broadcast_skips_sockets_without_a_booth_role():
 
 @pytest.mark.anyio
 async def test_broadcast_skips_unsupported_role():
+    """Verify sockets with unsupported roles receive no broadcast messages."""
     manager = ConnectionManager()
     outsider = MockWebSocket()
     member = MockWebSocket()
@@ -113,6 +122,7 @@ async def test_broadcast_skips_unsupported_role():
 
 @pytest.mark.anyio
 async def test_broadcast_skips_revoked_session():
+    """Verify revoked sessions are skipped during broadcast."""
     manager = ConnectionManager()
     ws = MockWebSocket()
     session = _session("pycon2026-1-en", granted_role="interpreter")
@@ -129,6 +139,7 @@ async def test_broadcast_skips_revoked_session():
 
 @pytest.mark.anyio
 async def test_revoke_user_sessions():
+    """Verify revoke_user_sessions marks all sockets of a user as revoked."""
     manager = ConnectionManager()
     ws1 = MockWebSocket()
     ws2 = MockWebSocket()
@@ -154,6 +165,7 @@ async def test_revoke_user_sessions():
 
 @pytest.mark.anyio
 async def test_close_user_sessions_closes_only_that_users_sockets():
+    """Verify close_user_sessions closes only the targeted user's sockets."""
     manager = ConnectionManager()
     target = MockWebSocket()
     other_user = MockWebSocket()
@@ -185,3 +197,36 @@ async def test_close_user_sessions_closes_only_that_users_sockets():
     assert invite.closed_with is None
     assert invite_session.revoked is False
     assert manager.get_session(invite) is not None
+
+
+class FailingCloseMockWebSocket(MockWebSocket):
+    """Mock WebSocket whose close method raises an unexpected exception."""
+
+    async def close(self, code=1000, reason=""):
+        """Raise unexpected runtime error on close."""
+        raise RuntimeError("Unexpected failure during close")
+
+
+@pytest.mark.anyio
+async def test_close_user_sessions_handles_socket_exception_and_closes_others():
+    """Verify failing close on one socket does not abort closing other sockets."""
+    manager = ConnectionManager()
+    failing = FailingCloseMockWebSocket()
+    normal = MockWebSocket()
+
+    sess_fail = _session("b1", granted_role="interpreter")
+    sess_fail.user_id = 7
+    sess_norm = _session("b1", granted_role="interpreter")
+    sess_norm.user_id = 7
+
+    manager.add(failing, sess_fail)
+    manager.add(normal, sess_norm)
+
+    await manager.close_user_sessions(7)
+
+    assert sess_fail.revoked is True
+    assert manager.get_session(failing) is None
+
+    assert normal.closed_with == (4003, "Authorization revoked")
+    assert sess_norm.revoked is True
+    assert manager.get_session(normal) is None
