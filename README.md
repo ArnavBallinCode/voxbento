@@ -29,7 +29,7 @@
 
 ## 🎧 About VoxBento
 
-**VoxBento** is a real-time, browser-first simultaneous interpretation and audio broadcast platform built for live conferences and hybrid events.
+**VoxBento** is a real-time, browser-first simultaneous interpretation and audio broadcast platform built for live conferences and hybrid events. 
 
 Interpreters monitor the floor session and broadcast high-fidelity translation directly from their browser using WebRTC with sub-second latency. Attendees receive translated audio on any device through lightweight WebRTC playback, while optional AI pipelines provide live transcription, contextual translation, and synthetic speech concurrently.
 
@@ -47,7 +47,7 @@ Interpreters monitor the floor session and broadcast high-fidelity translation d
 
 ### Listener playback
 
-Attendees can select a booth before the interpreter goes live and leave the listener page open. Playback starts automatically once the booth is live and Mission Control has unlocked broadcasting. The captions WebSocket supplies the current live/lock status even when transcription is disabled, and reconnects after transient disconnects.
+Attendees can select a booth before the interpreter goes live and leave the listener page open. Playback starts automatically once the booth is live and Mission Control has unlocked broadcasting. The captions WebSocket supplies the current live/lock status even when transcription is disabled, and the page reconnects it after transient disconnects.
 
 ---
 
@@ -183,7 +183,7 @@ voxbento/
 
 ## 💻 VoxBento Local (Desktop App)
 
-Looking for an on-device, sovereign AI meeting intelligence tool?
+Looking for an on-device, sovereign AI meeting intelligence tool? 
 
 **VoxBento Local** runs 100% locally on your computer with zero cloud dependencies:
 - **Download**: Visit [`/local`](https://voxbento.com/local) for macOS, Windows, and Linux packages.
