@@ -555,6 +555,62 @@ def test_demoting_admin_closes_live_booth_session():
         assert exc_info.value.code == 4003
 
 
+def test_revocation_during_connect_leaves_no_registered_session(monkeypatch):
+    """A revocation landing between the access check and registration is not missed.
+
+    Deactivating an account commits, then sweeps registered sockets. A socket
+    still finishing its connect handshake is not registered yet, so the sweep
+    cannot see it; it must detect the change itself and refuse to register.
+    """
+    from starlette.websockets import WebSocketDisconnect
+
+    import portal.websockets.handlers as handlers
+
+    user_id, bid = _seed_booth_user("race@test.com", slug="race")
+    cookie = {"user_token": create_user_token(user_id=user_id, email="race@test.com")}
+
+    async def _revoke_mid_connect(booth_id: str) -> str:
+        """Sweep the user's sessions inside the connect window, then answer normally."""
+        await manager.close_user_sessions(user_id)
+        return "English"
+
+    monkeypatch.setattr(handlers, "get_booth_language_name", _revoke_mid_connect)
+
+    with pytest.raises(WebSocketDisconnect) as exc_info:
+        with client.websocket_connect(f"/ws/booth/{bid}", cookies=cookie) as ws:
+            # Without the fix this ping is answered, so the connection is live
+            # and still registered for broadcasts.
+            ws.send_text(json.dumps({"type": "booth:ping-sync"}))
+            ws.receive_text()
+    assert exc_info.value.code == 4003
+
+    assert all(session.user_id != user_id for session in manager._sessions.values())
+    assert not manager._rooms.get(bid, set())
+
+    import anyio
+
+    anyio.run(manager.broadcast, bid, {"type": "booth:chat", "message": "after the race"})
+    assert not manager._rooms.get(bid, set())
+
+
+def test_connect_without_revocation_still_registers_and_receives():
+    """The control case: no revocation during connect registers and receives normally."""
+    user_id, bid = _seed_booth_user("norace@test.com", slug="norace")
+    cookie = {"user_token": create_user_token(user_id=user_id, email="norace@test.com")}
+    epoch_before = manager.revocation_epoch(user_id)
+
+    with client.websocket_connect(f"/ws/booth/{bid}", cookies=cookie) as ws:
+        _join(ws, display_name="Control", language="English")
+
+        registered = [manager.get_session(sock) for sock in manager._rooms.get(bid, set())]
+        assert [session.user_id for session in registered if session is not None] == [user_id]
+
+        ws.send_text(json.dumps({"type": "booth:chat", "body": "control"}))
+        assert json.loads(ws.receive_text())["type"] == "booth:chat"
+
+    assert manager.revocation_epoch(user_id) == epoch_before
+
+
 def test_promotion_and_reactivation_do_not_close_live_booth_session():
     """Promoting or re-activating an account does not disconnect its live booth sessions."""
     user_id, bid = _seed_booth_user("keepalive@test.com")

@@ -52,7 +52,11 @@ async def ws_booth(websocket: WebSocket, booth_id: str) -> None:
             except (ValueError, TypeError):
                 pass
 
+    revocation_epoch = 0
     if user_id is not None:
+        # Snapshot before the authorization read: a read that precedes the
+        # Admin's commit can then never be paired with a post-commit snapshot.
+        revocation_epoch = manager.revocation_epoch(user_id)
         async with get_session() as db_session:
             user = await get_user_by_id(db_session, user_id)
         if user is None or not user.is_active:
@@ -72,6 +76,15 @@ async def ws_booth(websocket: WebSocket, booth_id: str) -> None:
         granted_role=ws_granted_role,
         user_id=user_id,
     )
+    if user_id is not None and manager.revocation_epoch(user_id) != revocation_epoch:
+        # Authorization changed after the check above; the revocation sweep ran
+        # before this socket was registered, so it must not register now.
+        try:
+            await websocket.close(code=4003)
+        except (WebSocketDisconnect, RuntimeError, OSError):
+            # The socket was already closing; not registering it is what matters.
+            _log.debug("Revoked booth socket was already closing", exc_info=True)
+        return
     manager.add(websocket, session)
 
     try:

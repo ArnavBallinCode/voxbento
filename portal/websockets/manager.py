@@ -32,6 +32,13 @@ class ConnectionManager:
         self._rooms: dict[str, set[WebSocket]] = {}
         # Keyed by id(ws) to avoid __hash__ issues with WebSocket objects
         self._sessions: dict[int, Session] = {}
+        # Per-user revocation counter: bumped by every revocation so a socket
+        # still registering can detect a change it was not yet listed for.
+        self._revocation_epochs: dict[int, int] = {}
+
+    def revocation_epoch(self, user_id: int) -> int:
+        """Return how many times this user's sessions have been revoked (0 if never)."""
+        return self._revocation_epochs.get(user_id, 0)
 
     def add(self, ws: WebSocket, session: Session) -> None:
         self._rooms.setdefault(session.booth_id, set()).add(ws)
@@ -71,6 +78,9 @@ class ConnectionManager:
 
     def revoke_user_sessions(self, user_id: int, booth_id: str | None = None) -> list[WebSocket]:
         """Revoke authorization for all active sessions of a user (optionally scoped to a booth)."""
+        # Bump first and unconditionally: a socket may not be registered yet,
+        # and ws_booth compares this counter around manager.add().
+        self._revocation_epochs[user_id] = self.revocation_epoch(user_id) + 1
         revoked: list[WebSocket] = []
         for room_sockets in self._rooms.values():
             for ws in list(room_sockets):
