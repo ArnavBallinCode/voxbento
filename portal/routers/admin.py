@@ -116,6 +116,7 @@ from portal.models import (
     User,
     utc_now,
 )
+from portal.my_events import list_my_events
 from portal.notifications import (
     NOTIFICATIONS,
     get_definition,
@@ -125,7 +126,6 @@ from portal.notifications import (
     save_draft,
     template_content,
 )
-from portal.my_events import list_my_events
 from portal.program_ingest import room_lock
 from portal.rate_limit import check_rate_limit
 from portal.roles import EVENT_OWNER, assignment_error, role_label
@@ -2397,8 +2397,6 @@ async def admin_resend_invite(request: Request, token_id: int):
             raise HTTPException(status_code=400, detail="User is inactive or not found.")
 
         user_id = user.id
-        user_email = user.email
-        has_password = bool(user.password_hash)
 
         await session.delete(old_tok)
         await session.flush()

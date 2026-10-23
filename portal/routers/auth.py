@@ -43,8 +43,6 @@ from portal.database import (
     get_user_by_id,
     redeem_auth_token,
     redeem_invite_token,
-    revoke_auth_token,
-    revoke_auth_tokens,
     update_user,
 )
 from portal.globals import _JS_CACHE_BUST, asset_version_context
