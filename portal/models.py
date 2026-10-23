@@ -949,9 +949,9 @@ class EmailDelivery(Base):
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    auth_token_id: Mapped[int | None] = mapped_column(
-        ForeignKey("auth_tokens.id", ondelete="SET NULL"), nullable=True, index=True
-    )
+    # The sign-in or invitation token this email links to. Deliberately not a foreign key:
+    # once the token is deleted the id must stay, so the outbox finds no token and drops the email.
+    auth_token_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     last_error: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     idempotency_key: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

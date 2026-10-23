@@ -318,7 +318,8 @@ notification type. `email_template_revisions` retains immutable published
 versions. `email_deliveries` contains the encrypted rendered subject and HTML,
 delivery status, retry lease and schedule fields, expiry, an optional
 idempotency key and an optional `auth_token_id`. That ties an email carrying a
-sign-in or invitation link to its `auth_tokens` row, so the outbox suppresses
+sign-in or invitation link to its `auth_tokens` row (a plain integer, not a
+foreign key, so the id survives the token's deletion), so the outbox suppresses
 it once the token is redeemed, revoked, expired or deleted. The worker in
 `portal/notifications.py` claims due rows, retries failed sends with back-off,
 marks pending rows past `expires_at` as expired, and erases the rendered

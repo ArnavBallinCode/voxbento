@@ -458,3 +458,79 @@ async def test_deleting_an_account_tells_the_person(admin_cookies):
     sent = [d for d in await _deliveries("account_access") if d.recipient == "doomed@example.com"]
     assert len(sent) == 1
     assert "account was deleted" in await _html_of(sent[0].id)
+
+
+# ── Review fixes ─────────────────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_subject_is_plain_text_not_html_escaped():
+    from portal.crypto import decrypt_val
+
+    async with get_session() as session:
+        editor = await create_user(session, email="editor@example.com", display_name="Editor")
+        await save_draft(session, "role_assignment", "Welcome to {{ context_name }}", "<p>{{ context_name }}</p>", editor_id=editor.id)
+        await publish_draft(session, "role_assignment", editor_id=editor.id)
+        delivery = await queue_notification(
+            session,
+            "role_assignment",
+            "a@example.com",
+            {"context_name": "Q&A <Summit> O'Neil", "role_name": "Interpreter", "invite_url": "https://example.invalid/i"},
+        )
+        subject = decrypt_val(delivery.encrypted_subject)
+        html = decrypt_val(delivery.encrypted_html)
+    assert subject == "Welcome to Q&A <Summit> O'Neil"
+    # The body is still HTML-escaped.
+    assert "Q&amp;A &lt;Summit&gt;" in html
+
+
+@pytest.mark.anyio
+async def test_email_is_dropped_when_its_token_is_deleted(monkeypatch):
+    from portal.models import AuthToken
+
+    monkeypatch.setattr("portal.notifications.settings.smtp_host", "smtp.example.invalid")
+    async with get_session() as session:
+        user = await create_user(session, email="person@example.com", display_name="Person")
+        token = await create_auth_token(session, user_id=user.id, token_type="magic_link", jti="deleted-token")
+        delivery = await queue_notification(
+            session, "magic_login", user.email, {"magic_link": "https://example.invalid/m"}, auth_token_id=token.id
+        )
+        delivery_id = delivery.id
+    async with get_session() as session:
+        # e.g. "Resend invitation" deletes the old token.
+        await session.delete(await session.get(AuthToken, token.id))
+
+    assert await process_due_deliveries() == 1
+    async with get_session() as session:
+        stored = await session.get(EmailDelivery, delivery_id)
+    assert stored.status == "suppressed"
+
+
+@pytest.mark.anyio
+async def test_a_failing_purge_does_not_stop_sending(monkeypatch):
+    import asyncio
+
+    import portal.notifications as notifications
+
+    sent = 0
+
+    async def broken_purge():
+        raise RuntimeError("purge failed")
+
+    async def deliver(limit=20):
+        nonlocal sent
+        sent += 1
+        if sent == 2:
+            raise asyncio.CancelledError
+        return 0
+
+    async def no_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(notifications, "purge_old_content", broken_purge)
+    monkeypatch.setattr(notifications, "process_due_deliveries", deliver)
+    monkeypatch.setattr(notifications.asyncio, "sleep", no_sleep)
+    with pytest.raises(asyncio.CancelledError):
+        await notifications.notification_worker_loop()
+    # Deliveries ran on both loops even though the purge failed.
+    assert sent == 2

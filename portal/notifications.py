@@ -34,6 +34,8 @@ _env = SandboxedEnvironment(
 )
 _claim_duration = timedelta(minutes=2)
 _max_attempts = 4
+# Subjects are plain-text mail headers, so they are not HTML-escaped ("Q&A", not "Q&amp;A").
+_subject_env = SandboxedEnvironment(autoescape=False)
 # Rendered content of finished deliveries is erased after this; the audit row stays.
 _content_retention = timedelta(days=30)
 _FINISHED = ("accepted", "failed", "expired", "suppressed", "disabled")
@@ -136,7 +138,7 @@ def _validate_template(definition: NotificationDefinition, subject: str, html: s
 
 def _render(definition: NotificationDefinition, subject: str, html: str, context: Mapping[str, Any]) -> tuple[str, str]:
     _validate_template(definition, subject, html)
-    rendered_subject = _env.from_string(subject).render(**context)
+    rendered_subject = _subject_env.from_string(subject).render(**context)
     # A subject is a mail header: user-supplied values must not add lines to it.
     rendered_subject = " ".join(rendered_subject.split())
     return rendered_subject, _env.from_string(html).render(**context)
@@ -178,7 +180,7 @@ async def _wrap(session: AsyncSession, subject: str, body: str) -> str:
     site = urllib.parse.urlparse(settings.public_base_url)
     return _env.get_template("_layout.html").render(
         subject=subject,
-        body=Markup(body),  # noqa: S704 - already rendered with autoescaping from an allowlisted template
+        body=Markup(body),  # noqa: S704  # nosec B704 - already rendered with autoescaping from an allowlisted template
         logo_url=(branding.logo_url or default_logo_url()) if branding.show_logo else "",
         site_url=settings.public_base_url.rstrip("/"),
         site_host=site.netloc,
@@ -416,8 +418,11 @@ async def notification_worker_loop() -> None:
     while True:
         try:
             if last_purge is None or utc_now() - last_purge > timedelta(hours=1):
-                await purge_old_content()
-                last_purge = utc_now()
+                last_purge = utc_now()  # set first: a failing purge is retried hourly, not every loop
+                try:
+                    await purge_old_content()
+                except Exception:  # noqa: BLE001 - erasing old content must never block sending
+                    logger.exception("Email content purge failed")
             processed = await process_due_deliveries()
             await asyncio.sleep(1 if processed else 10)
         except asyncio.CancelledError:
