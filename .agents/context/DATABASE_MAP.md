@@ -305,27 +305,25 @@ Fields: `id`, `event_id`, `room_id` (nullable), `booth_id` (nullable), `source_t
 
 ## Migration 028 — RTMPS relay mode (#749)
 
-## Migration 034 — transactional email outbox (#962)
-
-`email_templates` stores draft and published subject/HTML for every registered
-notification type. `email_template_revisions` retains immutable published
-versions. `email_deliveries` contains encrypted rendered subject and HTML,
-delivery status, retry lease and schedule fields, expiry, and an optional
-idempotency key. The worker in `portal/notifications.py` claims due rows and
-retries only transient SMTP failures; no invite links or rendered email content
-are exposed by the administration history.
-
-## Migration 035 — invalidated email links
-
-`email_deliveries.auth_token_id` ties an email that contains an authentication
-or invitation link to its `auth_tokens` row. The outbox suppresses a claimed
-delivery when that token was redeemed, revoked, expired, or deleted.
-
 Room fields: `program_ingest_mode` (`whip` default | `rtmps_relay`; binds the program
 key to its transport), nullable `program_relay_server` (normalized allow-listed RTMPS
 URL), `program_relay_key_enc` (Fernet ciphertext of the YouTube stream key; write-only,
 never serialize or log) and `program_relay_updated_at`. Helpers live in
 `portal/program_relay.py` (`store_destination`, `clear_destination`, `destination`).
+
+## Migration 034 — transactional email outbox (#962)
+
+`email_templates` stores draft and published subject/HTML for every registered
+notification type. `email_template_revisions` retains immutable published
+versions. `email_deliveries` contains the encrypted rendered subject and HTML,
+delivery status, retry lease and schedule fields, expiry, an optional
+idempotency key and an optional `auth_token_id`. That ties an email carrying a
+sign-in or invitation link to its `auth_tokens` row, so the outbox suppresses
+it once the token is redeemed, revoked, expired or deleted. The worker in
+`portal/notifications.py` claims due rows, retries failed sends with back-off,
+marks pending rows past `expires_at` as expired, and erases the rendered
+subject and HTML of finished deliveries after 30 days (the audit row stays).
+No links or email content are shown in the administration history.
 
 ## Migration 027 — managed meeting agent
 

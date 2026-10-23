@@ -18,8 +18,8 @@ from portal.database import (
     list_memberships_for_user,
     list_room_memberships_for_user,
 )
-from portal.notifications import queue_notification
 from portal.globals import _JS_CACHE_BUST, asset_version_context
+from portal.notifications import queue_notification
 from portal.rate_limit import check_rate_limit
 from portal.roles import EVENT_OWNER, ROOM_COORDINATOR
 from portal.utils import _check_mediamtx, get_client_ip

@@ -7,6 +7,7 @@ Revises: 033
 from __future__ import annotations
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "034"
@@ -57,11 +58,14 @@ def upgrade() -> None:
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("last_error", sa.String(length=1000), nullable=True),
         sa.Column("idempotency_key", sa.String(length=255), unique=True, nullable=True),
+        # Lets the outbox drop a queued sign-in or invitation link once its token is used or expired.
+        sa.Column("auth_token_id", sa.Integer(), sa.ForeignKey("auth_tokens.id", ondelete="SET NULL"), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
     )
     op.create_index("ix_email_deliveries_notification_key", "email_deliveries", ["notification_key"])
     op.create_index("ix_email_deliveries_due", "email_deliveries", ["status", "scheduled_at"])
     op.create_index("ix_email_deliveries_created", "email_deliveries", ["created_at"])
+    op.create_index("ix_email_deliveries_auth_token_id", "email_deliveries", ["auth_token_id"])
 
 
 def downgrade() -> None:

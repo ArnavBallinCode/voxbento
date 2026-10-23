@@ -172,9 +172,9 @@ class TestRegistration:
 
     @pytest.mark.anyio
     async def test_duplicate_registration_cannot_activate_preexisting_password(self, setup_db):
-        from portal.database import create_user, get_session, get_user_by_email
-
         from sqlalchemy import select
+
+        from portal.database import create_user, get_session, get_user_by_email
         from portal.models import AuthToken
 
         async with get_session() as session:

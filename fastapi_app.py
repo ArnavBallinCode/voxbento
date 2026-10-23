@@ -67,8 +67,8 @@ async def lifespan(app: FastAPI):
 
     import asyncio
 
-    import portal.webhooks.worker as _webhook_worker_mod
     import portal.notifications as _notifications_mod
+    import portal.webhooks.worker as _webhook_worker_mod
 
     # Reference via module attribute so test-time monkey-patching of
     # portal.webhooks.worker.webhook_worker_loop is respected.

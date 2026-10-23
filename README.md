@@ -101,7 +101,7 @@ uv sync --all-groups
 
 ### 3. Configure Environment
 
-Copy the example environment configuration and generate the required encryption key:
+Copy the example environment configuration and generate the required encryption key. The key encrypts stored provider keys and every queued email (sign-in links, invitations, password resets), so production refuses to start without it. Outgoing email is sent from a durable outbox once `SMTP_HOST` is set; Admins edit the email templates and see delivery status in **Admin → Emails**.
 
 ```bash
 cp .env.example .env
@@ -185,7 +185,6 @@ Looking for an on-device, sovereign AI meeting intelligence tool?
 - **Download**: Visit [`/local`](https://voxbento.com/local) for macOS, Windows, and Linux packages.
 - **Air-Gapped & Sovereign**: Live speech transcription and meeting minutes powered by local Whisper and Qwen models accelerated by Apple Metal and NVIDIA CUDA.
 - **Source Code**: Developed at [github.com/ArnavBallinCode/voxa](https://github.com/ArnavBallinCode/voxa).
-
 
 ---
 

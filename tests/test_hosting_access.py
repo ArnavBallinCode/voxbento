@@ -939,13 +939,13 @@ async def test_admin_users_table_layout_and_flash_alerts():
 @pytest.mark.anyio
 async def test_demo_request_template_renders_from_the_notification_registry():
     """Demo requests use the same validated template registry as every other email."""
-    from portal.notifications import _render, get_definition
+    from portal.notifications import _render, _source_for_default, get_definition
 
     definition = get_definition("demo_request")
     subject, body = _render(
         definition,
         definition.subject,
-        "{% include 'demo_request.html' %}",
+        _source_for_default(definition),
         {
             "email": "applicant@example.com", "firstName": "Jane", "lastName": "Doe",
             "companyName": "Tech Corp", "phoneNumber": "+1234567890", "country": "US",

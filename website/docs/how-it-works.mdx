@@ -271,8 +271,11 @@ action that caused it. The outbox worker leases messages, retries transient SMTP
 failures, and preserves records when SMTP is not configured. Platform Admins use
 **Admin → Emails** to edit drafts, publish versioned templates, preview only
 safe sample links, send themselves a test, and review redacted delivery status.
-Template placeholders are restricted to the data declared for each notification;
-rendered messages and account links are encrypted at rest.
+Templates may only use the placeholders declared for each notification and
+`{% if %}` conditions, and render in Jinja's sandbox. Rendered messages and
+account links are encrypted at rest; a queued email whose sign-in or invitation
+link has been used or has expired is not sent, and the content of finished
+emails is erased after 30 days.
 
 ## Security Layers
 

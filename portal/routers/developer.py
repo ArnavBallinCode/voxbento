@@ -13,8 +13,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from portal.auth import require_user
-from portal.database import get_db_session
 from portal.config import settings
+from portal.database import get_db_session
 from portal.globals import asset_version_context
 from portal.models import DeveloperAccount, OAuthAuditLog, OAuthClient, WebhookSubscription
 from portal.notifications import queue_notification

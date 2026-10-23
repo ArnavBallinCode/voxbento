@@ -227,8 +227,39 @@ def _email_sample_context(key: str) -> dict[str, object]:
         "languageSupport": "English, Spanish",
         "notes": "This is a safe preview.",
         "account_url": "https://example.invalid/account",
+        "reason": "We can only offer hosting to registered organizations at the moment.",
+        "admin_url": "https://example.invalid/admin/",
     }
     return {name: values[name] for name in get_definition(key).variables}
+
+
+def _email_definition(key: str):
+    """The notification for *key*, or 404 for an unknown email type."""
+    try:
+        return get_definition(key)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Email not found.") from None
+
+
+async def _render_email_editor(
+    request: Request, db: AsyncSession, key: str, *, subject: str | None = None, html: str | None = None,
+    error: str = "", status_code: int = 200,
+):
+    definition = _email_definition(key)
+    saved_subject, saved_html, version = await template_content(db, definition.key, draft=True)
+    return templates.TemplateResponse(
+        request,
+        "admin/email_template.html",
+        {
+            "definition": definition,
+            "subject": saved_subject if subject is None else subject,
+            "html": saved_html if html is None else html,
+            "version": version,
+            "error": error,
+            "sample_context": _email_sample_context(definition.key),
+        },
+        status_code=status_code,
+    )
 
 
 @router.get("/admin/emails/", dependencies=[Depends(require_admin)])
@@ -250,30 +281,20 @@ async def admin_emails(request: Request, db: AsyncSession = Depends(get_db_sessi
             "template_keys": template_keys,
             "deliveries": deliveries,
             "counts": counts,
+            "labels": {definition.key: definition.label for definition in NOTIFICATIONS},
         },
     )
 
 
 @router.get("/admin/emails/{key}/", dependencies=[Depends(require_admin)])
 async def admin_email_template(key: str, request: Request, db: AsyncSession = Depends(get_db_session)):
-    definition = get_definition(key)
-    subject, html, version = await template_content(db, key, draft=True)
-    return templates.TemplateResponse(
-        request,
-        "admin/email_template.html",
-        {
-            "definition": definition,
-            "subject": subject,
-            "html": html,
-            "version": version,
-            "sample_context": _email_sample_context(key),
-        },
-    )
+    return await _render_email_editor(request, db, key)
 
 
 @router.get("/admin/emails/{key}/preview", dependencies=[Depends(require_admin)])
 async def admin_email_preview(key: str, db: AsyncSession = Depends(get_db_session)) -> Response:
-    html = await preview_notification(db, key, _email_sample_context(key))
+    definition = _email_definition(key)
+    html = await preview_notification(db, definition.key, _email_sample_context(definition.key))
     return Response(
         html,
         media_type="text/html",
@@ -292,8 +313,13 @@ async def admin_email_save_draft(
 ):
     if not verify_same_origin(request):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid request origin.")
-    safe_key = get_definition(key).key
-    await save_draft(db, safe_key, subject, html, int(user["sub"]))
+    safe_key = _email_definition(key).key
+    try:
+        await save_draft(db, safe_key, subject, html, int(user["sub"]))
+    except ValueError as exc:
+        return await _render_email_editor(
+            request, db, safe_key, subject=subject, html=html, error=str(exc), status_code=status.HTTP_400_BAD_REQUEST
+        )
     return safe_redirect(url=f"/admin/emails/{safe_key}/?saved=1", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -306,8 +332,11 @@ async def admin_email_publish(
 ):
     if not verify_same_origin(request):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid request origin.")
-    safe_key = get_definition(key).key
-    await publish_draft(db, safe_key, int(user["sub"]))
+    safe_key = _email_definition(key).key
+    try:
+        await publish_draft(db, safe_key, int(user["sub"]))
+    except ValueError as exc:
+        return await _render_email_editor(request, db, safe_key, error=str(exc), status_code=status.HTTP_400_BAD_REQUEST)
     return safe_redirect(url=f"/admin/emails/{safe_key}/?published=1", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -320,7 +349,7 @@ async def admin_email_test(
 ):
     if not verify_same_origin(request):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid request origin.")
-    safe_key = get_definition(key).key
+    safe_key = _email_definition(key).key
     await queue_notification(
         db,
         safe_key,

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -13,9 +12,9 @@ from typing import Any
 
 from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
 from fastapi_mail.errors import ConnectionErrors
-from jinja2 import Environment, FileSystemLoader, TemplateSyntaxError, meta, select_autoescape
+from jinja2 import FileSystemLoader, TemplateSyntaxError, meta, nodes, select_autoescape
+from jinja2.sandbox import SandboxedEnvironment
 from sqlalchemy import or_, select
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from portal.config import settings
@@ -26,12 +25,22 @@ from portal.models import AuthToken, EmailDelivery, EmailTemplate, EmailTemplate
 logger = logging.getLogger(__name__)
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent / "templates" / "email"
-_env = Environment(
+# Sandboxed: templates are editable by Admins, so they must never reach Python internals.
+_env = SandboxedEnvironment(
     loader=FileSystemLoader(str(_TEMPLATE_DIR)),
     autoescape=select_autoescape(["html", "xml"]),
 )
 _claim_duration = timedelta(minutes=2)
 _max_attempts = 4
+# Rendered content of finished deliveries is erased after this; the audit row stays.
+_content_retention = timedelta(days=30)
+_FINISHED = ("accepted", "failed", "expired", "suppressed", "disabled")
+# The whole template grammar: text, {{ placeholder }}, {% if %}/{% elif %}/{% else %},
+# and simple comparisons. No attribute access, calls, filters, loops, assignments or includes.
+_ALLOWED_NODES = (
+    nodes.Template, nodes.Output, nodes.TemplateData, nodes.Name, nodes.Const,
+    nodes.If, nodes.Not, nodes.And, nodes.Or, nodes.Compare, nodes.Operand,
+)
 
 
 @dataclass(frozen=True)
@@ -102,20 +111,21 @@ def _source_for_default(definition: NotificationDefinition) -> str:
     return source
 
 
-def _validate_template(
-    definition: NotificationDefinition, subject: str, html: str, *, allow_statements: bool = True
-) -> None:
+def _validate_template(definition: NotificationDefinition, subject: str, html: str) -> None:
     if not subject.strip() or not html.strip():
         raise ValueError("Subject and email content are required.")
-    if not allow_statements:
-        prohibited = re.search(r"{%\s*(?:include|import|from|extends|macro|block|for|set|filter)\b", subject + html)
-        if prohibited:
-            raise ValueError("Email templates may use placeholders and conditions, but cannot load or execute templates.")
     try:
         parsed_html = _env.parse(html)
         parsed_subject = _env.parse(subject)
     except TemplateSyntaxError as exc:
         raise ValueError(f"Template syntax error: {exc.message}") from exc
+    for tree in (parsed_html, parsed_subject):
+        for node in tree.find_all(nodes.Node):
+            if not isinstance(node, _ALLOWED_NODES):
+                raise ValueError(
+                    "Email templates may only use {{ placeholders }} and {% if %} conditions "
+                    "(no filters, attributes, calls, loops or includes)."
+                )
     variables = meta.find_undeclared_variables(parsed_html) | meta.find_undeclared_variables(parsed_subject)
     unsupported = variables - definition.variables
     if unsupported:
@@ -124,7 +134,10 @@ def _validate_template(
 
 def _render(definition: NotificationDefinition, subject: str, html: str, context: Mapping[str, Any]) -> tuple[str, str]:
     _validate_template(definition, subject, html)
-    return _env.from_string(subject).render(**context), _env.from_string(html).render(**context)
+    rendered_subject = _env.from_string(subject).render(**context)
+    # A subject is a mail header: user-supplied values must not add lines to it.
+    rendered_subject = " ".join(rendered_subject.split())
+    return rendered_subject, _env.from_string(html).render(**context)
 
 
 async def template_content(session: AsyncSession, key: str, *, draft: bool = False) -> tuple[str, str, int]:
@@ -141,7 +154,7 @@ async def template_content(session: AsyncSession, key: str, *, draft: bool = Fal
 
 async def save_draft(session: AsyncSession, key: str, subject: str, html: str, editor_id: int) -> None:
     definition = get_definition(key)
-    _validate_template(definition, subject, html, allow_statements=False)
+    _validate_template(definition, subject, html)
     template = await session.get(EmailTemplate, key)
     if template is None:
         template = EmailTemplate(key=key)
@@ -156,7 +169,7 @@ async def publish_draft(session: AsyncSession, key: str, editor_id: int) -> int:
     if template is None or not template.draft_subject or not template.draft_html:
         raise ValueError("Save a draft before publishing it.")
     definition = get_definition(key)
-    _validate_template(definition, template.draft_subject, template.draft_html, allow_statements=False)
+    _validate_template(definition, template.draft_subject, template.draft_html)
     template.published_version += 1
     template.published_subject = template.draft_subject
     template.published_html = template.draft_html
@@ -223,6 +236,11 @@ async def _claim_delivery() -> int | None:
             .where(EmailDelivery.status == "sending", EmailDelivery.claim_until < now)
             .values(status="pending", claimed_at=None, claim_until=None)
         )
+        await session.execute(
+            EmailDelivery.__table__.update()
+            .where(EmailDelivery.status == "pending", EmailDelivery.expires_at.is_not(None), EmailDelivery.expires_at <= now)
+            .values(status="expired", last_error="Expired before it could be sent.")
+        )
         delivery = await session.scalar(
             select(EmailDelivery)
             .where(
@@ -257,8 +275,25 @@ async def _send_delivery(delivery_id: int) -> None:
                     delivery.last_error = "The linked authentication token is no longer valid."
                     return
             recipient = delivery.recipient
-            subject = decrypt_val(delivery.encrypted_subject) or ""
-            html = decrypt_val(delivery.encrypted_html) or ""
+            try:
+                subject = decrypt_val(delivery.encrypted_subject) or ""
+                html = decrypt_val(delivery.encrypted_html) or ""
+            except ValueError:
+                # Retrying can't help: the key that encrypted it is gone.
+                delivery.status = "failed"
+                delivery.failed_at = utc_now()
+                delivery.claim_until = None
+                delivery.last_error = (
+                    "Couldn't decrypt this queued email: API_KEY_ENCRYPTION_KEY changed after it was queued. "
+                    "Keep the old key in the list when rotating."
+                )
+                return
+            if not subject or not html:
+                delivery.status = "failed"
+                delivery.failed_at = utc_now()
+                delivery.claim_until = None
+                delivery.last_error = "This email's content was already erased."
+                return
         if not smtp_configured():
             async with get_session() as session:
                 delivery = await session.get(EmailDelivery, delivery_id)
@@ -272,6 +307,10 @@ async def _send_delivery(delivery_id: int) -> None:
     except (ConnectionErrors, ConnectionError, TimeoutError, OSError, ValueError) as exc:
         await _record_failure(delivery_id, str(exc))
         logger.warning("Email delivery %s failed and will be retried", delivery_id)
+        return
+    except Exception as exc:  # noqa: BLE001 - an unexpected SMTP error must not lose the message
+        await _record_failure(delivery_id, f"{type(exc).__name__}: {exc}")
+        logger.exception("Email delivery %s failed unexpectedly and will be retried", delivery_id)
         return
     async with get_session() as session:
         delivery = await session.get(EmailDelivery, delivery_id)
@@ -298,6 +337,22 @@ async def _record_failure(delivery_id: int, error: str) -> None:
         delivery.scheduled_at = utc_now() + timedelta(seconds=delay)
 
 
+async def purge_old_content() -> int:
+    """Erase the rendered subject and body of deliveries finished over the retention period."""
+    cutoff = utc_now() - _content_retention
+    async with get_session() as session:
+        result = await session.execute(
+            EmailDelivery.__table__.update()
+            .where(
+                EmailDelivery.status.in_(_FINISHED),
+                EmailDelivery.created_at < cutoff,
+                EmailDelivery.encrypted_html != "",
+            )
+            .values(encrypted_subject="", encrypted_html="")
+        )
+        return result.rowcount or 0
+
+
 async def process_due_deliveries(limit: int = 20) -> int:
     processed = 0
     for _ in range(limit):
@@ -311,10 +366,16 @@ async def process_due_deliveries(limit: int = 20) -> int:
 
 async def notification_worker_loop() -> None:
     """Keep processing the outbox; message rows survive restarts and crashes."""
+    last_purge = None
     while True:
         try:
+            if last_purge is None or utc_now() - last_purge > timedelta(hours=1):
+                await purge_old_content()
+                last_purge = utc_now()
             processed = await process_due_deliveries()
             await asyncio.sleep(1 if processed else 10)
-        except SQLAlchemyError:
-            logger.exception("Email outbox worker database error")
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - the worker must keep running; rows are retried
+            logger.exception("Email outbox worker error")
             await asyncio.sleep(10)

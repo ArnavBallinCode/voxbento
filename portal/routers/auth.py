@@ -71,10 +71,12 @@ async def _queue_verification_email(
     session,
     email: str,
     user_id: int,
-    *,
-    revoke_existing: bool,
 ) -> None:
-    """Create the token and its durable message in one transaction."""
+    """Create the token and its durable message in one transaction.
+
+    Earlier verification links keep working: delivery happens later, so revoking
+    them now could leave the person with no working link if this email fails.
+    """
     token_val = secrets.token_hex(32)
     auth_token = await create_auth_token(session, jti=token_val, user_id=user_id, token_type="verification")  # nosec B105
     await queue_notification(
@@ -243,12 +245,7 @@ async def register_submit(request: Request):
                         # can use the resulting magic-link session to set a
                         # new password.
                         existing.password_hash = None
-                        await _queue_verification_email(
-                            session,
-                            email,
-                            existing.id,
-                            revoke_existing=False,
-                        )
+                        await _queue_verification_email(session, email, existing.id)
                 return _registration_success(request, email)
 
             try:
@@ -272,15 +269,10 @@ async def register_submit(request: Request):
                 ):
                     if existing.is_active:
                         existing.password_hash = None
-                        await _queue_verification_email(
-                            session,
-                            email,
-                            existing.id,
-                            revoke_existing=False,
-                        )
+                        await _queue_verification_email(session, email, existing.id)
                 return _registration_success(request, email)
 
-            await _queue_verification_email(session, email, user.id, revoke_existing=True)
+            await _queue_verification_email(session, email, user.id)
             return _registration_success(request, email)
 
     return templates.TemplateResponse(
