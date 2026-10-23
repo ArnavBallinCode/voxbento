@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from portal.config import settings
 from portal.crypto import decrypt_val, encrypt_val
 from portal.database import get_session
-from portal.models import EmailDelivery, EmailTemplate, EmailTemplateRevision, utc_now
+from portal.models import AuthToken, EmailDelivery, EmailTemplate, EmailTemplateRevision, utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +182,7 @@ async def queue_notification(
     scheduled_at: datetime | None = None,
     expires_at: datetime | None = None,
     idempotency_key: str | None = None,
+    auth_token_id: int | None = None,
 ) -> EmailDelivery:
     """Render now and persist a message in the same transaction as its trigger."""
     definition = get_definition(key)
@@ -199,6 +200,7 @@ async def queue_notification(
         template_version=version,
         scheduled_at=scheduled_at or utc_now(),
         expires_at=expires_at,
+        auth_token_id=auth_token_id,
         idempotency_key=idempotency_key,
     )
     session.add(delivery)
@@ -247,6 +249,13 @@ async def _send_delivery(delivery_id: int) -> None:
             delivery = await session.get(EmailDelivery, delivery_id)
             if delivery is None or delivery.status != "sending":
                 return
+            if delivery.auth_token_id is not None:
+                token = await session.get(AuthToken, delivery.auth_token_id)
+                if token is None or token.is_used or token.is_expired:
+                    delivery.status = "suppressed"
+                    delivery.claim_until = None
+                    delivery.last_error = "The linked authentication token is no longer valid."
+                    return
             recipient = delivery.recipient
             subject = decrypt_val(delivery.encrypted_subject) or ""
             html = decrypt_val(delivery.encrypted_html) or ""

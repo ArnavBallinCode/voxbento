@@ -188,6 +188,7 @@ async def _send_admin_invite(session, user: User, role_name: str, context_name: 
         {"role_name": roles_module.role_label(role_name), "context_name": context_name, "invite_url": invite_url},
         expires_at=token.expires_at,
         idempotency_key=f"role-invite:{token_val}",
+        auth_token_id=token.id,
     )
 
 
@@ -291,8 +292,9 @@ async def admin_email_save_draft(
 ):
     if not verify_same_origin(request):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid request origin.")
-    await save_draft(db, key, subject, html, int(user["sub"]))
-    return RedirectResponse(f"/admin/emails/{key}/?saved=1", status_code=status.HTTP_303_SEE_OTHER)
+    safe_key = get_definition(key).key
+    await save_draft(db, safe_key, subject, html, int(user["sub"]))
+    return safe_redirect(url=f"/admin/emails/{safe_key}/?saved=1", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/admin/emails/{key}/publish", dependencies=[Depends(require_admin)])
@@ -304,8 +306,9 @@ async def admin_email_publish(
 ):
     if not verify_same_origin(request):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid request origin.")
-    await publish_draft(db, key, int(user["sub"]))
-    return RedirectResponse(f"/admin/emails/{key}/?published=1", status_code=status.HTTP_303_SEE_OTHER)
+    safe_key = get_definition(key).key
+    await publish_draft(db, safe_key, int(user["sub"]))
+    return safe_redirect(url=f"/admin/emails/{safe_key}/?published=1", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/admin/emails/{key}/test", dependencies=[Depends(require_admin)])
@@ -317,14 +320,15 @@ async def admin_email_test(
 ):
     if not verify_same_origin(request):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid request origin.")
+    safe_key = get_definition(key).key
     await queue_notification(
         db,
-        key,
+        safe_key,
         str(user["email"]),
-        _email_sample_context(key),
-        idempotency_key=f"email-test:{key}:{user['sub']}:{utc_now().isoformat()}",
+        _email_sample_context(safe_key),
+        idempotency_key=f"email-test:{safe_key}:{user['sub']}:{utc_now().isoformat()}",
     )
-    return RedirectResponse(f"/admin/emails/{key}/?test=1", status_code=status.HTTP_303_SEE_OTHER)
+    return safe_redirect(url=f"/admin/emails/{safe_key}/?test=1", status_code=status.HTTP_303_SEE_OTHER)
 
 # Common languages offered in the guided setup wizard booth picker.
 COMMON_LANGUAGES: list[tuple[str, str]] = [
@@ -2330,6 +2334,7 @@ async def admin_invite_user(request: Request):
             {"invite_url": invite_url, "is_existing_user": bool(target_user.password_hash)},
             expires_at=invite_token.expires_at,
             idempotency_key=f"hosting-invite:{invite_token.jti}",
+            auth_token_id=invite_token.id,
         )
     return safe_redirect(url=hosting_return_url(request, "/admin/users/", "success=invite_sent"), status_code=status.HTTP_303_SEE_OTHER)
 
@@ -2417,6 +2422,7 @@ async def admin_resend_invite(request: Request, token_id: int):
             {"invite_url": invite_url, "is_existing_user": bool(user.password_hash)},
             expires_at=invite_token.expires_at,
             idempotency_key=f"hosting-invite:{invite_token.jti}",
+            auth_token_id=invite_token.id,
         )
     return safe_redirect(
         url=hosting_return_url(request, "/admin/users/", "success=invite_resent", user_id=user_id),

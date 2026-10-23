@@ -86,6 +86,7 @@ async def _queue_verification_email(
         {"verification_link": f"{settings.public_base_url.rstrip('/')}/auth/verify/{token_val}"},
         expires_at=auth_token.expires_at,
         idempotency_key=f"verification:{token_val}",
+        auth_token_id=auth_token.id,
     )
 
 
@@ -447,6 +448,7 @@ async def request_magic_link(request: Request):
                 {"magic_link": magic_link},
                 expires_at=auth_tok.expires_at,
                 idempotency_key=f"magic-login:{token_val}",
+                auth_token_id=auth_tok.id,
             )
 
     resp = JSONResponse({"status": "ok", "poll_id": poll_id})
@@ -648,6 +650,7 @@ async def forgot_password_request(request: Request):
                 {"reset_link": f"{settings.public_base_url.rstrip('/')}/auth/reset/{token_val}"},
                 expires_at=reset_token.expires_at if reset_token else None,
                 idempotency_key=f"password-reset:{token_val}",
+                auth_token_id=reset_token.id if reset_token else None,
             )
 
     return {"status": "ok"}

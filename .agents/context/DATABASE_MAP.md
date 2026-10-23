@@ -315,6 +315,12 @@ idempotency key. The worker in `portal/notifications.py` claims due rows and
 retries only transient SMTP failures; no invite links or rendered email content
 are exposed by the administration history.
 
+## Migration 035 — invalidated email links
+
+`email_deliveries.auth_token_id` ties an email that contains an authentication
+or invitation link to its `auth_tokens` row. The outbox suppresses a claimed
+delivery when that token was redeemed, revoked, expired, or deleted.
+
 Room fields: `program_ingest_mode` (`whip` default | `rtmps_relay`; binds the program
 key to its transport), nullable `program_relay_server` (normalized allow-listed RTMPS
 URL), `program_relay_key_enc` (Fernet ciphertext of the YouTube stream key; write-only,
