@@ -1,0 +1,20 @@
+{% extends "admin/base.html" %}
+{% block title %}Emails{% endblock %}
+{% block content %}
+<div class="page-header"><div><h1>Emails</h1><p>Manage transactional email content and review delivery status.</p></div></div>
+<div class="email-summary">
+  <div class="card"><strong>{{ counts.get('pending', 0) }}</strong><span>Queued</span></div>
+  <div class="card"><strong>{{ counts.get('accepted', 0) }}</strong><span>Delivered to SMTP</span></div>
+  <div class="card"><strong>{{ counts.get('failed', 0) }}</strong><span>Needs attention</span></div>
+</div>
+<section class="card email-card"><div class="card-header"><h2>Notification templates</h2><p>Changes remain a draft until you publish them.</p></div>
+  <div class="email-template-list">
+  {% for notification in notifications %}
+    <a class="email-template-row" href="/admin/emails/{{ notification.key }}/"><span><strong>{{ notification.label }}</strong><small>{{ notification.category }}</small></span><span>{{ 'Customised' if notification.key in template_keys else 'Default' }} <span aria-hidden="true">›</span></span></a>
+  {% endfor %}
+  </div>
+</section>
+<section class="card email-card"><div class="card-header"><h2>Recent delivery activity</h2><p>Message bodies and links are never shown here.</p></div>
+  {% if deliveries %}<div class="tm-table-wrap"><table class="tm-table"><thead><tr><th>Type</th><th>Recipient</th><th>Status</th><th>Created</th></tr></thead><tbody>{% for delivery in deliveries %}<tr><td>{{ delivery.notification_key }}</td><td>{{ delivery.recipient }}</td><td><span class="tm-tag">{{ delivery.status }}</span></td><td>{{ delivery.created_at.strftime('%d %b %Y %H:%M') }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="tm-empty">No email activity yet.</p>{% endif %}
+</section>
+{% endblock %}

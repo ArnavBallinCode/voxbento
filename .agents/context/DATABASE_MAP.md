@@ -305,6 +305,16 @@ Fields: `id`, `event_id`, `room_id` (nullable), `booth_id` (nullable), `source_t
 
 ## Migration 028 — RTMPS relay mode (#749)
 
+## Migration 034 — transactional email outbox (#962)
+
+`email_templates` stores draft and published subject/HTML for every registered
+notification type. `email_template_revisions` retains immutable published
+versions. `email_deliveries` contains encrypted rendered subject and HTML,
+delivery status, retry lease and schedule fields, expiry, and an optional
+idempotency key. The worker in `portal/notifications.py` claims due rows and
+retries only transient SMTP failures; no invite links or rendered email content
+are exposed by the administration history.
+
 Room fields: `program_ingest_mode` (`whip` default | `rtmps_relay`; binds the program
 key to its transport), nullable `program_relay_server` (normalized allow-listed RTMPS
 URL), `program_relay_key_enc` (Fernet ciphertext of the YouTube stream key; write-only,

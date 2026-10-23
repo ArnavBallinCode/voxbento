@@ -186,6 +186,7 @@ Looking for an on-device, sovereign AI meeting intelligence tool?
 - **Air-Gapped & Sovereign**: Live speech transcription and meeting minutes powered by local Whisper and Qwen models accelerated by Apple Metal and NVIDIA CUDA.
 - **Source Code**: Developed at [github.com/ArnavBallinCode/voxa](https://github.com/ArnavBallinCode/voxa).
 
+
 ---
 
 ## 🤝 Contributing
