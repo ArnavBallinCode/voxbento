@@ -650,20 +650,34 @@ async def admin_setup_add_booth(request: Request, event_id: int):
     language_name = form.get("language_name", "").strip()
     error = None
     room = None
-    if room_id_str.isdigit():
-        async with get_session() as session:
-            room = await get_room_by_id(session, int(room_id_str))
-    if room is not None and room.event_id != event_id:
-        # Only this event's rooms; the wizard just shows the form again.
-        room_id_str = ""
-    if room_id_str and language_code:
+    room_id = None
+    if not room_id_str:
+        error = "room_required"
+    else:
+        try:
+            room_id = int(room_id_str)
+        except ValueError:
+            room_id = None
+        # Keep the id inside a 32-bit SQL integer before it reaches the database.
+        if room_id is not None and 0 < room_id <= 2**31 - 1:
+            async with get_session() as session:
+                room = await get_room_by_id(session, room_id)
+        else:
+            room_id = None
+        if room is None or room.event_id != event_id:
+            # A malformed or foreign room must be reported, not silently ignored.
+            room_id_str = ""
+            error = "room_not_found"
+    if error is None and not language_code:
+        error = "language_required"
+    if error is None:
         if not language_name:
             lang = pycountry.languages.get(alpha_2=language_code)
             language_name = lang.name if lang else language_code.upper()
         try:
             created = await _create_booth_unless_duplicate(
                 event_id=event_id,
-                room_id=int(room_id_str),
+                room_id=room.id,
                 language_code=language_code,
                 language_name=language_name,
             )
@@ -671,6 +685,7 @@ async def admin_setup_add_booth(request: Request, event_id: int):
                 error = "duplicate_language"
         except Exception as e:
             logger.warning(f"Error creating booth in setup wizard: {e}")
+            error = "booth_create_failed"
 
     query = {}
     if room_id_str:
@@ -1526,11 +1541,9 @@ async def admin_booth_detail(request: Request, event_id: int, room_id: int, boot
         event = await get_event_by_id(session, event_id)
         if event is None:
             raise HTTPException(status_code=404, detail="Event not found.")
-        room = await get_room_by_id(session, room_id)
-        if room is None or room.event_id != event_id:
-            raise HTTPException(status_code=404, detail="Room not found.")
+        room = await room_in_event(session, event_id, room_id)
         db_booth = await get_booth_by_id(session, booth_id)
-        if db_booth is None or db_booth.room_id != room_id:
+        if db_booth is None or db_booth.event_id != event_id or db_booth.room_id != room_id:
             raise HTTPException(status_code=404, detail="Booth not found.")
         tokens = await list_tokens_for_booth(session, booth_id)
         users = await list_users(session)
@@ -1673,7 +1686,6 @@ async def admin_remove_room_member(request: Request, event_id: int, room_id: int
 async def admin_add_booth_member(request: Request, event_id: int, room_id: int, booth_id: int):
     """Add or update a booth membership assignment for a user."""
     async with get_session() as session:
-        await room_in_event(session, event_id, room_id)
         await booth_in_room(session, event_id, room_id, booth_id)
     form = await request.form()
     email = form.get("email", "").strip()
@@ -1682,7 +1694,6 @@ async def admin_add_booth_member(request: Request, event_id: int, room_id: int, 
         return invalid_role_redirect(request, f"events/{event_id}/rooms/{room_id}/booths/{booth_id}/", role)
     if email:
         async with get_session() as session:
-            await room_in_event(session, event_id, room_id)
             booth = await booth_in_room(session, event_id, room_id, booth_id)
             user = await get_user_by_email(session, email)
             if not user:
@@ -1776,7 +1787,6 @@ async def admin_remove_booth_member(request: Request, event_id: int, room_id: in
 async def admin_delete_booth(request: Request, event_id: int, room_id: int, booth_id: int):
     """Delete an interpretation booth from a room."""
     async with get_session() as session:
-        await room_in_event(session, event_id, room_id)
         await booth_in_room(session, event_id, room_id, booth_id)
         await delete_booth(session, booth_id)
     return safe_redirect(
@@ -1800,9 +1810,7 @@ async def admin_booth_translation_settings(
     translation_languages: list[str] = Form([]),
 ):
     async with get_session() as session:
-        db_booth = await get_booth_by_id(session, booth_id)
-        if db_booth is None or db_booth.event_id != event_id or db_booth.room_id != room_id:
-            raise HTTPException(status_code=404, detail="Booth not found.")
+        db_booth = await booth_in_room(session, event_id, room_id, booth_id)
         event = await get_event_by_id(session, event_id)
         if event is None:
             raise HTTPException(status_code=404, detail="Event not found.")
@@ -1841,15 +1849,14 @@ async def admin_edit_booth(request: Request, event_id: int, room_id: int, booth_
     language_name = form.get("language_name", "").strip()
     language_code_raw = form.get("language_code", "").strip()
     async with get_session() as session:
-        booth = await get_booth_by_id(session, booth_id)
-        if booth and booth.event_id == event_id and (booth.room_id == room_id):
-            if language_name:
-                booth.language_name = language_name
-            if language_code_raw:
-                try:
-                    booth.language_code = validate_language_code(language_code_raw)
-                except ValueError as e:
-                    raise HTTPException(status_code=400, detail=str(e))
+        booth = await booth_in_room(session, event_id, room_id, booth_id)
+        if language_name:
+            booth.language_name = language_name
+        if language_code_raw:
+            try:
+                booth.language_code = validate_language_code(language_code_raw)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
         await session.flush()
     return safe_redirect(
         url=management_url(request, f"events/{event_id}/rooms/{room_id}/booths/{booth_id}/"),
@@ -1871,9 +1878,7 @@ async def admin_transcription_settings(
     transcription_model: str = Form("tiny"),
 ):
     async with get_session() as session:
-        db_booth = await get_booth_by_id(session, booth_id)
-        if db_booth is None or db_booth.event_id != event_id or db_booth.room_id != room_id:
-            raise HTTPException(status_code=404, detail="Booth not found.")
+        db_booth = await booth_in_room(session, event_id, room_id, booth_id)
         try:
             provider_enum = ProviderEnum(transcription_provider)
         except ValueError:
@@ -2022,7 +2027,8 @@ async def room_in_event(session, event_id: int, room_id: int):
 
 
 async def booth_in_room(session, event_id: int, room_id: int, booth_id: int):
-    """The booth in the URL, or 404 when it isn't in that room of the event in the URL."""
+    """The booth in the URL, or 404 when the room or booth isn't in the event in the URL."""
+    await room_in_event(session, event_id, room_id)
     booth = await get_booth_by_id(session, booth_id)
     if booth is None or booth.event_id != event_id or booth.room_id != room_id:
         raise HTTPException(status_code=404, detail="Booth not found.")
@@ -2833,7 +2839,6 @@ async def admin_remove_event_member(request: Request, event_id: int, membership_
 async def admin_create_token(request: Request, event_id: int, room_id: int, booth_id: int):
     """Create an invite token for a booth."""
     async with get_session() as session:
-        await room_in_event(session, event_id, room_id)
         await booth_in_room(session, event_id, room_id, booth_id)
     form = await request.form()
     role = form.get("role", "").strip()

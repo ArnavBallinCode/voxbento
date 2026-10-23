@@ -12,10 +12,13 @@ Covers:
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
+from sqlalchemy import select
 
 from portal.auth import create_user_token
-from portal.models import BoothMembership, EventMembership, InviteToken, RoomMembership
+from portal.models import AuthToken, BoothMembership, EventMembership, InviteToken, RoomMembership
 
 
 @pytest.fixture(autouse=True)
@@ -863,38 +866,113 @@ class TestSiblingSubresourceSecurity:
     @pytest.mark.anyio
     async def test_owner_cross_event_booth_member_invite_rejected(self, booth_scope):
         """Owner A cannot trigger invite for Booth B member via mismatched URL parameters."""
+        from portal.database import get_session
+
         scope = booth_scope
-        async with _client() as c:
-            resp = await c.post(
-                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_a1']}/booths/{scope['booth_b']}/members/{scope['membership_b']}/invite",
-                cookies=scope["owner_cookie"],
-                follow_redirects=False,
-            )
+        with patch("portal.routers.admin.send_role_invite_email", new_callable=AsyncMock) as sent:
+            async with _client() as c:
+                resp = await c.post(
+                    f"/workspace/events/{scope['event_a']}/rooms/{scope['room_a1']}/booths/{scope['booth_b']}/members/{scope['membership_b']}/invite",
+                    cookies=scope["owner_cookie"],
+                    follow_redirects=False,
+                )
         assert resp.status_code == 404
+        sent.assert_not_awaited()
+        async with get_session() as s:
+            tokens = (await s.execute(select(AuthToken))).scalars().all()
+            assert len(tokens) == 0
+        async with get_session() as s:
+            tokens = (await s.execute(select(AuthToken))).scalars().all()
+            assert len(tokens) == 0
 
     @pytest.mark.anyio
     async def test_owner_cross_event_room_member_invite_rejected(self, booth_scope):
         """Owner A cannot trigger invite for Room B member via mismatched URL parameters."""
+        from portal.database import get_session
+
         scope = booth_scope
-        async with _client() as c:
-            resp = await c.post(
-                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_b']}/members/{scope['rm_b']}/invite",
-                cookies=scope["owner_cookie"],
-                follow_redirects=False,
-            )
+        with patch("portal.routers.admin.send_role_invite_email", new_callable=AsyncMock) as sent:
+            async with _client() as c:
+                resp = await c.post(
+                    f"/workspace/events/{scope['event_a']}/rooms/{scope['room_b']}/members/{scope['rm_b']}/invite",
+                    cookies=scope["owner_cookie"],
+                    follow_redirects=False,
+                )
         assert resp.status_code == 404
+        sent.assert_not_awaited()
+        async with get_session() as s:
+            tokens = (await s.execute(select(AuthToken))).scalars().all()
+            assert len(tokens) == 0
 
     @pytest.mark.anyio
     async def test_owner_cross_event_event_member_invite_rejected(self, booth_scope):
         """Owner A cannot trigger invite for Event B member via mismatched URL parameters."""
+        from portal.database import get_session
+
         scope = booth_scope
-        async with _client() as c:
-            resp = await c.post(
-                f"/workspace/events/{scope['event_a']}/members/{scope['em_b']}/invite",
-                cookies=scope["owner_cookie"],
-                follow_redirects=False,
-            )
+        with patch("portal.routers.admin.send_role_invite_email", new_callable=AsyncMock) as sent:
+            async with _client() as c:
+                resp = await c.post(
+                    f"/workspace/events/{scope['event_a']}/members/{scope['em_b']}/invite",
+                    cookies=scope["owner_cookie"],
+                    follow_redirects=False,
+                )
         assert resp.status_code == 404
+        sent.assert_not_awaited()
+        async with get_session() as s:
+            tokens = (await s.execute(select(AuthToken))).scalars().all()
+            assert len(tokens) == 0
+
+    @pytest.mark.anyio
+    async def test_legitimate_booth_member_invite_succeeds(self, booth_scope):
+        """Owner A can invite a member of a booth in their own event and room."""
+        scope = booth_scope
+        with patch("portal.routers.admin.send_role_invite_email", new_callable=AsyncMock) as sent:
+            async with _client() as c:
+                resp = await c.post(
+                    f"/workspace/events/{scope['event_a']}/rooms/{scope['room_a1']}/booths/{scope['booth_a1']}"
+                    f"/members/{scope['membership_a1']}/invite",
+                    cookies=scope["owner_cookie"],
+                    follow_redirects=False,
+                )
+        assert resp.status_code == 303
+        assert "error=" not in resp.headers["location"]
+        sent.assert_awaited_once()
+        assert sent.await_args.args[0] == "scope-member-a@example.com"
+
+    @pytest.mark.anyio
+    async def test_booth_member_invite_rejects_room_from_another_event(self, booth_scope):
+        """A booth recorded under Event A but in Event B's room cannot receive invitations."""
+        from portal.database import create_booth, get_session, set_booth_membership
+
+        scope = booth_scope
+        async with get_session() as s:
+            rogue_booth = await create_booth(
+                s,
+                event_id=scope["event_a"],
+                room_id=scope["room_b"],
+                language_code="it",
+                language_name="Italian",
+            )
+            rogue_membership = await set_booth_membership(
+                s,
+                user_id=scope["secondary_owner_a_id"],
+                booth_id=rogue_booth.id,
+                role="interpreter",
+            )
+            rogue_booth_id = rogue_booth.id
+            rogue_membership_id = rogue_membership.id
+
+        with patch("portal.routers.admin.send_role_invite_email", new_callable=AsyncMock) as sent:
+            async with _client() as c:
+                resp = await c.post(
+                    f"/workspace/events/{scope['event_a']}/rooms/{scope['room_b']}/booths/{rogue_booth_id}"
+                    f"/members/{rogue_membership_id}/invite",
+                    cookies=scope["owner_cookie"],
+                    follow_redirects=False,
+                )
+        assert resp.status_code == 404
+        sent.assert_not_awaited()
 
     @pytest.mark.anyio
     async def test_legitimate_token_creation_succeeds(self, booth_scope):
@@ -951,6 +1029,7 @@ class TestSiblingSubresourceSecurity:
                 follow_redirects=False,
             )
         assert resp.status_code == 303
+        assert "error=room_not_found" in resp.headers.get("location", "")
         assert "duplicate_language" not in resp.headers.get("location", "")
         async with get_session() as s:
             created = (
@@ -963,6 +1042,189 @@ class TestSiblingSubresourceSecurity:
                 .first()
             )
             assert created is None
+
+    @pytest.mark.parametrize("room_id", ["999999", "not-a-room", "²", "9" * 100])
+    @pytest.mark.anyio
+    async def test_setup_add_booth_with_invalid_room_reports_error(self, booth_scope, room_id):
+        """The setup wizard reports an unknown room instead of redirecting as if it succeeded."""
+        from sqlalchemy import select
+
+        from portal.database import get_session
+        from portal.models import DBBooth
+
+        scope = booth_scope
+        async with _client() as c:
+            resp = await c.post(
+                f"/workspace/events/{scope['event_a']}/setup/booths",
+                data={"room_id": room_id, "language_code": "it", "language_name": "Italian"},
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+            assert resp.status_code == 303
+            assert "error=room_not_found" in resp.headers["location"]
+            page = await c.get(resp.headers["location"], cookies=scope["owner_cookie"])
+        assert "That room is not part of this event." in page.text
+        async with get_session() as s:
+            created = (
+                (
+                    await s.execute(
+                        select(DBBooth).where(DBBooth.event_id == scope["event_a"], DBBooth.language_code == "it")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert created == []
+
+    @pytest.mark.anyio
+    async def test_setup_add_booth_without_room_reports_error(self, booth_scope):
+        """An empty room selection must not look like a successful booth creation."""
+        from sqlalchemy import select
+
+        from portal.database import get_session
+        from portal.models import DBBooth
+
+        scope = booth_scope
+        async with _client() as c:
+            resp = await c.post(
+                f"/workspace/events/{scope['event_a']}/setup/booths",
+                data={"room_id": "", "language_code": "it", "language_name": "Italian"},
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+            assert resp.status_code == 303
+            assert "error=room_required" in resp.headers["location"]
+            page = await c.get(resp.headers["location"], cookies=scope["owner_cookie"])
+        assert "Select a room before adding a booth." in page.text
+        async with get_session() as s:
+            created = (
+                (
+                    await s.execute(
+                        select(DBBooth).where(DBBooth.event_id == scope["event_a"], DBBooth.language_code == "it")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert created == []
+
+    @pytest.mark.anyio
+    async def test_setup_add_booth_without_language_reports_error(self, booth_scope):
+        """An empty language selection must not look like a successful booth creation."""
+        from sqlalchemy import select
+
+        from portal.database import get_session
+        from portal.models import DBBooth
+
+        scope = booth_scope
+        async with get_session() as s:
+            before = (
+                (
+                    await s.execute(
+                        select(DBBooth).where(DBBooth.room_id == scope["room_a2"], DBBooth.language_code == "it")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        async with _client() as c:
+            resp = await c.post(
+                f"/workspace/events/{scope['event_a']}/setup/booths",
+                data={"room_id": str(scope["room_a2"]), "language_code": "", "language_name": "Italian"},
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+            assert resp.status_code == 303
+            assert "error=language_required" in resp.headers["location"]
+            page = await c.get(resp.headers["location"], cookies=scope["owner_cookie"])
+        assert "Choose a language before adding a booth." in page.text
+        async with get_session() as s:
+            after = (
+                (
+                    await s.execute(
+                        select(DBBooth).where(DBBooth.room_id == scope["room_a2"], DBBooth.language_code == "it")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert len(after) == len(before) == 0
+
+    @pytest.mark.anyio
+    async def test_setup_add_booth_create_failure_reports_error(self, booth_scope, monkeypatch):
+        """An unexpected creation failure must be reported instead of looking successful."""
+        from sqlalchemy import select
+
+        from portal.database import get_session
+        from portal.models import DBBooth
+
+        async def fail_create(**_kwargs):
+            raise RuntimeError("simulated booth creation failure")
+
+        monkeypatch.setattr("portal.routers.admin._create_booth_unless_duplicate", fail_create)
+        scope = booth_scope
+        async with _client() as c:
+            resp = await c.post(
+                f"/workspace/events/{scope['event_a']}/setup/booths",
+                data={"room_id": str(scope["room_a2"]), "language_code": "ko", "language_name": "Korean"},
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+            assert resp.status_code == 303
+            assert "error=booth_create_failed" in resp.headers["location"]
+            page = await c.get(resp.headers["location"], cookies=scope["owner_cookie"])
+        assert "The booth could not be created. Please try again." in page.text
+        async with get_session() as s:
+            created = (
+                (
+                    await s.execute(
+                        select(DBBooth).where(DBBooth.room_id == scope["room_a2"], DBBooth.language_code == "ko")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert created == []
+
+    @pytest.mark.anyio
+    async def test_setup_add_booth_valid_then_duplicate(self, booth_scope):
+        """Valid wizard creation still works, and duplicates still report duplicate_language."""
+        from sqlalchemy import select
+
+        from portal.database import get_session
+        from portal.models import DBBooth
+
+        scope = booth_scope
+        data = {"room_id": str(scope["room_a2"]), "language_code": "ja", "language_name": "Japanese"}
+        async with _client() as c:
+            first = await c.post(
+                f"/workspace/events/{scope['event_a']}/setup/booths",
+                data=data,
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+            second = await c.post(
+                f"/workspace/events/{scope['event_a']}/setup/booths",
+                data=data,
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+        assert first.status_code == 303
+        assert "error=" not in first.headers["location"]
+        assert f"room_id={scope['room_a2']}" in first.headers["location"]
+        assert second.status_code == 303
+        assert "error=duplicate_language" in second.headers["location"]
+        async with get_session() as s:
+            booths = (
+                (
+                    await s.execute(
+                        select(DBBooth).where(DBBooth.room_id == scope["room_a2"], DBBooth.language_code == "ja")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert len(booths) == 1
 
     @pytest.mark.anyio
     async def test_cross_event_create_booth_rejected(self, booth_scope):
@@ -1103,3 +1365,239 @@ class TestSiblingSubresourceSecurity:
             assert room.floor_transcription_provider == "openai"
             assert room.floor_transcription_model == "whisper-1"
             assert room.floor_language_code == "es"
+
+    @pytest.mark.anyio
+    async def test_booth_detail_rejects_foreign_event_booth_in_room(self, booth_scope):
+        """Event B's booth must not render through Event A's room URL."""
+        from portal.database import create_booth, create_invite_token, create_user, get_session, set_booth_membership
+
+        scope = booth_scope
+        async with get_session() as s:
+            rogue_booth = await create_booth(
+                s,
+                event_id=scope["event_b"],
+                room_id=scope["room_a1"],
+                language_code="it",
+                language_name="Secret Italian",
+            )
+            rogue_token = await create_invite_token(s, booth_id=rogue_booth.id, role="interpreter")
+            rogue_member = await create_user(s, email="rogue-secret@example.com", display_name="Rogue Member")
+            await set_booth_membership(s, user_id=rogue_member.id, booth_id=rogue_booth.id, role="interpreter")
+            rogue_booth_id = rogue_booth.id
+            rogue_token_val = rogue_token.token
+
+        async with _client() as c:
+            resp = await c.get(
+                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_a1']}/booths/{rogue_booth_id}/",
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+            resp_b = await c.get(
+                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_a1']}/booths/{scope['booth_b']}/",
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+        assert resp.status_code == 404
+        assert rogue_token_val not in resp.text
+        assert "rogue-secret@example.com" not in resp.text
+        assert "Secret Italian" not in resp.text
+
+        assert resp_b.status_code == 404
+        assert scope["invite_b"] not in resp_b.text
+        assert "scope-member-b@example.com" not in resp_b.text
+
+    @pytest.mark.anyio
+    async def test_booth_list_excludes_foreign_event_booth_in_room(self, booth_scope):
+        """Event B's booth must not appear in Event A's room booth list."""
+        from portal.database import create_booth, get_session
+
+        scope = booth_scope
+        async with get_session() as s:
+            await create_booth(
+                s,
+                event_id=scope["event_b"],
+                room_id=scope["room_a1"],
+                language_code="it",
+                language_name="Secret Italian",
+            )
+
+        async with _client() as c:
+            resp = await c.get(
+                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_a1']}/booths/",
+                cookies=scope["owner_cookie"],
+            )
+        assert resp.status_code == 200
+        assert "Secret Italian" not in resp.text
+        assert "English" in resp.text
+
+    @pytest.mark.anyio
+    async def test_translation_settings_reject_booth_in_foreign_event_room(self, booth_scope):
+        """Event A's booth in Event B's room must not be mutable through that room URL."""
+        from portal.database import create_booth, get_booth_by_id, get_session
+
+        scope = booth_scope
+        async with get_session() as s:
+            rogue_booth = await create_booth(
+                s,
+                event_id=scope["event_a"],
+                room_id=scope["room_b"],
+                language_code="it",
+                language_name="Rogue Italian",
+            )
+            rogue_booth_id = rogue_booth.id
+
+        async with _client() as c:
+            resp = await c.post(
+                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_b']}/booths/"
+                f"{rogue_booth_id}/translation-settings",
+                data={
+                    "translation_enabled": "true",
+                    "translation_provider": "local",
+                    "translation_model": "nllb-200-distilled-600M",
+                },
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+        assert resp.status_code == 404
+        async with get_session() as s:
+            fresh = await get_booth_by_id(s, rogue_booth_id)
+            assert fresh is not None
+            assert fresh.translation_enabled is False
+            assert fresh.translation_provider is None
+
+    @pytest.mark.anyio
+    async def test_edit_booth_rejects_booth_in_foreign_event_room(self, booth_scope):
+        """Event A's booth in Event B's room must not be editable through that room URL."""
+        from portal.database import create_booth, get_booth_by_id, get_session
+
+        scope = booth_scope
+        async with get_session() as s:
+            rogue_booth = await create_booth(
+                s,
+                event_id=scope["event_a"],
+                room_id=scope["room_b"],
+                language_code="it",
+                language_name="Rogue Italian",
+            )
+            rogue_booth_id = rogue_booth.id
+
+        async with _client() as c:
+            resp = await c.post(
+                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_b']}/booths/{rogue_booth_id}/edit",
+                data={"language_name": "Changed Italian"},
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+        assert resp.status_code == 404
+        async with get_session() as s:
+            fresh = await get_booth_by_id(s, rogue_booth_id)
+            assert fresh is not None
+            assert fresh.language_name == "Rogue Italian"
+
+    @pytest.mark.anyio
+    async def test_transcription_settings_reject_booth_in_foreign_event_room(self, booth_scope):
+        """Event A's booth in Event B's room must not be mutable through that room URL."""
+        from portal.database import create_booth, get_booth_by_id, get_session
+
+        scope = booth_scope
+        async with get_session() as s:
+            rogue_booth = await create_booth(
+                s,
+                event_id=scope["event_a"],
+                room_id=scope["room_b"],
+                language_code="it",
+                language_name="Rogue Italian",
+            )
+            rogue_booth_id = rogue_booth.id
+
+        async with _client() as c:
+            resp = await c.post(
+                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_b']}/booths/"
+                f"{rogue_booth_id}/transcription-settings",
+                data={
+                    "transcription_enabled": "true",
+                    "transcription_provider": "local",
+                    "transcription_model": "base",
+                },
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+        assert resp.status_code == 404
+        async with get_session() as s:
+            fresh = await get_booth_by_id(s, rogue_booth_id)
+            assert fresh is not None
+            assert fresh.transcription_enabled is False
+            assert fresh.transcription_model == "tiny"
+
+    @pytest.mark.anyio
+    async def test_same_event_booth_mutations_succeed(self, booth_scope):
+        """A valid event/room/booth chain still updates booth settings."""
+        from portal.database import get_booth_by_id, get_session
+
+        scope = booth_scope
+        async with _client() as c:
+            edit = await c.post(
+                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_a1']}/booths/{scope['booth_a1']}/edit",
+                data={"language_name": "English Updated"},
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+            translation = await c.post(
+                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_a1']}/booths/"
+                f"{scope['booth_a1']}/translation-settings",
+                data={
+                    "translation_enabled": "true",
+                    "translation_provider": "local",
+                    "translation_model": "nllb-200-distilled-600M",
+                },
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+            transcription = await c.post(
+                f"/workspace/events/{scope['event_a']}/rooms/{scope['room_a1']}/booths/"
+                f"{scope['booth_a1']}/transcription-settings",
+                data={
+                    "transcription_enabled": "true",
+                    "transcription_provider": "local",
+                    "transcription_model": "base",
+                },
+                cookies=scope["owner_cookie"],
+                follow_redirects=False,
+            )
+        assert edit.status_code == 303
+        assert translation.status_code == 303
+        assert transcription.status_code == 303
+        async with get_session() as s:
+            fresh = await get_booth_by_id(s, scope["booth_a1"])
+            assert fresh is not None
+            assert fresh.language_name == "English Updated"
+            assert fresh.translation_enabled is True
+            assert fresh.translation_provider == "local"
+            assert fresh.transcription_enabled is True
+            assert fresh.transcription_model == "base"
+
+    @pytest.mark.parametrize(
+        ("method", "subpath", "data"),
+        [
+            ("GET", "", None),
+            ("POST", "delete", {}),
+            ("POST", "edit", {"language_name": "Hacked"}),
+            ("POST", "translation-settings", {"translation_enabled": "true"}),
+            ("POST", "transcription-settings", {"transcription_enabled": "true"}),
+            ("POST", "tokens/", {"role": "interpreter"}),
+            ("POST", "members/", {"email": "intruder@example.com", "role": "interpreter"}),
+        ],
+        ids=["detail", "delete", "edit", "translation", "transcription", "token", "member"],
+    )
+    @pytest.mark.anyio
+    async def test_booth_hierarchy_routes_reject_mismatched_booth(self, booth_scope, method, subpath, data):
+        """All booth endpoints consistently reject mismatched booth hierarchy with 404."""
+        scope = booth_scope
+        suffix = f"/{subpath}" if subpath else "/"
+        path = f"/workspace/events/{scope['event_a']}/rooms/{scope['room_a1']}/booths/{scope['booth_b']}{suffix}"
+        async with _client() as c:
+            if method == "GET":
+                resp = await c.get(path, cookies=scope["owner_cookie"], follow_redirects=False)
+            else:
+                resp = await c.post(path, data=data, cookies=scope["owner_cookie"], follow_redirects=False)
+        assert resp.status_code == 404

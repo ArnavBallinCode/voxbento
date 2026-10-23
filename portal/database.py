@@ -443,8 +443,10 @@ async def list_booths_for_room(session: AsyncSession, room_id: int) -> list[DBBo
 
     result = await session.execute(
         select(DBBooth)
+        .join(Room, Room.id == DBBooth.room_id)
         .options(joinedload(DBBooth.event), selectinload(DBBooth.translation_languages))
-        .where(DBBooth.room_id == room_id)
+        # A booth must belong to the room's event; keep inconsistent rows out of every list.
+        .where(DBBooth.room_id == room_id, DBBooth.event_id == Room.event_id)
         .order_by(DBBooth.language_code),
     )
     return list(result.scalars().all())
