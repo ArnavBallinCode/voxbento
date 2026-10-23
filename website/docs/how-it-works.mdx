@@ -277,6 +277,15 @@ account links are encrypted at rest; a queued email whose sign-in or invitation
 link has been used or has expired is not sent, and the content of finished
 emails is erased after 30 days.
 
+Every email uses one fixed layout, so they all look alike: the logo, the message
+in a white card with one button, and a footer. Admins edit only the message;
+the **Branding** setting on Admin → Emails shows or hides the logo and can use
+another https image. Besides sign-in, invitation and hosting emails, people are
+told when they are removed from a team, when an Admin changes their Admin,
+hosting, active or verified status, when their password is set, changed,
+removed or reset, and when their account is deleted. Team invitation links last
+7 days. Shareable booth invite links send no email.
+
 ## Security Layers
 
 Publishing audio to a booth is protected by three independent enforcement layers:

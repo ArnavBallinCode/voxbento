@@ -324,6 +324,9 @@ it once the token is redeemed, revoked, expired or deleted. The worker in
 marks pending rows past `expires_at` as expired, and erases the rendered
 subject and HTML of finished deliveries after 30 days (the audit row stays).
 No links or email content are shown in the administration history.
+`email_settings` holds one row (id 1) of branding shared by every email:
+`show_logo` (default true) and an optional https `logo_url` (empty means the
+VoxBento logo served by the site). No row means the defaults.
 
 ## Migration 027 — managed meeting agent
 

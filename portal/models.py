@@ -913,6 +913,19 @@ class EmailTemplateRevision(Base):
     published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
+class EmailSettings(Base):
+    """Branding shared by every email (one row, id 1). No row means the defaults."""
+
+    __tablename__ = "email_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    show_logo: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa.true())
+    # An https image URL; empty means the VoxBento logo served by this site.
+    logo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    updated_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
 class EmailDelivery(Base):
     """An encrypted rendered message awaiting SMTP delivery or its audit record."""
 

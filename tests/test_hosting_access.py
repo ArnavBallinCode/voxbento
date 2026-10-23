@@ -957,7 +957,7 @@ async def test_demo_request_template_renders_from_the_notification_registry():
     assert "Jane Doe" in body
     assert "applicant@example.com" in body
     assert "Tech Corp" in body
-    assert "Review in Admin Panel" in body
+    assert "Open in Admin" in body
 
 
 @pytest.mark.anyio

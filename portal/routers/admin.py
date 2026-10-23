@@ -119,11 +119,14 @@ from portal.models import (
 from portal.my_events import list_my_events
 from portal.notifications import (
     NOTIFICATIONS,
+    default_logo_url,
+    email_branding,
     get_definition,
     preview_notification,
     publish_draft,
     queue_notification,
     save_draft,
+    save_email_branding,
     template_content,
 )
 from portal.program_ingest import room_lock
@@ -177,9 +180,15 @@ def _apply_api_key_updates(
             setattr(event, attribute, encrypt_val(trimmed_value))
 
 
+INVITE_LINK_SECONDS = 7 * 86400
+
+
 async def _send_admin_invite(session, user: User, role_name: str, context_name: str, target_url: str):
     token_val = secrets.token_hex(32)
-    token = await create_auth_token(session, jti=token_val, user_id=user.id, token_type=TOKEN_TYPE_MAGIC_LINK)
+    # Invitations wait in an inbox, so they last as long as hosting invitations, not a sign-in link's 15 minutes.
+    token = await create_auth_token(
+        session, jti=token_val, user_id=user.id, token_type=TOKEN_TYPE_MAGIC_LINK, expires_in_seconds=INVITE_LINK_SECONDS
+    )
     invite_url = f"{settings.public_base_url}/auth/magic/{token_val}?next={urllib.parse.quote(target_url)}"
     await queue_notification(
         session,
@@ -263,7 +272,9 @@ async def _render_email_editor(
 
 
 @router.get("/admin/emails/", dependencies=[Depends(require_admin)])
-async def admin_emails(request: Request, db: AsyncSession = Depends(get_db_session)):
+async def admin_emails(
+    request: Request, db: AsyncSession = Depends(get_db_session), error: str = "", logo_url: str | None = None
+):
     deliveries = list(
         (
             await db.scalars(
@@ -273,6 +284,7 @@ async def admin_emails(request: Request, db: AsyncSession = Depends(get_db_sessi
     )
     template_keys = set((await db.scalars(select(EmailTemplate.key))).all())
     counts = dict((await db.execute(select(EmailDelivery.status, func.count()).group_by(EmailDelivery.status))).all())
+    branding = await email_branding(db)
     return templates.TemplateResponse(
         request,
         "admin/emails.html",
@@ -282,8 +294,30 @@ async def admin_emails(request: Request, db: AsyncSession = Depends(get_db_sessi
             "deliveries": deliveries,
             "counts": counts,
             "labels": {definition.key: definition.label for definition in NOTIFICATIONS},
+            "branding": branding,
+            "logo_url": (branding.logo_url or "") if logo_url is None else logo_url,
+            "default_logo_url": default_logo_url(),
+            "error": error,
         },
+        status_code=status.HTTP_400_BAD_REQUEST if error else status.HTTP_200_OK,
     )
+
+
+@router.post("/admin/emails/branding", dependencies=[Depends(require_admin)])
+async def admin_email_branding(
+    request: Request,
+    show_logo: str = Form(""),
+    logo_url: str = Form(""),
+    user: dict = Depends(require_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    if not verify_same_origin(request):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid request origin.")
+    try:
+        await save_email_branding(db, show_logo=show_logo == "on", logo_url=logo_url, editor_id=int(user["sub"]))
+    except ValueError as exc:
+        return await admin_emails(request, db, error=str(exc), logo_url=logo_url)
+    return safe_redirect(url="/admin/emails/?branding=1", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/admin/emails/{key}/", dependencies=[Depends(require_admin)])
@@ -298,7 +332,7 @@ async def admin_email_preview(key: str, db: AsyncSession = Depends(get_db_sessio
     return Response(
         html,
         media_type="text/html",
-        headers={"Content-Security-Policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'"},
+        headers={"Content-Security-Policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src 'self' https:"},
     )
 
 
@@ -2676,11 +2710,21 @@ async def admin_delete_user(request: Request, user_id: int):
     confirm_email = form.get("confirm_email")
     try:
         async with get_session() as session:
-            await delete_user_account(
+            deleted_email = await delete_user_account(
                 session,
                 actor_id=request.state.principal["user_id"],
                 user_id=user_id,
                 confirm_email=confirm_email if isinstance(confirm_email, str) else "",
+            )
+            await queue_notification(
+                session,
+                "account_access",
+                deleted_email,
+                {
+                    "message": "Your VoxBento account was deleted by an administrator, with all its event roles.",
+                    "login_url": settings.public_base_url.rstrip("/") + "/",
+                },
+                idempotency_key=f"account-deleted:{user_id}",
             )
     except UserAdminError as exc:
         return safe_redirect(url=f"/admin/users/{user_id}/?error={exc.code}", status_code=status.HTTP_303_SEE_OTHER)

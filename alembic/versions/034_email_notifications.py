@@ -41,6 +41,14 @@ def upgrade() -> None:
     )
     op.create_index("ix_email_template_revisions_template_key", "email_template_revisions", ["template_key"])
     op.create_table(
+        "email_settings",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("show_logo", sa.Boolean(), nullable=False, server_default=sa.true()),
+        sa.Column("logo_url", sa.String(length=500), nullable=True),
+        sa.Column("updated_by_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+    )
+    op.create_table(
         "email_deliveries",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("notification_key", sa.String(length=80), nullable=False),
@@ -70,5 +78,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("email_deliveries")
+    op.drop_table("email_settings")
     op.drop_table("email_template_revisions")
     op.drop_table("email_templates")

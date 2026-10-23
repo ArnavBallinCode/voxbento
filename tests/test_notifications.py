@@ -310,3 +310,151 @@ async def test_email_that_cannot_be_decrypted_fails_at_once_with_a_clear_reason(
     assert stored.status == "failed"
     assert stored.attempt_count == 1
     assert "API_KEY_ENCRYPTION_KEY changed" in stored.last_error
+
+
+# ── Shared layout and branding ───────────────────────────────────────────
+
+
+async def _html_of(delivery_id):
+    from portal.crypto import decrypt_val
+
+    async with get_session() as session:
+        stored = await session.get(EmailDelivery, delivery_id)
+        return decrypt_val(stored.encrypted_html)
+
+
+@pytest.mark.anyio
+async def test_every_email_uses_the_layout_with_the_logo_by_default():
+    from portal.notifications import NOTIFICATIONS, default_logo_url
+    from portal.routers.admin import _email_sample_context
+
+    async with get_session() as session:
+        ids = []
+        for definition in NOTIFICATIONS:
+            delivery = await queue_notification(session, definition.key, "a@example.com", _email_sample_context(definition.key))
+            ids.append(delivery.id)
+    for delivery_id in ids:
+        html = await _html_of(delivery_id)
+        assert f'src="{default_logo_url()}"' in html
+        assert "Sent by VoxBento" in html
+        # Inline styles only: many email clients drop <style> blocks.
+        assert "<style" not in html
+
+
+@pytest.mark.anyio
+async def test_branding_can_hide_the_logo_or_use_a_custom_one():
+    from portal.notifications import save_email_branding
+
+    async with get_session() as session:
+        editor = await create_user(session, email="editor@example.com", display_name="Editor")
+        with pytest.raises(ValueError, match="https"):
+            await save_email_branding(session, show_logo=True, logo_url="http://example.com/logo.png", editor_id=editor.id)
+        with pytest.raises(ValueError, match="https"):
+            await save_email_branding(session, show_logo=True, logo_url='https://x.example/"onerror="x', editor_id=editor.id)
+        await save_email_branding(session, show_logo=True, logo_url="https://cdn.example.com/logo.png", editor_id=editor.id)
+        custom = await queue_notification(session, "magic_login", "a@example.com", {"magic_link": "https://example.invalid/m"})
+        await save_email_branding(session, show_logo=False, logo_url="", editor_id=editor.id)
+        hidden = await queue_notification(session, "magic_login", "b@example.com", {"magic_link": "https://example.invalid/m"})
+        ids = (custom.id, hidden.id)
+    assert 'src="https://cdn.example.com/logo.png"' in await _html_of(ids[0])
+    assert "<img" not in await _html_of(ids[1])
+
+
+@pytest.mark.anyio
+async def test_branding_form_saves_and_explains_a_bad_address(admin_cookies):
+    origin = {"origin": "http://test"}
+    async with _client() as http:
+        bad = await http.post(
+            "/admin/emails/branding", data={"show_logo": "on", "logo_url": "ftp://x/logo.png"}, headers=origin, cookies=admin_cookies
+        )
+        ok = await http.post(
+            "/admin/emails/branding", data={"logo_url": ""}, headers=origin, cookies=admin_cookies, follow_redirects=False
+        )
+        page = await http.get("/admin/emails/", cookies=admin_cookies)
+    assert bad.status_code == 400 and "https:// image address" in bad.text
+    assert ok.status_code == 303
+    assert "No logo" in page.text
+
+
+# ── Lifecycle emails ─────────────────────────────────────────────────────
+
+
+async def _deliveries(key):
+    async with get_session() as session:
+        return list((await session.scalars(select(EmailDelivery).where(EmailDelivery.notification_key == key))).all())
+
+
+@pytest.mark.anyio
+async def test_removing_a_team_role_tells_the_person_where():
+    from portal.database import create_booth, create_event, create_room, set_booth_membership, set_event_membership
+    from portal.team import remove_assignment
+
+    async with get_session() as session:
+        owner = await create_user(session, email="owner@example.com", display_name="Owner")
+        interp = await create_user(session, email="interp@example.com", display_name="Interp")
+        event = await create_event(session, slug="summit", display_name="Summit")
+        room = await create_room(session, event_id=event.id, display_name="Main Hall")
+        booth = await create_booth(session, event_id=event.id, room_id=room.id, language_code="de", language_name="Deutsch")
+        await set_event_membership(session, user_id=owner.id, event_id=event.id, role="event_owner")
+        row = await set_booth_membership(session, user_id=interp.id, booth_id=booth.id, role="interpreter")
+        await remove_assignment(session, event_id=event.id, level="booth", membership_id=row.id)
+    sent = await _deliveries("role_removed")
+    assert [d.recipient for d in sent] == ["interp@example.com"]
+    assert "Main Hall · Deutsch at Summit" in await _html_of(sent[0].id)
+
+
+@pytest.mark.anyio
+async def test_team_invitation_links_last_seven_days():
+    from datetime import timedelta
+
+    from portal.models import AuthToken, utc_now
+    from portal.routers.admin import _send_admin_invite
+
+    async with get_session() as session:
+        user = await create_user(session, email="new@example.com", display_name="New")
+        await _send_admin_invite(session, user, "interpreter", "Main Hall at Summit", "/workspace/")
+        token = await session.scalar(select(AuthToken).where(AuthToken.user_id == user.id))
+        expires = token.expires_at if token.expires_at.tzinfo else token.expires_at.replace(tzinfo=utc_now().tzinfo)
+    assert expires - utc_now() > timedelta(days=6)
+    assert "expires in 7 days" in await _html_of((await _deliveries("role_assignment"))[0].id)
+
+
+@pytest.mark.anyio
+async def test_password_set_change_and_removal_each_send_a_notice():
+    from portal.auth import create_user_token, hash_password
+
+    async with get_session() as session:
+        user = await create_user(session, email="me@example.com", display_name="Me")
+        user_id = user.id
+    cookies = {"user_token": create_user_token(user_id=user_id, email="me@example.com")}
+    async with _client() as http:
+        assert (await http.post("/api/auth/set-password", json={"password": "first-password"}, cookies=cookies)).status_code == 200
+        changed = await http.post(
+            "/api/auth/set-password", json={"password": "second-password", "current_password": "first-password"}, cookies=cookies
+        )
+        removed = await http.post("/api/auth/remove-password", json={"password": "second-password"}, cookies=cookies)
+    assert changed.status_code == 200 and removed.status_code == 200
+    texts = [await _html_of(d.id) for d in await _deliveries("account_access")]
+    assert any("You set a password" in t for t in texts)
+    assert any("password was changed" in t for t in texts)
+    assert any("password was removed" in t for t in texts)
+    assert hash_password  # imported helper stays available for other tests
+
+
+@pytest.mark.anyio
+async def test_deleting_an_account_tells_the_person(admin_cookies):
+    async with get_session() as session:
+        doomed = await create_user(session, email="doomed@example.com", display_name="Doomed")
+        doomed_id = doomed.id
+    async with _client() as http:
+        res = await http.post(
+            f"/admin/users/{doomed_id}/delete",
+            data={"confirm_email": "doomed@example.com"},
+            headers={"origin": "http://test"},
+            cookies=admin_cookies,
+            follow_redirects=False,
+        )
+    assert res.status_code == 303
+    sent = [d for d in await _deliveries("account_access") if d.recipient == "doomed@example.com"]
+    assert len(sent) == 1
+    assert "account was deleted" in await _html_of(sent[0].id)

@@ -90,6 +90,17 @@ async def _queue_verification_email(
     )
 
 
+async def _queue_password_notice(session, email: str, user_id: int, message: str) -> None:
+    """Tell the account owner their password changed, so they notice if it wasn't them."""
+    await queue_notification(
+        session,
+        "account_access",
+        email,
+        {"message": message, "login_url": f"{settings.public_base_url.rstrip('/')}/login"},
+        idempotency_key=f"password:{user_id}:{utc_now().isoformat()}",
+    )
+
+
 def _registration_success(request: Request, email: str) -> object:
     """Render the account-neutral registration confirmation page."""
     return templates.TemplateResponse(
@@ -698,6 +709,7 @@ async def reset_password_submit(request: Request, token: str):
             user = await update_user(session, auth_token.user_id, password_hash=pw_hash)
             if user is None:
                 raise ValueError("User not found.")
+            await _queue_password_notice(session, user.email, user.id, "Your VoxBento password was reset.")
             jwt_token = create_user_token(
                 user_id=user.id, email=user.email, display_name=user.display_name, is_admin=user.is_admin
             )
@@ -917,7 +929,14 @@ async def set_password_api(request: Request):
             isinstance(current_password, str) and verify_password(current_password, user.password_hash)
         ):
             raise HTTPException(status_code=403, detail="Your current password is not correct")
+        had_password = bool(user.password_hash)
         await update_user(session, user.id, password_hash=hash_password(password))
+        await _queue_password_notice(
+            session,
+            user.email,
+            user.id,
+            "Your VoxBento password was changed." if had_password else "You set a password for your VoxBento account.",
+        )
 
     return {"status": "ok"}
 
@@ -938,6 +957,9 @@ async def remove_password_api(request: Request):
 
         # Set directly: update_user() treats None as "leave unchanged".
         user.password_hash = None
+        await _queue_password_notice(
+            session, user.email, user.id, "Your VoxBento password was removed. You now sign in with email links."
+        )
 
     return {"status": "ok"}
 

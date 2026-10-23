@@ -24,6 +24,34 @@
   <div class="card"><strong>{{ counts.get('expired', 0) + counts.get('suppressed', 0) + counts.get('disabled', 0) }}</strong><span>Not sent (expired, link no longer valid or email off)</span></div>
 </div>
 
+{% if error %}
+<p class="alert alert-danger" role="alert">{{ error }}</p>
+{% elif request.query_params.get('branding') %}
+<p class="alert alert-success" role="status">Saved. New emails use this branding.</p>
+{% endif %}
+
+<section class="card email-card">
+  <div class="card-header">
+    <h2>Branding</h2>
+    <p>Every email uses the same layout: the logo, your message in a white card, and a short footer.</p>
+  </div>
+  <form method="post" action="/admin/emails/branding" class="email-branding">
+    <label class="email-check">
+      <input type="checkbox" name="show_logo"{% if branding.show_logo %} checked{% endif %} />
+      Show a logo at the top of emails
+    </label>
+    <div class="form-group">
+      <label for="logo_url">Logo image <span class="email-optional">(optional, https address)</span></label>
+      <input id="logo_url" name="logo_url" type="url" inputmode="url" placeholder="Leave empty for the VoxBento logo" value="{{ logo_url }}" />
+    </div>
+    <div class="email-branding-preview">
+      <span>Currently shown:</span>
+      {% if branding.show_logo %}<img src="{{ branding.logo_url or default_logo_url }}" alt="Email logo" height="28" />{% else %}<em>No logo</em>{% endif %}
+    </div>
+    <button class="btn btn-primary" type="submit">Save branding</button>
+  </form>
+</section>
+
 <section class="card email-card">
   <div class="card-header">
     <h2>Email templates</h2>

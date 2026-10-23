@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import urllib.parse
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -14,13 +15,14 @@ from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
 from fastapi_mail.errors import ConnectionErrors
 from jinja2 import FileSystemLoader, TemplateSyntaxError, meta, nodes, select_autoescape
 from jinja2.sandbox import SandboxedEnvironment
+from markupsafe import Markup
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from portal.config import settings
 from portal.crypto import decrypt_val, encrypt_val
 from portal.database import get_session
-from portal.models import AuthToken, EmailDelivery, EmailTemplate, EmailTemplateRevision, utc_now
+from portal.models import AuthToken, EmailDelivery, EmailSettings, EmailTemplate, EmailTemplateRevision, utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +142,49 @@ def _render(definition: NotificationDefinition, subject: str, html: str, context
     return rendered_subject, _env.from_string(html).render(**context)
 
 
+def default_logo_url() -> str:
+    return f"{settings.public_base_url.rstrip('/')}/static/img/wordmark.png"
+
+
+async def email_branding(session: AsyncSession) -> EmailSettings:
+    """The saved branding, or the defaults (VoxBento logo shown) when nothing was saved."""
+    return await session.get(EmailSettings, 1) or EmailSettings(id=1, show_logo=True, logo_url=None)
+
+
+def _validate_logo_url(url: str) -> str:
+    url = url.strip()
+    if not url:
+        return ""
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != "https" or not parsed.netloc or len(url) > 500 or any(c in url for c in "\"'<> \t\r\n"):
+        raise ValueError("The logo must be an https:// image address.")
+    return url
+
+
+async def save_email_branding(session: AsyncSession, *, show_logo: bool, logo_url: str, editor_id: int) -> None:
+    logo_url = _validate_logo_url(logo_url)  # before changing anything
+    branding = await session.get(EmailSettings, 1)
+    if branding is None:
+        branding = EmailSettings(id=1)
+        session.add(branding)
+    branding.show_logo = show_logo
+    branding.logo_url = logo_url or None
+    branding.updated_by_id = editor_id
+
+
+async def _wrap(session: AsyncSession, subject: str, body: str) -> str:
+    """Put a rendered message inside the shared layout (logo, card and footer)."""
+    branding = await email_branding(session)
+    site = urllib.parse.urlparse(settings.public_base_url)
+    return _env.get_template("_layout.html").render(
+        subject=subject,
+        body=Markup(body),  # noqa: S704 - already rendered with autoescaping from an allowlisted template
+        logo_url=(branding.logo_url or default_logo_url()) if branding.show_logo else "",
+        site_url=settings.public_base_url.rstrip("/"),
+        site_host=site.netloc,
+    )
+
+
 async def template_content(session: AsyncSession, key: str, *, draft: bool = False) -> tuple[str, str, int]:
     definition = get_definition(key)
     template = await session.get(EmailTemplate, key)
@@ -205,6 +250,7 @@ async def queue_notification(
             return existing
     subject, html, version = await template_content(session, key)
     rendered_subject, rendered_html = _render(definition, subject, html, context)
+    rendered_html = await _wrap(session, rendered_subject, rendered_html)
     delivery = EmailDelivery(
         notification_key=key,
         recipient=recipient.strip().lower(),
@@ -224,8 +270,8 @@ async def queue_notification(
 async def preview_notification(session: AsyncSession, key: str, context: Mapping[str, Any], *, draft: bool = True) -> str:
     definition = get_definition(key)
     subject, html, _ = await template_content(session, key, draft=draft)
-    _, rendered_html = _render(definition, subject, html, context)
-    return rendered_html
+    rendered_subject, rendered_html = _render(definition, subject, html, context)
+    return await _wrap(session, rendered_subject, rendered_html)
 
 
 async def _claim_delivery() -> int | None:
