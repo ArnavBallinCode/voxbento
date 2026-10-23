@@ -5,7 +5,7 @@ import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from portal.auth import WSAuthError, is_listener_token, resolve_booth_role, resolve_ws_auth
+from portal.auth import WSAuthError, booth_session_key, is_listener_token, resolve_booth_role, resolve_ws_auth
 from portal.database import get_booth_language_name, get_session, get_user_by_id
 from portal.globals import booths
 from portal.websockets.manager import (
@@ -75,6 +75,7 @@ async def ws_booth(websocket: WebSocket, booth_id: str) -> None:
         channel_id=f"{booth_id}-audio",
         granted_role=ws_granted_role,
         user_id=user_id,
+        session_key=booth_session_key(payload),
     )
     if user_id is not None and manager.revocation_epoch(user_id) != revocation_epoch:
         # Authorization changed after the check above; the revocation sweep ran
