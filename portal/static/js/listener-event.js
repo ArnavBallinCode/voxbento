@@ -94,6 +94,7 @@ var nextStartTime = 0;
 var currentAudioDelayMs = 0;
 var currentRoomId = null;
 var currentSourceType = null;
+var whepAudioLive = false;
 /** @type {ReturnType<typeof window.AudioScheduler.create>|null} */
 var audioScheduler = null;
 
@@ -123,14 +124,17 @@ function showAudioPlayer(show) {
 }
 
 function onState(s) {
-  if (s.peerConnection === "connected" && s.audioActive) {
+  whepAudioLive = s.peerConnection === "connected" && s.audioActive;
+  if (whepAudioLive) {
     setStatus("Live (WebRTC)", "live");
     showAudioPlayer(true);
   } else if (s.peerConnection === "connecting" || s.ice === "checking") {
     setStatus("Connecting...", "recovering");
   } else if (
     s.peerConnection === "failed" ||
-    s.peerConnection === "disconnected"
+    s.peerConnection === "disconnected" ||
+    // A failed WHEP request schedules a retry before ICE ever starts.
+    s.peerConnection === "new"
   ) {
     setStatus("Reconnecting...", "recovering");
   } else if (s.peerConnection === "connected") {
@@ -1060,14 +1064,14 @@ function applyTtsOverlay() {
       setStatus("Live (" + langName + " TTS)", "live");
     } else {
       audioEl.muted = false;
-      if (currentRoomId && languageSelect.value && !pendingWhepUrl) {
+      if (whepAudioLive) {
         setStatus("Live (WebRTC + Translation)", "live");
       }
     }
   } else {
     audioEl.muted = false;
-    // If we are currently connected to WHEP, refresh the badge to WebRTC
-    if (currentRoomId && languageSelect.value && !pendingWhepUrl) {
+    // If WHEP audio is already playing, refresh the badge to WebRTC
+    if (whepAudioLive) {
       setStatus("Live (WebRTC)", "live");
     }
   }
