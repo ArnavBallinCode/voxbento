@@ -1,0 +1,204 @@
+name: Jules PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    # Runs every 30 minutes 24/7 to catch any open PRs without a review or with 2+ new commits
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  pull-requests: write
+  contents: read
+  checks: write
+  issues: write
+
+jobs:
+  discover-prs:
+    name: Determine PRs to Review
+    runs-on: ubuntu-latest
+    outputs:
+      prs: ${{ steps.find.outputs.prs }}
+    steps:
+      - name: Find PRs needing review (unreviewed or 2+ new commits)
+        id: find
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            async function needsJulesReview(prNumber, headSha) {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner,
+                repo,
+                issue_number: prNumber,
+                per_page: 100,
+              });
+              const reviews = await github.paginate(github.rest.pulls.listReviews, {
+                owner,
+                repo,
+                pull_number: prNumber,
+                per_page: 100,
+              });
+
+              const julesReviews = reviews.filter(r => r.body && r.body.includes('🤖 Jules Review'));
+              const julesComments = comments.filter(c => c.body && c.body.includes('🤖 Jules Review'));
+
+              // If the PR has no Jules review yet, review it immediately
+              if (julesReviews.length === 0 && julesComments.length === 0) {
+                return { review: true, reason: 'no_prior_review', baseSha: null };
+              }
+
+              // Determine the commit SHA or timestamp of the most recent Jules review
+              let lastReviewedSha = null;
+              if (julesReviews.length > 0) {
+                lastReviewedSha = julesReviews[julesReviews.length - 1].commit_id;
+              }
+
+              const prCommits = await github.paginate(github.rest.pulls.listCommits, {
+                owner,
+                repo,
+                pull_number: prNumber,
+                per_page: 100,
+              });
+
+              if (!lastReviewedSha && julesComments.length > 0) {
+                const lastCommentTime = new Date(
+                  julesComments[julesComments.length - 1].updated_at ||
+                  julesComments[julesComments.length - 1].created_at
+                );
+                const commitsAfter = prCommits.filter(
+                  c => new Date(c.commit.committer.date) > lastCommentTime
+                );
+                if (commitsAfter.length >= 2) {
+                  const idx = prCommits.length - commitsAfter.length - 1;
+                  const baseSha = idx >= 0 ? prCommits[idx].sha : null;
+                  return { review: true, reason: `${commitsAfter.length}_new_commits`, baseSha };
+                }
+                return { review: false, reason: `only_${commitsAfter.length}_new_commits`, baseSha: null };
+              }
+
+              if (lastReviewedSha) {
+                if (lastReviewedSha === headSha) {
+                  return { review: false, reason: 'already_reviewed_head', baseSha: null };
+                }
+                const lastIdx = prCommits.findIndex(c => c.sha === lastReviewedSha);
+                const newCommitsCount = lastIdx === -1 ? prCommits.length : (prCommits.length - 1 - lastIdx);
+                if (newCommitsCount >= 2) {
+                  return { review: true, reason: `${newCommitsCount}_new_commits`, baseSha: lastReviewedSha };
+                }
+                return { review: false, reason: `only_${newCommitsCount}_new_commits`, baseSha: null };
+              }
+
+              return { review: false, reason: 'already_reviewed', baseSha: null };
+            }
+
+            const targets = [];
+
+            if (context.eventName === 'pull_request') {
+              const pr = context.payload.pull_request;
+              if (!pr.draft && (!pr.head.repo || !pr.head.repo.fork)) {
+                const status = await needsJulesReview(pr.number, pr.head.sha);
+                core.info(`PR #${pr.number}: review=${status.review} (${status.reason})`);
+                if (status.review) {
+                  targets.push({ number: pr.number, baseSha: status.baseSha });
+                }
+              }
+            } else {
+              const openPrs = await github.paginate(github.rest.pulls.list, {
+                owner,
+                repo,
+                state: 'open',
+                per_page: 100,
+              });
+              for (const pr of openPrs) {
+                if (pr.draft || (pr.head.repo && pr.head.repo.fork)) continue;
+                const status = await needsJulesReview(pr.number, pr.head.sha);
+                core.info(`PR #${pr.number}: review=${status.review} (${status.reason})`);
+                if (status.review) {
+                  targets.push({ number: pr.number, baseSha: status.baseSha });
+                }
+              }
+            }
+
+            core.setOutput('prs', JSON.stringify(targets));
+
+  review:
+    name: Jules Review PR #${{ matrix.pr.number }}
+    needs: discover-prs
+    if: ${{ needs.discover-prs.outputs.prs != '[]' && needs.discover-prs.outputs.prs != '' }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: jules-review-${{ matrix.pr.number }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: false
+      matrix:
+        pr: ${{ fromJson(needs.discover-prs.outputs.prs) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prepare pull_request event payload
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = ${{ matrix.pr.number }};
+            const baseSha = ${{ toJson(matrix.pr.baseSha) }};
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+            });
+            const { data: repoData } = await github.rest.repos.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+
+            const fs = require('fs');
+            const eventPayload = {
+              action: baseSha ? 'synchronize' : 'opened',
+              number: prNumber,
+              pull_request: pr,
+              repository: repoData,
+              sender: context.payload.sender || { login: 'github-actions[bot]' },
+              ...(baseSha ? { before: baseSha, after: pr.head.sha } : {}),
+            };
+            const eventPath = '/tmp/jules-pr-event.json';
+            fs.writeFileSync(eventPath, JSON.stringify(eventPayload, null, 2));
+            core.exportVariable('GITHUB_EVENT_NAME', 'pull_request');
+            core.exportVariable('GITHUB_EVENT_PATH', eventPath);
+
+      - name: Run Advanced Jules PR Reviewer
+        id: jules
+        uses: thalesraymond/jules-pr-reviewer@v1
+        with:
+          jules_api_key: ${{ secrets.JULES_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          fail_on: blocking
+          enable_approve: true
+          enable_suggestions: true
+          diff_mode: agentic
+
+      - name: Request changes on blocking verdict
+        if: steps.jules.outputs.verdict == 'block'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: ${{ matrix.pr.number }},
+            });
+            await github.rest.pulls.createReview({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: ${{ matrix.pr.number }},
+              commit_id: pr.head.sha,
+              event: 'REQUEST_CHANGES',
+              body: `🚨 **Jules PR Reviewer** found **${{ steps.jules.outputs.high_issues_count }}** high-severity blocking issue(s) (total issues: ${{ steps.jules.outputs.issues_count }}). Please address the inline review comments before merging.`,
+            });
