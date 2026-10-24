@@ -230,3 +230,59 @@ async def test_close_user_sessions_handles_socket_exception_and_closes_others():
     assert normal.closed_with == (4003, "Authorization revoked")
     assert sess_norm.revoked is True
     assert manager.get_session(normal) is None
+
+
+@pytest.mark.anyio
+async def test_broadcast_booth_state_isolates_and_sanitizes():
+    """broadcast_booth_state sends full state to authorized interpreters and sanitized state to listeners."""
+    from portal.websockets.manager import broadcast_booth_state, listener_manager, manager
+
+    booth_id = "test-booth-state"
+    interp_ws = MockWebSocket()
+    listener_ws = MockWebSocket()
+    revoked_ws = MockWebSocket()
+
+    interp_session = _session(booth_id, granted_role="interpreter")
+    revoked_session = _session(booth_id, granted_role="interpreter")
+    revoked_session.revoked = True
+
+    manager.add(interp_ws, interp_session)
+    manager.add(revoked_ws, revoked_session)
+    listener_manager.add(listener_ws, booth_id)
+
+    raw_state = {
+        "booth_id": booth_id,
+        "broadcast_unlocked": True,
+        "ingest_status": "connected",
+        "chat_messages": [{"sender": "Alice", "text": "secret"}],
+        "participants": [{"id": "p1", "name": "Alice"}],
+    }
+
+    try:
+        await broadcast_booth_state(booth_id, raw_state)
+
+        # Interpreter receives full state
+        assert len(interp_ws.sent_messages) == 1
+        interp_payload = json.loads(interp_ws.sent_messages[0])
+        assert interp_payload["type"] == "booth:state"
+        assert interp_payload["state"] == raw_state
+        assert "participants" in interp_payload["state"]
+
+        # Revoked socket receives nothing
+        assert len(revoked_ws.sent_messages) == 0
+
+        # Listener receives sanitized state
+        assert len(listener_ws.sent_messages) == 1
+        listener_payload = json.loads(listener_ws.sent_messages[0])
+        assert listener_payload["type"] == "booth:state"
+        assert listener_payload["state"] == {
+            "booth_id": booth_id,
+            "broadcast_unlocked": True,
+            "ingest_status": "connected",
+        }
+        assert "participants" not in listener_payload["state"]
+        assert "chat_messages" not in listener_payload["state"]
+    finally:
+        manager.remove(interp_ws)
+        manager.remove(revoked_ws)
+        listener_manager.remove(listener_ws, booth_id)

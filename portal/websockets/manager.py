@@ -241,6 +241,17 @@ async def broadcast_transcription(booth_id: str, payload: str | dict):
         await listener_manager.broadcast(booth_id, payload)
 
 
+async def broadcast_booth_state(booth_id: str, state: dict) -> None:
+    """Broadcast booth state to interpreters and listener-safe state to listeners."""
+    await manager.broadcast(booth_id, {"type": "booth:state", "state": state})
+    listener_state = {
+        "booth_id": state.get("booth_id"),
+        "broadcast_unlocked": state.get("broadcast_unlocked"),
+        "ingest_status": state.get("ingest_status"),
+    }
+    await listener_manager.broadcast(booth_id, {"type": "booth:state", "state": listener_state})
+
+
 async def _handle_join(ws: WebSocket, session: Session, data: dict) -> None:
     """Handle a client joining a booth session.
 
@@ -446,13 +457,7 @@ async def _handle_set_broadcast_unlocked(ws: WebSocket, session: Session, data: 
                 await stop_transcription_worker(session.booth_id)
             except Exception as e:
                 logging.getLogger(__name__).warning(f"Failed to stop transcription on lock: {e}")
-        await manager.broadcast(session.booth_id, {"type": "booth:state", "state": state})
-        listener_state = {
-            "booth_id": state.get("booth_id"),
-            "broadcast_unlocked": state.get("broadcast_unlocked"),
-            "ingest_status": state.get("ingest_status"),
-        }
-        await listener_manager.broadcast(session.booth_id, {"type": "booth:state", "state": listener_state})
+        await broadcast_booth_state(session.booth_id, state)
     except Exception as exc:
         await ws.send_text(json.dumps({"type": "booth:error", "message": str(exc)}))
 
