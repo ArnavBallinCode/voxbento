@@ -67,9 +67,10 @@ class FakeElement {
       remove: (...remove) => {
         el.className = names().filter((n) => !remove.includes(n)).join(' ');
       },
-      toggle: (name) => {
-        if (names().includes(name)) el.classList.remove(name);
-        else el.classList.add(name);
+      toggle: (name, force) => {
+        const on = force === undefined ? !names().includes(name) : force;
+        if (on) el.classList.add(name);
+        else el.classList.remove(name);
       },
     };
   }
@@ -403,15 +404,15 @@ async function run() {
   console.log('\n── Captions placeholder (#987) ──');
 
   const waitingText = document.getElementById('waiting-text');
-  assert(waitingText.style.display === 'none', 'the placeholder is hidden once captions arrive');
+  assert(waitingText.classList.contains('listener-hidden'), 'the placeholder is hidden once captions arrive');
 
   choose(languageSelect, 'http://mtx/floor/whep');
   assert(historyBox.children.length === 0, 'switching source clears the old captions');
-  assert(waitingText.style.display === '', 'the placeholder comes back after switching source');
+  assert(!waitingText.classList.contains('listener-hidden'), 'the placeholder comes back after switching source');
 
   captionsSocket().onmessage({ data: JSON.stringify({ type: 'caption', status: 'final', seq: 1, text: 'Floor' }) });
   choose(roomSelect, '');
-  assert(waitingText.style.display === '', 'the placeholder comes back after clearing the room');
+  assert(!waitingText.classList.contains('listener-hidden'), 'the placeholder comes back after clearing the room');
 
   console.log('\n' + passed + ' passed, ' + failed + ' failed');
   process.exit(failed > 0 ? 1 : 0);
