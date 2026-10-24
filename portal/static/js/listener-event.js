@@ -134,7 +134,7 @@ function onState(s) {
     s.peerConnection === "failed" ||
     s.peerConnection === "disconnected" ||
     // A failed WHEP request schedules a retry before ICE ever starts.
-    s.peerConnection === "new"
+    s.retrying
   ) {
     setStatus("Reconnecting...", "recovering");
   } else if (s.peerConnection === "connected") {

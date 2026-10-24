@@ -342,7 +342,11 @@ async function run() {
   choose(languageSelect, 'http://mtx/floor/whep');
   assert(statusText() === 'Connecting...', 'floor audio shows Connecting... until audio plays, got "' + statusText() + '"');
 
-  whepOpts.onState({ peerConnection: 'new', ice: 'new', audioActive: false });
+  // The first session reports "new" from setRemoteDescription until ICE starts.
+  whepOpts.onState({ peerConnection: 'new', ice: 'new', audioActive: false, retrying: false });
+  assert(statusText() === 'Connecting...', 'a first session that is still starting stays on Connecting..., got "' + statusText() + '"');
+
+  whepOpts.onState({ peerConnection: 'new', ice: 'new', audioActive: false, retrying: true });
   assert(statusText() === 'Reconnecting...', 'a failed WHEP request shows Reconnecting..., got "' + statusText() + '"');
 
   whepOpts.onState({ peerConnection: 'connected', ice: 'connected', audioActive: true });
