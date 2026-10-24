@@ -236,14 +236,3 @@ We love contributions! Whether you are fixing a bug, adding new transcription pr
 ## 📄 License
 
 VoxBento is open-source software licensed under the [Apache License 2.0](LICENSE).
-
-
-### Automated Jules reviews (without installing the Jules GitHub app)
-
-The [Jules PR Review workflow](.github/workflows/jules-pr-review.yml) reviews non-draft pull requests from both forks and repository branches through the **Jules REST API in repoless mode**. No Jules GitHub app installation or repository connection is required.
-
-Maintainers must configure the `JULES_API_KEY` repository Actions secret (Settings → Secrets and variables → Actions). The built-in GitHub Actions `GITHUB_TOKEN` reads PR diffs and posts GitHub-native review comments; no separate personal access token is needed. Merge this workflow into the protected default branch to activate it.
-
-Reviews run on PR open/update/reopen/ready-for-review, a 30-minute catch-up schedule, or **Actions → Jules PR Review → Run workflow**. Reviews are serialized per PR and not canceled; repeat reviews occur when at least two new commits arrive or commit history is rewritten. Errors are retried on subsequent scans.
-
-The trusted workflow uses `pull_request_target` **without ever checking out or executing PR-head code**. It fetches only bounded textual PR patches, treats them as untrusted input, and never passes the GitHub token to Jules. The review marker must be authored by GitHub Actions to count as completed; changed HEADs are checked again before posting. High-severity blocking findings request changes and fail the job; other findings post as advisory reviews, not automatic approvals. Binary and very large PRs can receive partial coverage. Human maintainer approval remains required.
