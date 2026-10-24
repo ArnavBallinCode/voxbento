@@ -869,7 +869,7 @@ class TestSiblingSubresourceSecurity:
         from portal.database import get_session
 
         scope = booth_scope
-        with patch("portal.routers.admin.send_role_invite_email", new_callable=AsyncMock) as sent:
+        with patch("portal.routers.admin.queue_notification", new_callable=AsyncMock) as sent:
             async with _client() as c:
                 resp = await c.post(
                     f"/workspace/events/{scope['event_a']}/rooms/{scope['room_a1']}/booths/{scope['booth_b']}/members/{scope['membership_b']}/invite",
@@ -891,7 +891,7 @@ class TestSiblingSubresourceSecurity:
         from portal.database import get_session
 
         scope = booth_scope
-        with patch("portal.routers.admin.send_role_invite_email", new_callable=AsyncMock) as sent:
+        with patch("portal.routers.admin.queue_notification", new_callable=AsyncMock) as sent:
             async with _client() as c:
                 resp = await c.post(
                     f"/workspace/events/{scope['event_a']}/rooms/{scope['room_b']}/members/{scope['rm_b']}/invite",
@@ -910,7 +910,7 @@ class TestSiblingSubresourceSecurity:
         from portal.database import get_session
 
         scope = booth_scope
-        with patch("portal.routers.admin.send_role_invite_email", new_callable=AsyncMock) as sent:
+        with patch("portal.routers.admin.queue_notification", new_callable=AsyncMock) as sent:
             async with _client() as c:
                 resp = await c.post(
                     f"/workspace/events/{scope['event_a']}/members/{scope['em_b']}/invite",
@@ -927,7 +927,7 @@ class TestSiblingSubresourceSecurity:
     async def test_legitimate_booth_member_invite_succeeds(self, booth_scope):
         """Owner A can invite a member of a booth in their own event and room."""
         scope = booth_scope
-        with patch("portal.routers.admin.send_role_invite_email", new_callable=AsyncMock) as sent:
+        with patch("portal.routers.admin.queue_notification", new_callable=AsyncMock) as sent:
             async with _client() as c:
                 resp = await c.post(
                     f"/workspace/events/{scope['event_a']}/rooms/{scope['room_a1']}/booths/{scope['booth_a1']}"
@@ -938,7 +938,7 @@ class TestSiblingSubresourceSecurity:
         assert resp.status_code == 303
         assert "error=" not in resp.headers["location"]
         sent.assert_awaited_once()
-        assert sent.await_args.args[0] == "scope-member-a@example.com"
+        assert sent.await_args.args[2] == "scope-member-a@example.com"
 
     @pytest.mark.anyio
     async def test_booth_member_invite_rejects_room_from_another_event(self, booth_scope):
@@ -963,7 +963,7 @@ class TestSiblingSubresourceSecurity:
             rogue_booth_id = rogue_booth.id
             rogue_membership_id = rogue_membership.id
 
-        with patch("portal.routers.admin.send_role_invite_email", new_callable=AsyncMock) as sent:
+        with patch("portal.routers.admin.queue_notification", new_callable=AsyncMock) as sent:
             async with _client() as c:
                 resp = await c.post(
                     f"/workspace/events/{scope['event_a']}/rooms/{scope['room_b']}/booths/{rogue_booth_id}"
