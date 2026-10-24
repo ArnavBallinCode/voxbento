@@ -79,13 +79,13 @@ class FakeElement {
   }
 
   set textContent(value) {
-    this.children = [];
+    this.removeChildren();
     this._text = String(value);
   }
 
   // Enough of an HTML parser for the flat markup listener-event.js writes.
   set innerHTML(html) {
-    this.children = [];
+    this.removeChildren();
     this._text = '';
     const tag = /<(\w+)(?: class="([^"]*)")?(?: value="([^"]*)")?>([^<]*)<\/\1>/g;
     let match;
@@ -111,6 +111,13 @@ class FakeElement {
     this.children.push(child);
     if (this.tagName === 'SELECT' && this._selectedIndex === -1) this._selectedIndex = 0;
     return child;
+  }
+
+  removeChildren() {
+    this.children.forEach((child) => {
+      child.parentNode = null;
+    });
+    this.children = [];
   }
 
   removeChild(child) {
@@ -181,14 +188,26 @@ class FakeElement {
   }
 }
 
+// Like the real one, getElementById only finds elements still in the page.
+function isConnected(el) {
+  for (let node = el; node; node = node.parentNode) {
+    if (node.inPage) return true;
+  }
+  return false;
+}
+
 const document = {
-  getElementById: (id) => elementsById.get(id) || null,
+  getElementById: (id) => {
+    const el = elementsById.get(id);
+    return el && isConnected(el) ? el : null;
+  },
   createElement: (tagName) => new FakeElement(tagName),
 };
 
 function make(tagName, id) {
   const el = new FakeElement(tagName);
   el.id = id;
+  el.inPage = true;
   return el;
 }
 
@@ -217,18 +236,23 @@ captionModeSelect.innerHTML =
   '<option value="original">Original</option><option value="translated">Translated</option>';
 document.getElementById('waiting-text').className = 'absolute inset-0 flex';
 
-// Captions box: each history row is 20px tall and 300px are visible.
+// Captions box: each history row is rowHeight px tall and 300px are visible.
+// Like a browser, it fires "scroll" only when scrollTop actually changes.
 const captionsBox = make('div', 'live-captions');
 const historyBox = document.getElementById('caption-history');
+let rowHeight = 20;
 Object.defineProperty(captionsBox, 'clientHeight', { get: () => 300 });
 Object.defineProperty(captionsBox, 'scrollHeight', {
-  get: () => Math.max(300, historyBox.children.length * 20),
+  get: () => Math.max(300, historyBox.children.length * rowHeight),
 });
 let captionsScrollTop = 0;
 Object.defineProperty(captionsBox, 'scrollTop', {
   get: () => captionsScrollTop,
   set: (value) => {
-    captionsScrollTop = Math.max(0, Math.min(value, captionsBox.scrollHeight - captionsBox.clientHeight));
+    const next = Math.max(0, Math.min(value, captionsBox.scrollHeight - captionsBox.clientHeight));
+    if (next === captionsScrollTop) return;
+    captionsScrollTop = next;
+    captionsBox.dispatchEvent(new Event('scroll'));
   },
 });
 
@@ -331,6 +355,45 @@ async function run() {
   assert(
     statusText() === 'Broadcast not live yet — waiting...',
     'a booth that is not live shows the waiting message, got "' + statusText() + '"',
+  );
+
+  console.log('\n── Captions scrolling (#986) ──');
+
+  const socket = captionsSocket();
+  for (let seq = 1; seq <= 40; seq++) {
+    socket.onmessage({ data: JSON.stringify({ type: 'caption', status: 'final', seq: seq, text: 'Line ' + seq }) });
+  }
+  const bottom = captionsBox.scrollHeight - captionsBox.clientHeight;
+  assert(captionsBox.scrollTop === bottom, 'captions follow new lines while the listener is at the bottom');
+
+  // Rows get taller after they render (e.g. styles applied late) without the listener scrolling.
+  rowHeight = 40;
+  socket.onmessage({ data: JSON.stringify({ type: 'caption', status: 'partial', segment_id: 'p40', text: 'Next' }) });
+  assert(
+    captionsBox.scrollTop === captionsBox.scrollHeight - captionsBox.clientHeight,
+    'captions keep following when rows grow after rendering',
+  );
+
+  captionsBox.scrollTop = 0;
+  socket.onmessage({ data: JSON.stringify({ type: 'caption', status: 'partial', segment_id: 'p41', text: 'More' }) });
+  socket.onmessage({ data: JSON.stringify({ type: 'caption', status: 'final', seq: 41, text: 'Line 41' }) });
+  assert(captionsBox.scrollTop === 0, 'new captions leave the scroll alone after the listener scrolls up, got ' + captionsBox.scrollTop);
+
+  captionsBox.scrollTop = captionsBox.scrollHeight;
+  socket.onmessage({ data: JSON.stringify({ type: 'caption', status: 'final', seq: 42, text: 'Line 42' }) });
+  assert(
+    captionsBox.scrollTop === captionsBox.scrollHeight - captionsBox.clientHeight,
+    'captions follow again once the listener scrolls back to the bottom',
+  );
+
+  captionsBox.scrollTop = 0;
+  choose(languageSelect, 'http://mtx/floor/whep');
+  for (let seq = 1; seq <= 20; seq++) {
+    captionsSocket().onmessage({ data: JSON.stringify({ type: 'caption', status: 'final', seq: seq, text: 'Floor ' + seq }) });
+  }
+  assert(
+    captionsBox.scrollTop === captionsBox.scrollHeight - captionsBox.clientHeight,
+    'captions follow the new source after switching while scrolled up',
   );
 
   console.log('\n' + passed + ' passed, ' + failed + ' failed');
