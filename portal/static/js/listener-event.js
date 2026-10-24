@@ -200,6 +200,7 @@ function stopCurrentStream() {
   document.getElementById("caption-history").innerHTML = "";
   document.getElementById("caption-current").innerHTML = "";
   followCaptions = true;
+  document.getElementById("waiting-text").style.display = "";
 
   setStatus("Waiting for selection...", "waiting");
 }

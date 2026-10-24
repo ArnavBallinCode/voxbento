@@ -396,6 +396,19 @@ async function run() {
     'captions follow the new source after switching while scrolled up',
   );
 
+  console.log('\n── Captions placeholder (#987) ──');
+
+  const waitingText = document.getElementById('waiting-text');
+  assert(waitingText.style.display === 'none', 'the placeholder is hidden once captions arrive');
+
+  choose(languageSelect, 'http://mtx/floor/whep');
+  assert(historyBox.children.length === 0, 'switching source clears the old captions');
+  assert(waitingText.style.display === '', 'the placeholder comes back after switching source');
+
+  captionsSocket().onmessage({ data: JSON.stringify({ type: 'caption', status: 'final', seq: 1, text: 'Floor' }) });
+  choose(roomSelect, '');
+  assert(waitingText.style.display === '', 'the placeholder comes back after clearing the room');
+
   console.log('\n' + passed + ' passed, ' + failed + ' failed');
   process.exit(failed > 0 ? 1 : 0);
 }
