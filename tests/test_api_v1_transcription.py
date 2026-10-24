@@ -7,7 +7,7 @@ does not exist, and read transcription state from an attribute nothing sets.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -346,3 +346,57 @@ async def test_export_segments_ordered_by_created_at(real_db):
     assert [s["id"] for s in response_es["segments"]] == [seg2.id, seg3.id, seg1.id]
     assert [s["text"] for s in response_es["segments"]] == ["Primero", "Primero-atado", "Medio"]
     assert [s["created_at"] for s in response_es["segments"]] == [t1.isoformat(), t1.isoformat(), t2.isoformat()]
+
+
+@pytest.mark.anyio
+async def test_export_normalizes_naive_timestamps_to_utc(event):
+    """Naive created_at timestamps are normalized to UTC while aware timestamps preserve offsets."""
+    booth = SimpleNamespace(id=10, room_id=ROOM_ID, language_code="en")
+    naive_dt = datetime(2026, 8, 1, 12, 0, 0)
+    aware_dt = datetime(2026, 8, 1, 12, 0, 0, tzinfo=timezone(timedelta(hours=5, minutes=30)))
+
+    segments = [
+        SimpleNamespace(id=1, text="Naive", created_at=naive_dt),
+        SimpleNamespace(id=2, text="Aware", created_at=aware_dt),
+    ]
+    db = _db(_result(first=event), _result(first=booth), _result(all_=segments))
+
+    response = await api_v1.export_transcript(EVENT_SLUG, ROOM_ID, "en", db=db, token=object())
+
+    assert response["segments"][0]["created_at"] == "2026-08-01T12:00:00+00:00"
+    assert response["segments"][1]["created_at"] == "2026-08-01T12:00:00+05:30"
+
+
+@pytest.mark.anyio
+async def test_export_normalizes_naive_timestamps_in_translations(event):
+    """Naive segment timestamps in translation export are normalized to UTC."""
+    booth = SimpleNamespace(id=10, room_id=ROOM_ID, language_code="en")
+    naive_dt = datetime(2026, 8, 1, 12, 0, 0)
+    seg = SimpleNamespace(id=5, created_at=naive_dt)
+    trans = SimpleNamespace(id=101, text="Traduction")
+
+    result_mock = MagicMock()
+    result_mock.all.return_value = [(seg, trans)]
+    db = _db(_result(first=event), _result(first=booth), result_mock)
+
+    response = await api_v1.export_transcript(EVENT_SLUG, ROOM_ID, "en", target_lang="fr", db=db, token=object())
+
+    assert response["segments"][0]["created_at"] == "2026-08-01T12:00:00+00:00"
+
+
+def test_export_rejects_empty_target_lang():
+    """Empty target_lang query param fails validation with HTTP 422."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    app = FastAPI()
+    app.include_router(api_v1.router)
+    route = next(r for r in api_v1.router.routes if getattr(r, "path", "").endswith("/transcripts/export"))
+    auth_dep = route.dependant.dependencies[1].call
+    app.dependency_overrides[auth_dep] = lambda: None
+
+    client = TestClient(app, raise_server_exceptions=False)
+    response = client.get(f"/api/v1/events/{EVENT_SLUG}/rooms/{ROOM_ID}/booths/en/transcripts/export?target_lang=")
+    assert response.status_code == 422
+    errors = response.json().get("detail", [])
+    assert any(err.get("loc") == ["query", "target_lang"] for err in errors)

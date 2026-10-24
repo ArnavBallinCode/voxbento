@@ -909,13 +909,24 @@ async def get_transcription_status(
     return {"room_id": target_room_id, "statuses": statuses}
 
 
+def _format_timestamp(dt: datetime) -> str:
+    """Normalize naive datetimes to UTC before formatting as ISO 8601 string."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
+
 @router.get("/events/{event_slug}/rooms/{room_id}/booths/{language_code}/transcripts/export")
 async def export_transcript(
     event_slug: str,
     room_id: int | str,
     language_code: str,
     target_lang: Annotated[
-        str | None, Query(description="Return translations in this language instead of source segments")
+        str | None,
+        Query(
+            min_length=1,
+            description="Return translations in this language instead of source segments",
+        ),
     ] = None,
     db: AsyncSession = Depends(get_db_session),
     token: OAuthToken = Depends(require_oauth_scope("transcripts:read")),
@@ -956,7 +967,7 @@ async def export_transcript(
         )
         result = await db.execute(stmt)
         segments = [
-            {"id": seg.id, "text": tr.text, "created_at": seg.created_at.isoformat()} for seg, tr in result.all()
+            {"id": seg.id, "text": tr.text, "created_at": _format_timestamp(seg.created_at)} for seg, tr in result.all()
         ]
     else:
         stmt = (
@@ -969,7 +980,7 @@ async def export_transcript(
         )
         result = await db.execute(stmt)
         rows = result.scalars().all()
-        segments = [{"id": r.id, "text": r.text, "created_at": r.created_at.isoformat()} for r in rows]
+        segments = [{"id": r.id, "text": r.text, "created_at": _format_timestamp(r.created_at)} for r in rows]
 
     return {
         "event_slug": event_slug,
