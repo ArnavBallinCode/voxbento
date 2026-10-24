@@ -340,6 +340,7 @@ function createWhepClient() {
     /** Tear down the session. */
     stop() {
       cleanup();
+      retrying = false;
       emitState();
     },
   };
