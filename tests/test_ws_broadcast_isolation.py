@@ -653,3 +653,81 @@ def test_promotion_and_reactivation_do_not_close_live_booth_session():
         # User's socket is still alive after other user's reactivation
         ws.send_text(json.dumps({"type": "booth:ping-sync"}))
         assert json.loads(ws.receive_text())["type"] == "booth:error"
+
+
+def test_retry_demotion_when_changed_false_still_closes_live_session():
+    """An admin request with changed=False still revokes live sockets idempotently."""
+    from starlette.websockets import WebSocketDisconnect
+
+    user_id, bid = _seed_booth_user("retry_demote@test.com", slug="retry-demote")
+    # Account is already non-admin (default)
+    cookie = {"user_token": create_user_token(user_id=user_id, email="retry_demote@test.com")}
+    with client.websocket_connect(f"/ws/booth/{bid}", cookies=cookie) as ws:
+        ws.send_text(json.dumps({"type": "booth:ping-sync"}))
+        assert json.loads(ws.receive_text())["type"] == "booth:error"
+
+        # Demote admin when already not admin (changed=False)
+        resp = client.post(
+            f"/admin/users/{user_id}/access",
+            data={"field": "admin", "value": "false"},
+            cookies=_admin_cookie(),
+            headers={"origin": "http://testserver", "accept": "application/json"},
+        )
+        assert resp.status_code == 200
+        # The sweep still executed and closed the live socket!
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            ws.receive_text()
+        assert exc_info.value.code == 4003
+
+
+def test_remove_team_assignment_closes_live_booth_session():
+    """Removing a user's booth membership immediately revokes their live booth WebSocket."""
+    import anyio
+    from starlette.websockets import WebSocketDisconnect
+
+    from portal.database import get_session, list_booth_memberships_for_user
+    from portal.team import remove_assignment
+
+    user_id, bid = _seed_booth_user("member_removed@test.com", slug="rm-assign")
+    cookie = {"user_token": create_user_token(user_id=user_id, email="member_removed@test.com")}
+
+    with client.websocket_connect(f"/ws/booth/{bid}", cookies=cookie) as ws:
+        _join(ws, display_name="Member", language="English")
+
+        # Find membership id
+        async def get_mid() -> tuple[int, int]:
+            async with get_session() as s:
+                bms = await list_booth_memberships_for_user(s, user_id)
+                from portal.database import get_booth_by_id
+
+                booth = await get_booth_by_id(s, bms[0].booth_id)
+                return bms[0].id, booth.event_id
+
+        mid, event_id = anyio.run(get_mid)
+
+        async def remove_mem():
+            async with get_session() as s:
+                await remove_assignment(s, event_id=event_id, level="booth", membership_id=mid)
+
+        anyio.run(remove_mem)
+
+        # Socket was closed by push revocation
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            ws.receive_text()
+        assert exc_info.value.code == 4003
+
+
+def test_check_booth_memberships_real_db():
+    """Verify batched membership checker against real database rows."""
+    import anyio
+
+    from portal.websockets.reaper import check_booth_memberships
+
+    user_id, bid = _seed_booth_user("checker_test@test.com", slug="check-db")
+
+    async def run_check():
+        allowed = await check_booth_memberships(bid, {user_id, 99999})
+        assert user_id in allowed
+        assert 99999 not in allowed
+
+    anyio.run(run_check)
