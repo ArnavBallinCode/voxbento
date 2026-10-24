@@ -203,7 +203,9 @@
           // Any other close (network drop, server restart, proxy timeout) would
           // otherwise stop captions until the host page is reloaded.
           captionWs = null;
-          setTimeout(openCaptionWs, captionRetryDelayMs);
+          // Wait between half and all of the current delay, so embeds dropped by the same
+          // restart do not all reconnect at the same moment.
+          setTimeout(openCaptionWs, captionRetryDelayMs * (0.5 + Math.random() / 2));
           captionRetryDelayMs = Math.min(captionRetryDelayMs * 2, 15000);
         };
       }
