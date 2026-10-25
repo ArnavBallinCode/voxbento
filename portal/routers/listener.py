@@ -136,6 +136,7 @@ async def listen_event_page(request: Request, event_slug: str, code: str | None 
                 "audio_delay_ms": r.audio_delay_ms,
                 "floor_translation_enabled": r.floor_translation_enabled,
                 "floor_tts_enabled": r.floor_tts_enabled,
+                "floor_captions_visible": r.floor_captions_visible,
                 "translation_languages": lang_data,
             }
         )

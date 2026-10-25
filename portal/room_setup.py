@@ -298,7 +298,7 @@ async def load_snapshot(
         display_name=room.display_name,
         spoken_language=room.floor_language_code or "en",
         languages=tuple(languages),
-        captions=room.floor_transcription_enabled,
+        captions=room.floor_transcription_enabled and room.floor_captions_visible,
         speech_engine=_available_or_first(catalog.speech, room.floor_transcription_provider),
         translation_engine=_available_or_first(catalog.translation, room.floor_translation_provider),
         voice_engine=_available_or_first(catalog.voice, room.floor_tts_provider),
@@ -342,10 +342,9 @@ def parse_plan(
         languages = languages[:MAX_LANGUAGES]
 
     ai_languages = any(delivery in (AI_VOICE, AI_TEXT, BOTH) for _, delivery in languages)
-    # AI interpretation is made from the live captions, so they are on whenever it is.
-    captions = form.get("captions") == "on" or ai_languages
-    if not languages and not captions:
-        errors.append("Choose at least one listener language, or turn on captions.")
+    # Captions here are what listeners see. AI languages still need speech recognition, which
+    # runs whether or not listeners are shown the speaker's words.
+    captions = form.get("captions") == "on"
 
     plan = RoomPlan(
         display_name=display_name,
@@ -439,6 +438,8 @@ async def apply_plan(
         )
 
     room.floor_transcription_enabled = plan.uses_speech_recognition
+    # Hiding only means something while AI keeps recognition running; otherwise captions are simply off.
+    room.floor_captions_visible = plan.captions or not plan.ai_languages
     if plan.uses_speech_recognition:
         speech = catalog.find("speech", plan.speech_engine)
         if speech and (speech.provider != room.floor_transcription_provider or not room.floor_transcription_model):
@@ -514,8 +515,8 @@ class RoomSummary:
 
     @property
     def mode_label(self) -> str:
-        if not self.languages and self.captions:
-            return "Captions only"
+        if not self.languages:
+            return "Captions only" if self.captions else "None"
         mode = room_mode([(line.code, line.delivery) for line in self.languages])
         return {
             MODE_INTERPRETERS: "Human interpreters",

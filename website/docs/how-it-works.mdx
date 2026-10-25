@@ -80,8 +80,11 @@ In the organizer workspace, room management includes server-side search to quick
 
 Event setup follows **Event → Rooms & languages → Team & listeners**. Each room
 uses one form for its spoken language, listener languages, one delivery per
-language (Interpreter, AI voice or AI text) and optional floor captions, which stay
-on whenever a language uses AI because the AI translates from them. The same form edits existing rooms.
+language (Interpreter, AI voice or AI text) and an optional switch that shows floor
+captions to listeners. AI languages need floor transcription whether or not captions are
+shown, so turning captions off in an AI room sets `rooms.floor_captions_visible` false
+(migration 036) and the listener page shows only the translations. The same form edits
+existing rooms, with the review on a separate screen.
 Room lists and the room overview summarize those choices, including AI languages
 that do not have an interpreter booth.
 
