@@ -310,6 +310,7 @@ class ConnectionManager:
 
         # Pull layer: recheck current membership using one batched DB query
         allowed_user_ids: set[int] | None = None
+        user_check_failed = False
         if self.membership_checker is not None and user_ids_to_check:
             now_mono = time.monotonic()
             cached = self._allowed_cache.get(booth_id)
@@ -328,11 +329,14 @@ class ConnectionManager:
                         allowed_user_ids = set(res)
                     self._allowed_cache[booth_id] = (now_mono, allowed_user_ids)
                 except Exception:
-                    logger.exception("Membership check failed for booth %s; failing closed", booth_id)
-                    allowed_user_ids = set()
+                    # Withhold this message but keep the sockets: a database blip must not
+                    # disconnect every interpreter in the booth. Removals are pushed directly.
+                    logger.exception("Membership check failed for booth %s; withholding message", booth_id)
+                    user_check_failed = True
 
         # Pull layer: recheck current invite tokens using one batched DB query
         allowed_token_ids: set[str | int] | None = None
+        token_check_failed = False
         if self.token_checker is not None and tokens_to_check:
             now_mono = time.monotonic()
             cached_tokens = self._token_allowed_cache.get(booth_id)
@@ -348,8 +352,8 @@ class ConnectionManager:
                     allowed_token_ids = set(res)
                     self._token_allowed_cache[booth_id] = (now_mono, allowed_token_ids)
                 except Exception:
-                    logger.exception("Token check failed for booth %s; failing closed", booth_id)
-                    allowed_token_ids = set()
+                    logger.exception("Token check failed for booth %s; withholding message", booth_id)
+                    token_check_failed = True
 
         valid_recipients: list[WebSocket] = []
         stale_user_sockets: list[WebSocket] = []
@@ -358,6 +362,10 @@ class ConnectionManager:
         allowed_token_strs = {str(t) for t in allowed_token_ids} if allowed_token_ids is not None else None
 
         for ws, session in candidates:
+            if (session.user_id is not None and user_check_failed) or (
+                session.user_id is None and session.invite_token_id is not None and token_check_failed
+            ):
+                continue
             if session.user_id is not None and allowed_user_ids is not None:
                 if session.user_id not in allowed_user_ids:
                     session.granted_role = None

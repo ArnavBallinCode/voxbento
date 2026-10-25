@@ -238,6 +238,10 @@ async def test_membership_checker_exception_fails_closed():
     await manager.broadcast("booth-1", {"type": "booth:chat", "body": "classified"})
 
     assert len(ws.sent_messages) == 0
+    # A database error is not a revocation: the interpreter stays connected.
+    await asyncio.sleep(0)
+    assert manager.get_session(ws) is not None
+    assert manager.get_session(ws).revoked is False
 
 
 # 7. Invite-link sockets are unaffected by account-session sweeps.
@@ -572,6 +576,9 @@ async def test_token_checker_exception_fails_closed():
     await manager.broadcast("booth-1", {"type": "booth:chat", "body": "private payload"})
 
     assert len(ws.sent_messages) == 0
+    await asyncio.sleep(0)
+    assert manager.get_session(ws) is not None
+    assert manager.get_session(ws).revoked is False
 
 
 @pytest.mark.anyio
@@ -886,6 +893,9 @@ async def test_token_revocation_by_public_id_end_to_end(monkeypatch):
 
                 return MockResult()
 
+            async def scalars(self, stmt):
+                return (await self.execute(stmt)).scalars()
+
         yield MockSession()
 
     monkeypatch.setattr(reaper_mod, "get_session", mock_get_session)
@@ -925,7 +935,7 @@ def test_migration_037_upgrade_downgrade_with_existing_rows(tmp_path):
     from sqlalchemy import create_engine, inspect, text
 
     versions_dir = Path(__file__).resolve().parent.parent / "alembic" / "versions"
-    spec = importlib.util.spec_from_file_location("m037", versions_dir / "037_add_public_id_to_invite_tokens.py")
+    spec = importlib.util.spec_from_file_location("m037", versions_dir / "038_add_public_id_to_invite_tokens.py")
     m037 = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m037)
 
