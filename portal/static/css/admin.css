@@ -1808,6 +1808,10 @@ code { font-family: var(--font-mono); font-size: 0.85em; background: var(--color
 .rs-switch:checked { background: var(--color-primary); }
 .rs-switch:checked::before { transform: translateX(18px); }
 .rs-switch:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.rs-captions-on { display: flex; gap: 14px; align-items: flex-start; padding: 16px 18px; margin-bottom: 18px; border: 1px solid var(--color-primary-border); border-radius: var(--radius-md); background: var(--color-primary-subtle); }
+.rs-caption-icon { flex: 0 0 auto; margin-top: 1px; color: var(--color-primary); }
+.rs-captions-on strong { display: block; margin-bottom: 2px; color: var(--color-text); }
+.rs-captions-on p { margin: 0; color: var(--color-text-secondary); font-size: 0.9rem; line-height: 1.5; }
 .rs-engines { padding: 16px 18px; border: 1px solid var(--color-border); border-radius: var(--radius-md); }
 .rs-engines-title { margin: 0 0 2px; font-size: 0.95rem; font-weight: 700; }
 .rs-engines-hint { margin: 0 0 12px; color: var(--color-text-secondary); font-size: 0.875rem; }
@@ -1864,3 +1868,5 @@ code { font-family: var(--font-mono); font-size: 0.85em; background: var(--color
   .setup-room { flex-direction: column; align-items: flex-start; }
 }
 .wizard-actions > .btn-lg:last-child { margin-left: auto; }
+
+.rs-change-list { margin: 12px 0 24px; padding-left: 24px; }

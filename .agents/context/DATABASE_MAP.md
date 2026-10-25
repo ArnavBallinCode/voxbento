@@ -61,7 +61,6 @@ Cascade: deletes rooms + booths when event is deleted.
 | `jitsi_url` | String(500) nullable | Full Jitsi meeting URL for this room; overrides default |
 | `relay_booth_id` | FK → booths.id SET NULL nullable | Points to the booth whose WHEP stream is relayed in this room |
 | `floor_transcription_enabled` | Boolean | Default False |
-| `floor_captions_visible` | Boolean | Default True; False hides floor captions from listeners while AI languages still translate from them. Migration 036 |
 | `floor_transcription_provider` | String(20) | Default `'local'` |
 | `floor_transcription_model` | String(40) | Default `'tiny'` |
 | `floor_language_code` | String(10) nullable | — |
@@ -312,14 +311,6 @@ key to its transport), nullable `program_relay_server` (normalized allow-listed 
 URL), `program_relay_key_enc` (Fernet ciphertext of the YouTube stream key; write-only,
 never serialize or log) and `program_relay_updated_at`. Helpers live in
 `portal/program_relay.py` (`store_destination`, `clear_destination`, `destination`).
-
-## Migration 036 — hidden floor captions
-
-`rooms.floor_captions_visible` (Boolean, default true, server default true). Room setup's
-captions switch writes it: off in a room with AI languages keeps floor transcription
-running for translation but hides the speaker's captions on the listener page (caption
-mode locked to translated). Without AI languages, captions off turns transcription off
-and the column stays true.
 
 ## Migration 035 — per-language AI voice (#1005)
 

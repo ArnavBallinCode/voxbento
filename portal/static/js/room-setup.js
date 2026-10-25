@@ -4,8 +4,7 @@
 // adding a room, puts the review on its own screen when changing one, keeps the
 // per-language choices in sync and shows only the questions that apply. Each language
 // reaches listeners one way: an interpreter, an AI voice or AI text. Captions are the
-// speaker's own words; listeners see them only when the switch is on, though AI languages
-// keep translating from them either way.
+// speaker's own words and stay on whenever a language uses AI.
 
 const root = document.getElementById('room-setup');
 const form = document.getElementById('room-setup-form');
@@ -35,7 +34,9 @@ if (root && form) {
   const deliveryList = form.querySelector('[data-rs-delivery-list]');
   const rowTemplate = document.getElementById('rs-delivery-row-template');
   const captionsBox = form.querySelector('[data-rs-captions]');
-  const captionsNote = form.querySelector('[data-rs-captions-note]');
+  const captionsToggle = form.querySelector('[data-rs-caption-toggle]');
+  const captionsForced = form.querySelector('[data-rs-captions-forced]');
+  const captionsReason = form.querySelector('[data-rs-captions-reason]');
   const captionContext = form.querySelector('[data-rs-caption-context]');
   const roomContext = form.querySelector('[data-rs-room-context]');
   const enginesGroup = form.querySelector('[data-rs-engines]');
@@ -47,6 +48,8 @@ if (root && form) {
   const warnings = form.querySelector('[data-rs-warnings]');
   const reviewFallback = form.querySelector('[data-rs-review-fallback]');
 
+  let captionsWanted = captionsBox.checked;
+  let initialReview = null;
   let current = 0;
   const reviewStep = steps.length - 1;
 
@@ -179,6 +182,7 @@ if (root && form) {
   const shortName = (select) => select?.selectedOptions[0]?.dataset.short || selectedText(select);
 
   function syncAi() {
+    captionsBox.setCustomValidity('');
     const ai = aiLanguages();
     const spoken = spokenName();
     roomContext.replaceChildren(
@@ -188,24 +192,41 @@ if (root && form) {
     );
     captionContext.textContent = `Captions are the speaker's words as text, in ${spoken}, as they are spoken.`;
 
-    // AI languages translate from the speaker's words whether or not listeners see them.
-    const names = listNames(ai.map((l) => l.name));
-    captionsNote.textContent = captionsBox.checked
-      ? `Listeners can read the ${spoken} captions, and ${names} ${ai.length === 1 ? 'is' : 'are'} translated from them.`
-      : `Listeners won't see the ${spoken} captions. VoxBento still turns the speech into text behind the scenes so it can translate ${names}.`;
-    captionsNote.hidden = ai.length === 0;
+    // When a language uses AI, captions are on and there is nothing to switch.
+    captionsBox.checked = ai.length ? true : captionsWanted;
+    captionsToggle.hidden = ai.length > 0;
+    captionsForced.hidden = ai.length === 0;
+    if (ai.length) {
+      const verb = ai.length === 1 ? 'uses' : 'use';
+      captionsReason.textContent = `${listNames(ai.map((l) => l.name))} ${verb} AI, and the AI translates from the captions, so they stay on. Listeners can also read the ${spoken} captions.`;
+    }
 
-    const recognises = captionsBox.checked || ai.length > 0;
-    const shows = { speech: recognises, translation: ai.length > 0, voice: voiceLanguages().length > 0 };
+    const shows = { speech: captionsBox.checked, translation: ai.length > 0, voice: voiceLanguages().length > 0 };
     Object.entries(shows).forEach(([kind, show]) => {
       enginesGroup.querySelector(`[data-rs-engine="${kind}"]`).hidden = !show;
     });
-    enginesGroup.hidden = !recognises;
+    enginesGroup.hidden = !captionsBox.checked;
     const parts = [];
     if (shows.speech) parts.push(shortName(form.querySelector('#rs-speech')));
     if (shows.translation) parts.push(shortName(form.querySelector('#rs-translation')));
     if (shows.voice && voiceSelect?.options.length) parts.push(shortName(voiceSelect));
     engineSummary.textContent = parts.join(' · ') || 'Change AI services';
+  }
+
+  // The switch is hidden while AI forces captions on; make sure the form still sends it.
+  function captionsValueForSubmit() {
+    let hidden = form.querySelector('input[type="hidden"][name="captions"]');
+    if (captionsToggle.hidden && captionsBox.checked) {
+      if (!hidden) {
+        hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = 'captions';
+        hidden.value = 'on';
+        form.append(hidden);
+      }
+    } else if (hidden) {
+      hidden.remove();
+    }
   }
 
   // ── Review ─────────────────────────────────────────────────────────────
@@ -228,6 +249,39 @@ if (root && form) {
     review.append(dt, dd);
   }
 
+  function reviewValues() {
+    const values = new Map();
+    const terms = [...review.querySelectorAll('dt')];
+    const details = [...review.querySelectorAll('dd')];
+    terms.forEach((term, i) => {
+      if (term.textContent !== 'Listener languages') values.set(term.textContent, details[i].textContent);
+    });
+    languages().forEach((lang) => values.set(lang.name, deliveryLabels[lang.delivery] || 'Interpreter + AI (choose one)'));
+    return values;
+  }
+
+  function renderChanges() {
+    if (isCreate || !initialReview) return;
+    const container = form.querySelector('[data-rs-changes]');
+    const list = form.querySelector('[data-rs-change-list]');
+    list.replaceChildren();
+    const currentValues = reviewValues();
+    new Set([...initialReview.keys(), ...currentValues.keys()]).forEach((key) => {
+      const before = initialReview.get(key);
+      const after = currentValues.get(key);
+      if (before === after) return;
+      const item = document.createElement('li');
+      item.textContent = `${key}: ${before || 'Not offered'} → ${after || 'Removed'}`;
+      list.append(item);
+    });
+    if (!list.childElementCount) {
+      const item = document.createElement('li');
+      item.textContent = 'No changes to your current answers.';
+      list.append(item);
+    }
+    container.hidden = false;
+  }
+
   function renderReview() {
     review.replaceChildren();
     const langs = languages();
@@ -238,11 +292,10 @@ if (root && form) {
       'Listener languages',
       langs.length ? langs.map((l) => `${l.name}: ${deliveryLabels[l.delivery] || 'not chosen yet'}`) : 'None',
     );
-    let captions = 'Off';
-    if (captionsBox.checked) captions = `On, in ${spokenName()}`;
-    else if (ai) captions = 'Hidden from listeners (AI still translates the speaker)';
-    addReviewItem('Live captions', captions);
-    if (captionsBox.checked || ai) addReviewItem('AI services', engineSummary.textContent);
+    const captions = ai || captionsBox.checked;
+    addReviewItem('Live captions', captions ? `On, in ${spokenName()}` : 'Off');
+    if (captions) addReviewItem('AI services', engineSummary.textContent);
+    renderChanges();
     review.hidden = false;
     reviewFallback.hidden = true;
 
@@ -280,6 +333,11 @@ if (root && form) {
       if (noVoice) return problemRadio(noVoice.code, voiceProblem(noVoice.code));
     }
     if (index === 2) {
+      if (!chosenCodes().length && !captionsBox.checked) {
+        captionsBox.setCustomValidity('Turn on captions, or go back and choose at least one language.');
+        return captionsBox;
+      }
+      captionsBox.setCustomValidity('');
       voiceSelect?.setCustomValidity('');
       const unspoken = voiceLanguages().filter((l) => voiceProblem(l.code));
       if (unspoken.length && voiceSelect?.options.length) {
@@ -381,7 +439,11 @@ if (root && form) {
       .forEach((radio) => radio.setCustomValidity(''));
     syncAll();
   });
-  captionsBox.addEventListener('change', syncAll);
+  captionsBox.addEventListener('change', () => {
+    captionsWanted = captionsBox.checked;
+    captionsBox.setCustomValidity('');
+    syncAll();
+  });
   form.querySelectorAll('[data-rs-engines] select, #rs-name').forEach((el) => {
     el.addEventListener('input', renderReview);
     el.addEventListener('change', () => {
@@ -406,6 +468,7 @@ if (root && form) {
         return;
       }
     }
+    captionsValueForSubmit();
   });
 
   form.querySelectorAll(isCreate ? '[data-rs-nav]' : '[data-rs-edit-nav]').forEach((el) => { el.hidden = false; });
@@ -415,5 +478,8 @@ if (root && form) {
   // After a rejected submit, open on the first step that needs attention.
   const firstProblem = root.querySelector('.alert-danger') ? steps.findIndex((_, i) => stepProblem(i)) : -1;
   syncAll();
+  // A rejected POST contains submitted answers, not the saved room baseline.
+  initialReview = root.querySelector('.alert-danger') ? null : reviewValues();
+  renderChanges();
   show(firstProblem >= 0 ? firstProblem : 0, { focus: false });
 }

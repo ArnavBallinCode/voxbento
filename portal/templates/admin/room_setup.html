@@ -166,7 +166,7 @@
           <div><strong>AI voice</strong><p>VoxBento translates the speaker and reads it aloud. Listeners can also read along.</p></div>
           <div><strong>AI text</strong><p>VoxBento translates the speaker. Listeners read it; nothing is spoken.</p></div>
         </div>
-        <p class="rs-note" data-rs-no-languages hidden>No other languages chosen. That's fine: you can turn on captions in the next step, or leave everything off and add languages later.</p>
+        <p class="rs-note" data-rs-no-languages hidden>No languages chosen yet. That's fine for a captions-only room: turn captions on in the next step.</p>
 
         <div class="rs-step-actions" data-rs-nav hidden>
           <button type="button" class="btn" data-rs-back>&larr; Back</button>
@@ -179,13 +179,16 @@
         <legend class="rs-step-title"><span class="rs-step-num" aria-hidden="true">3</span>Captions</legend>
 
         <p class="rs-context" data-rs-caption-context>Captions are the speaker's words as text, in {{ language_name(plan.spoken_language) }}, as they are spoken.</p>
-        <label class="rs-toggle">
-          <span class="rs-toggle-text"><span class="rs-toggle-title">Show live captions to listeners</span>
-            <span class="hint">Listeners can read what the speaker says.</span>
+        <label class="rs-toggle" data-rs-caption-toggle>
+          <span class="rs-toggle-text"><span class="rs-toggle-title">Show live captions</span>
+            <span class="hint">Listeners can read what the speaker says. Optional: this room only uses interpreters.</span>
           </span>
           <input type="checkbox" class="rs-switch" role="switch" name="captions" {% if plan.captions %}checked{% endif %} data-rs-captions>
         </label>
-        <p class="rs-note" data-rs-captions-note hidden></p>
+        <div class="rs-captions-on" data-rs-captions-forced hidden>
+          <svg class="rs-caption-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7 11h4M13 11h4M7 15h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <div><strong>Live captions are on</strong><p data-rs-captions-reason></p></div>
+        </div>
 
         <section class="rs-engines" data-rs-engines>
           <h3 class="rs-engines-title">AI services <span class="rs-label-note">· Advanced</span></h3>
@@ -245,6 +248,12 @@
       {# ── Step 4 ─────────────────────────────────────────────── #}
       <fieldset class="rs-step" data-rs-step="4">
         <legend class="rs-step-title"><span class="rs-step-num" aria-hidden="true">4</span>{{ 'Review your changes' if is_edit else 'Review' }}</legend>
+        {% if is_edit %}
+        <div data-rs-changes hidden>
+          <h3>What will change</h3>
+          <ul class="rs-change-list" data-rs-change-list></ul>
+        </div>
+        {% endif %}
         <dl class="rs-review" data-rs-review hidden></dl>
         <ul class="rs-warnings" data-rs-warnings hidden></ul>
         <p class="hint" data-rs-review-fallback>Check your answers above, then {{ 'save' if is_edit else 'create the room' }}.</p>

@@ -760,21 +760,8 @@ function handleCaptionsMessage(event) {
   }
 }
 
-// The organizer can hide the speaker's captions in a room; its AI translations still show.
-function floorCaptionsHidden() {
-  var opt = languageSelect.options[languageSelect.selectedIndex];
-  if (!opt || opt.dataset.languageCode !== "floor") return false;
-  var roomId = parseInt(roomSelect.value, 10);
-  var rData = roomsData.find((r) => r.id === roomId);
-  return Boolean(rData) && rData.floor_captions_visible === false;
-}
-
 // Function to apply visibility of text blocks based on caption mode
 function applyCaptionMode() {
-  if (floorCaptionsHidden()) {
-    captionModeSelect.value = "translated";
-    captionModeSelect.disabled = true;
-  }
   var mode = captionModeSelect.value;
   var historyBox = document.getElementById("caption-history");
   var currentBox = document.getElementById("caption-current");
@@ -940,7 +927,7 @@ languageSelect.addEventListener("change", function () {
       // Add "Original" as the first default option
       var origOpt = document.createElement("option");
       origOpt.value = "";
-      origOpt.textContent = floorCaptionsHidden() ? "None" : "Original";
+      origOpt.textContent = "Original";
       translationLangSelect.appendChild(origOpt);
 
       var optionExists = false;

@@ -220,11 +220,9 @@ def test_the_rooms_own_language_and_duplicates_are_dropped():
 
 
 @pytest.mark.parametrize("delivery", [AI_VOICE, AI_TEXT])
-def test_captions_can_be_hidden_while_ai_translates(delivery):
+def test_ai_turns_captions_on(delivery):
     plan, errors = _parse(languages=["es"], delivery_es=delivery)
     assert not errors
-    assert plan.captions is False and plan.uses_speech_recognition
-    plan, _ = _parse(languages=["es"], delivery_es=delivery, captions="on")
     assert plan.captions is True
 
 
@@ -249,6 +247,7 @@ def test_ai_services_default_to_the_recommended_ones():
     [
         ({"display_name": "", "languages": ["es"], "delivery_es": INTERPRETER}, "Give the room a name."),
         ({"languages": ["xx"]}, "isn't recognised"),
+        ({}, "Choose at least one listener language, or turn on captions."),
         (
             {"languages": ["es"], "delivery_es": AI_TEXT, "translation_engine": "openai"},
             "Choose a translation service",
@@ -262,12 +261,6 @@ def test_ai_services_default_to_the_recommended_ones():
 def test_problems_are_explained(fields, message):
     _, errors = _parse(**fields)
     assert any(message in e for e in errors), errors
-
-
-def test_room_with_everything_off_is_allowed():
-    plan, errors = _parse()
-    assert not errors
-    assert plan.languages == () and not plan.captions and not plan.uses_speech_recognition
 
 
 def test_captions_only_room_is_allowed():
@@ -462,33 +455,6 @@ async def test_interpreters_only_room_without_captions(admin_cookie, event_room)
     assert not room.floor_transcription_enabled
     assert not room.floor_translation_enabled
     assert not room.floor_tts_enabled
-
-
-@pytest.mark.anyio
-async def test_hidden_captions_keep_ai_translating(admin_cookie, event_room):
-    event, _ = event_room
-    data = {"display_name": "Hall D", "spoken_language": "en", "languages": ["fr"], "delivery_fr": AI_TEXT}
-    async with _client() as c:
-        resp = await c.post(f"/admin/events/{event.id}/rooms/new", data=data, headers=ORIGIN, cookies=admin_cookie)
-        room_id = int(re.search(r"/rooms/(\d+)/", resp.headers["location"]).group(1))
-        room = await _room(room_id)
-        assert room.floor_transcription_enabled and room.floor_translation_enabled
-        assert not room.floor_captions_visible
-        async with get_session() as session:
-            snapshot = await room_setup.load_snapshot(session, room, engine_catalog(event))
-        assert snapshot.plan.captions is False
-        listener = await c.get(f"/listener/{event.slug}", cookies=admin_cookie)
-        assert '"floor_captions_visible": false' in listener.text
-
-        # Without AI, captions off simply means no speech recognition; nothing stays hidden.
-        await c.post(
-            f"/admin/events/{event.id}/rooms/{room_id}/setup",
-            data={**data, "delivery_fr": INTERPRETER},
-            headers=ORIGIN,
-            cookies=admin_cookie,
-        )
-    room = await _room(room_id)
-    assert not room.floor_transcription_enabled and room.floor_captions_visible
 
 
 @pytest.mark.anyio

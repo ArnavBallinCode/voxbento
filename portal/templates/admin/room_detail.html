@@ -50,9 +50,9 @@
       <a href="{{ management_prefix }}/events/{{ event.id }}/team/" class="btn btn-sm">Open Team</a>
     </li>
     {% endif %}
-    {% if room.floor_transcription_enabled %}
+    {% if summary.captions %}
     <li>
-      <span><strong>Connect the room's audio.</strong> {{ 'Captions and AI start' if summary.captions and room.floor_translation_enabled else ('AI starts' if room.floor_translation_enabled else 'Captions start') }} once VoxBento hears the room.</span>
+      <span><strong>Connect the room's audio.</strong> Captions{{ ' and AI' if room.floor_translation_enabled else '' }} start once VoxBento hears the room.</span>
       <a href="#source" class="btn btn-sm" data-room-tab-link="source">Floor source</a>
     </li>
     {% endif %}

@@ -172,14 +172,15 @@ In **My events**, create or open an event and choose **Add a room**. The guided
 form collects the room name, spoken language and listener languages, then one
 delivery per language: **Interpreter** (a person in a booth), **AI voice**
 (translated and read aloud, with text to read along) or **AI text** (translated
-text only). The **Captions** step covers the speaker's own words: a switch
-decides whether listeners see them. Turning it off in a room with AI languages only
-hides them; VoxBento still recognises the speech so it can translate. A room may
-also have no other languages and no captions. When changing an existing room, the
-review opens on its own screen before saving. The
+text only). The **Captions** step covers the speaker's own words: captions are
+optional for interpreter-only rooms and always on when any language uses AI. The
 AI services are chosen automatically and can be changed under **AI services ·
 Advanced**. Rooms that previously offered a language as both an interpreter and
 AI ask the organizer to choose one before saving.
+When editing a room, choose **Review changes** to see the changes and any booth
+removal warnings on a separate screen, then **Save changes**. **Back to edit**
+returns to your answers without saving. Pressing Enter before review advances
+to review instead of saving immediately.
 
 The service choices use the event's configured API keys and installed server
 dependencies. Cloud speech recognition also requires **Enable External

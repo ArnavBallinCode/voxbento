@@ -125,8 +125,6 @@ class Room(Base):
         String(20), default="local", server_default=sa.text("'local'")
     )
     floor_transcription_model: Mapped[str] = mapped_column(String(40), default="tiny", server_default=sa.text("'tiny'"))
-    # Off when the organizer hides the speaker's captions; AI languages still translate from them.
-    floor_captions_visible: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
     floor_language_code: Mapped[str | None] = mapped_column(String(10), nullable=True, default=None)
     floor_source: Mapped[str] = mapped_column(String(20), default="jitsi_bot", server_default="jitsi_bot")
     meeting_agent_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
