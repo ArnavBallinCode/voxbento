@@ -277,6 +277,9 @@ async def test_broadcast_booth_state_isolates_and_sanitizes():
         assert listener_payload["type"] == "booth:state"
         assert listener_payload["state"] == {
             "booth_id": booth_id,
+            "event_slug": None,
+            "room_id": None,
+            "language_code": None,
             "broadcast_unlocked": True,
             "ingest_status": "connected",
         }

@@ -278,12 +278,20 @@ def test_captions_listener_receives_sanitized_state_without_chat_or_participants
             state = msg["state"]
             # The listener feed is a deliberately narrow projection: adding any
             # other booth field here would leak private coordination data.
-            assert set(state) == {"booth_id", "broadcast_unlocked", "ingest_status"}
-            assert state.get("broadcast_unlocked") is True
+            assert set(state) == {
+                "booth_id",
+                "event_slug",
+                "room_id",
+                "language_code",
+                "broadcast_unlocked",
+                "ingest_status",
+            }
             assert "participants" not in state
             assert "chat_messages" not in state
             assert "active_interpreter_id" not in state
             assert "handoff_state" not in state
+        # The listener also gets the locked status on connect; the latest one is unlocked.
+        assert state_msgs[-1]["state"]["broadcast_unlocked"] is True
 
 
 def test_unsupported_role_token_receives_no_broadcasts():

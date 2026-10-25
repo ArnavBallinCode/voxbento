@@ -6,7 +6,8 @@ import logging
 import struct
 import time
 from collections import OrderedDict
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -424,9 +425,43 @@ class ConnectionManager:
             self.remove(ws)
 
 
+# The only booth fields public listeners receive. The full booth state also
+# carries participants and the interpreters' private chat, which must stay
+# inside the booth.
+_LISTENER_STATE_KEYS = ("booth_id", "event_slug", "room_id", "language_code", "broadcast_unlocked", "ingest_status")
+
+
+def listener_booth_state(state: dict) -> dict:
+    """Return the listener-safe subset of a booth state dict."""
+    return {key: state.get(key) for key in _LISTENER_STATE_KEYS}
+
+
+def _current_listener_state(booth_id: str, fallback: dict | None = None) -> dict | None:
+    """Listener-safe status read from the registry now, or from ``fallback`` if the booth is gone."""
+    booth = booths.get_booth_sync(booth_id)
+    if booth is not None:
+        return listener_booth_state(booth.as_public_dict())
+    return listener_booth_state(fallback) if fallback is not None else None
+
+
+@dataclass
+class _StateLock:
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    # Operations holding or waiting on ``lock``.
+    users: int = 0
+
+
 class ListenerConnectionManager:
     def __init__(self) -> None:
         self._rooms: dict[str, set[WebSocket]] = {}
+        # Last listener state sent per booth, so updates that only touch
+        # interpreter-side fields (mic, chat, handoff) don't fan out to every listener.
+        self._last_state: dict[str, dict] = {}
+        # Serializes status sends per booth. Combined with reading the registry
+        # inside the lock, overlapping updates can't deliver an older status last.
+        # Entries only live while an operation holds or waits on them, so arbitrary
+        # booth IDs from the captions endpoint don't accumulate.
+        self._state_locks: dict[str, _StateLock] = {}
         self._anon_rooms: dict[str, set[WebSocket]] = {}
 
     def add(self, ws: WebSocket, booth_id: str, *, is_anonymous: bool = False) -> None:
@@ -463,11 +498,26 @@ class ListenerConnectionManager:
         room.discard(ws)
         if not room:
             self._rooms.pop(booth_id, None)
+            self._last_state.pop(booth_id, None)
 
         anon_set = self._anon_rooms.get(booth_id, set())
         anon_set.discard(ws)
         if not anon_set:
             self._anon_rooms.pop(booth_id, None)
+
+    @asynccontextmanager
+    async def _state_lock(self, booth_id: str) -> AsyncIterator[None]:
+        # No await between lookup and increment, so every operation that overlaps
+        # an existing holder or waiter for this booth shares the same lock.
+        entry = self._state_locks.setdefault(booth_id, _StateLock())
+        entry.users += 1
+        try:
+            async with entry.lock:
+                yield
+        finally:
+            entry.users -= 1
+            if entry.users == 0:
+                del self._state_locks[booth_id]
 
     async def broadcast(self, booth_id: str, message: dict) -> None:
         payload = json.dumps(message)
@@ -479,6 +529,28 @@ class ListenerConnectionManager:
                 dead.append(ws)
         for ws in dead:
             self.remove(ws, booth_id)
+
+    async def broadcast_booth_state(self, booth_id: str, state: dict) -> None:
+        """Send listeners the booth's live/locked status if it changed since the last send.
+
+        ``state`` is only used if the booth has left the registry; otherwise the
+        newest status is read under the booth's lock.
+        """
+        async with self._state_lock(booth_id):
+            if not self.has_listeners(booth_id):
+                return
+            listener_state = _current_listener_state(booth_id, state)
+            if self._last_state.get(booth_id) == listener_state:
+                return
+            self._last_state[booth_id] = listener_state
+            await self.broadcast(booth_id, {"type": "booth:state", "state": listener_state})
+
+    async def send_booth_state(self, ws: WebSocket, booth_id: str) -> None:
+        """Send one newly connected listener the booth's current status, if the booth exists."""
+        async with self._state_lock(booth_id):
+            listener_state = _current_listener_state(booth_id)
+            if listener_state is not None:
+                await ws.send_text(json.dumps({"type": "booth:state", "state": listener_state}))
 
 
 logger = logging.getLogger(__name__)
@@ -551,6 +623,12 @@ listener_manager = ListenerConnectionManager()
 tts_manager = TTSConnectionManager()
 
 
+async def broadcast_booth_state(booth_id: str, state: dict) -> None:
+    """Send the full state to the booth and the listener-safe status to its listeners."""
+    await manager.broadcast(booth_id, {"type": "booth:state", "state": state})
+    await listener_manager.broadcast_booth_state(booth_id, state)
+
+
 async def broadcast_transcription(booth_id: str, payload: str | dict):
     if isinstance(payload, str):
         # Legacy support and error handling
@@ -560,24 +638,13 @@ async def broadcast_transcription(booth_id: str, payload: str | dict):
             booth = booths.get_booth_sync(booth_id)
             if booth:
                 booth.ingest_status = "overloaded"
-                await manager.broadcast(booth_id, {"type": "booth:state", "state": booth.as_public_dict()})
+                await broadcast_booth_state(booth_id, booth.as_public_dict())
         else:
             msg = {"type": "caption", "status": "final", "text": text}
             await listener_manager.broadcast(booth_id, msg)
     else:
         # Aggregator payload
         await listener_manager.broadcast(booth_id, payload)
-
-
-async def broadcast_booth_state(booth_id: str, state: dict) -> None:
-    """Broadcast booth state to interpreters and listener-safe state to listeners."""
-    await manager.broadcast(booth_id, {"type": "booth:state", "state": state})
-    listener_state = {
-        "booth_id": state.get("booth_id"),
-        "broadcast_unlocked": state.get("broadcast_unlocked"),
-        "ingest_status": state.get("ingest_status"),
-    }
-    await listener_manager.broadcast(booth_id, {"type": "booth:state", "state": listener_state})
 
 
 async def _handle_join(ws: WebSocket, session: Session, data: dict) -> None:
@@ -650,7 +717,7 @@ async def _handle_join(ws: WebSocket, session: Session, data: dict) -> None:
     await ws.send_text(
         json.dumps({"type": "booth:joined", "participant_id": participant.participant_id, "state": state})
     )
-    await manager.broadcast(session.booth_id, {"type": "booth:state", "state": state})
+    await broadcast_booth_state(session.booth_id, state)
 
     if role == INTERPRETER:
         await _wh_worker.enqueue_webhook(
@@ -671,7 +738,7 @@ async def _handle_leave(session: Session) -> None:
         session.booth_id, session.participant_id, session.language, session.channel_id
     )
     session.participant_id = None
-    await manager.broadcast(session.booth_id, {"type": "booth:state", "state": state})
+    await broadcast_booth_state(session.booth_id, state)
 
 
 async def _handle_chat(ws: WebSocket, session: Session, data: dict) -> None:
@@ -687,7 +754,7 @@ async def _handle_chat(ws: WebSocket, session: Session, data: dict) -> None:
         await ws.send_text(json.dumps({"type": "booth:error", "message": str(exc)}))
         return
     await manager.broadcast(session.booth_id, {"type": "booth:chat", "message": message})
-    await manager.broadcast(session.booth_id, {"type": "booth:state", "state": state})
+    await broadcast_booth_state(session.booth_id, state)
 
 
 async def _handle_set_active(ws: WebSocket, session: Session, data: dict) -> None:
@@ -705,7 +772,7 @@ async def _handle_set_active(ws: WebSocket, session: Session, data: dict) -> Non
     except (ValueError, PermissionError) as exc:
         await ws.send_text(json.dumps({"type": "booth:error", "message": str(exc)}))
         return
-    await manager.broadcast(session.booth_id, {"type": "booth:state", "state": state})
+    await broadcast_booth_state(session.booth_id, state)
 
 
 async def _handle_update_state(ws: WebSocket, session: Session, data: dict) -> None:
@@ -724,7 +791,7 @@ async def _handle_update_state(ws: WebSocket, session: Session, data: dict) -> N
     except (ValueError, PermissionError) as exc:
         await ws.send_text(json.dumps({"type": "booth:error", "message": str(exc)}))
         return
-    await manager.broadcast(session.booth_id, {"type": "booth:state", "state": state})
+    await broadcast_booth_state(session.booth_id, state)
 
 
 async def _handle_request_publish_ticket(ws: WebSocket, session: Session, data: dict) -> None:
@@ -806,7 +873,7 @@ async def _handle_initiate_handoff(ws: WebSocket, session: Session, _data: dict)
     except (ValueError, PermissionError) as exc:
         await ws.send_text(json.dumps({"type": "booth:error", "message": str(exc)}))
         return
-    await manager.broadcast(session.booth_id, {"type": "booth:state", "state": state})
+    await broadcast_booth_state(session.booth_id, state)
 
 
 async def _handle_accept_handoff(ws: WebSocket, session: Session, _data: dict) -> None:
@@ -820,7 +887,7 @@ async def _handle_accept_handoff(ws: WebSocket, session: Session, _data: dict) -
     except (ValueError, PermissionError) as exc:
         await ws.send_text(json.dumps({"type": "booth:error", "message": str(exc)}))
         return
-    await manager.broadcast(session.booth_id, {"type": "booth:state", "state": state})
+    await broadcast_booth_state(session.booth_id, state)
 
 
 async def _handle_cancel_handoff(ws: WebSocket, session: Session, _data: dict) -> None:
@@ -834,4 +901,4 @@ async def _handle_cancel_handoff(ws: WebSocket, session: Session, _data: dict) -
     except (ValueError, PermissionError) as exc:
         await ws.send_text(json.dumps({"type": "booth:error", "message": str(exc)}))
         return
-    await manager.broadcast(session.booth_id, {"type": "booth:state", "state": state})
+    await broadcast_booth_state(session.booth_id, state)
