@@ -28,6 +28,14 @@
 
 ---
 
+Signup protection: `POST /register` allows 20 attempts per resolved client IP
+per minute (`REGISTRATION_REQUESTS_PER_MINUTE`); excess attempts return 429 with
+`Retry-After: 60`. With `REGISTRATION_TURNSTILE_ENABLED=true`, a Cloudflare token
+validated for the configured hostname and `register` action is required before
+account/email side effects (403 if rejected, 503 if unavailable). The optional
+widget and errors render in `register.html`; see `portal/registration_protection.py`
+and `docs/registration-protection.md`. Other routes are unaffected.
+
 ## Booth & Listener Pages
 
 | Method | Path | Auth | Template | Notes |
@@ -176,10 +184,13 @@ with `?error=invalid_role&role=…` and the page explains why.
 
 - `POST .../program-ingest` also accepts `mode` (`whip` | `rtmps_relay`) on enable;
   relay-mode enable/rotate responses add `stream_key` (`floor?key=<secret>`). Status
-  adds `mode`, `relay_available`, `rtmps_server`, write-only `destination`
+  adds `mode`, `relay_available`, `relay_service_down` (last relay-service call failed),
+  `rtmps_server`, write-only `destination`
   (`configured`, `server_url`, `updated_at`) and `health.{ingest,relay,processing}`.
 - `PUT/DELETE /workspace/events/{event_id}/rooms/{room_id}/program-relay`: event-owner,
-  origin-checked. PUT `{server_url, stream_key}` validates RTMPS + allow-listed host and
+  origin-checked. PUT `{server_url?, stream_key}` (server defaults to YouTube's primary RTMPS
+  ingest; a full `<server>/<key>` URL in `stream_key` is split; YouTube's `rtmp://a|b.rtmp.youtube.com`
+  is rewritten to its RTMPS host) validates RTMPS + allow-listed host and
   stores the key encrypted (422 invalid, 409 relay disabled). DELETE clears it and stops
   the relay (202 + `cleanup_pending` if the relay service is unreachable).
 - `/internal/media-auth` accepts `protocol: rtmp` only for relay-mode rooms with query

@@ -116,7 +116,7 @@ function setStatus(text, cls) {
 }
 
 function showAudioPlayer(show) {
-  audioEl.style.display = show ? "block" : "none";
+  audioEl.classList.toggle("hidden", !show);
   if (show && currentAudioDelayMs === 0) {
     audioEl.setAttribute("controls", "");
   } else {
@@ -418,7 +418,7 @@ function renderItem(data) {
         if (!existingBlock) {
           var block = document.createElement("div");
           block.className =
-            "mb-4 pb-4 border-b border-gray-200 last:border-b-0 w-full flex flex-col gap-1";
+            "caption-history-block mb-4 pb-4 border-b border-gray-200 last:border-b-0 w-full flex flex-col gap-1";
           if (data.segment_id) {
             block.id = "segment-" + data.segment_id;
           }
@@ -433,7 +433,7 @@ function renderItem(data) {
           srcDiv.querySelector(".untrusted-text").textContent = data.text;
 
           if (mode === "translated") {
-            srcDiv.style.display = "none";
+            srcDiv.classList.add("listener-hidden");
           }
 
           block.appendChild(srcDiv);
@@ -472,7 +472,7 @@ function renderItem(data) {
       tDiv.querySelector(".untrusted-text").textContent = data.text;
 
       if (mode === "original") {
-        tDiv.style.display = "none";
+        tDiv.classList.add("listener-hidden");
       }
 
       var block = data.segment_id
@@ -488,12 +488,13 @@ function renderItem(data) {
           existingTDiv.querySelector(".untrusted-text").textContent = data.text;
         } else {
           block.appendChild(tDiv);
+          applyCaptionMode();
         }
       } else {
         // Fallback if we missed the original caption
         block = document.createElement("div");
         block.className =
-          "mb-4 pb-4 border-b border-gray-200 last:border-b-0 w-full flex flex-col gap-1";
+          "caption-history-block mb-4 pb-4 border-b border-gray-200 last:border-b-0 w-full flex flex-col gap-1";
         block.appendChild(tDiv);
         historyBox.appendChild(block);
         while (historyBox.children.length > 50)
@@ -722,14 +723,14 @@ function handleCaptionsMessage(event) {
         captionModeSelect.value = "original";
         translationLangSelect.innerHTML = "";
         var transGroup = document.getElementById("translation-lang-group");
-        if (transGroup) transGroup.style.display = "none";
+        if (transGroup) transGroup.hidden = true;
         applyCaptionMode();
       }
       return;
     }
 
     if (data.type === "caption") {
-      if (waitingText) waitingText.style.display = "none";
+      if (waitingText) waitingText.classList.add("listener-hidden");
 
       if (data.status === "partial") {
         var sid = data.segment_id;
@@ -800,9 +801,9 @@ function applyCaptionMode() {
 
   // Process current box
   if (mode === "translated") {
-    currentBox.style.display = "none";
+    currentBox.classList.add("listener-hidden");
   } else {
-    currentBox.style.display = "block";
+    currentBox.classList.remove("listener-hidden");
   }
 
   // Process history blocks
@@ -817,19 +818,19 @@ function applyCaptionMode() {
       block.querySelector(".translation-text");
 
     if (srcDiv) {
-      srcDiv.style.display = mode === "translated" ? "none" : "block";
+      srcDiv.classList.toggle("listener-hidden", mode === "translated");
     }
     if (tgtDiv) {
-      tgtDiv.style.display = mode === "original" ? "none" : "block";
+      tgtDiv.classList.toggle("listener-hidden", mode === "original");
     }
 
     // Hide the whole block if it becomes empty
-    var hasVisibleSrc = srcDiv && srcDiv.style.display !== "none";
-    var hasVisibleTgt = tgtDiv && tgtDiv.style.display !== "none";
+    var hasVisibleSrc = srcDiv && !srcDiv.classList.contains("listener-hidden");
+    var hasVisibleTgt = tgtDiv && !tgtDiv.classList.contains("listener-hidden");
     if (!hasVisibleSrc && !hasVisibleTgt) {
-      block.style.display = "none";
+      block.classList.add("listener-hidden");
     } else {
-      block.style.display = "flex";
+      block.classList.remove("listener-hidden");
     }
   }
 }
@@ -849,7 +850,7 @@ roomSelect.addEventListener("change", function () {
     captionModeSelect.value = "original";
     applyCaptionMode();
     var transGroup = document.getElementById("translation-lang-group");
-    if (transGroup) transGroup.style.display = "none";
+    if (transGroup) transGroup.hidden = true;
     return;
   }
 
@@ -880,7 +881,7 @@ roomSelect.addEventListener("change", function () {
   translationLangSelect.innerHTML = "";
   applyCaptionMode();
   var transGroup = document.getElementById("translation-lang-group");
-  if (transGroup) transGroup.style.display = "none";
+  if (transGroup) transGroup.hidden = true;
 });
 
 var ttsSyncEnabled = false;
@@ -949,7 +950,7 @@ languageSelect.addEventListener("change", function () {
       bData.translation_languages &&
       bData.translation_languages.length > 0
     ) {
-      if (transGroup) transGroup.style.display = "flex";
+      if (transGroup) transGroup.hidden = false;
       captionModeSelect.disabled = false;
 
       // Preserve current selection if possible
@@ -967,6 +968,8 @@ languageSelect.addEventListener("change", function () {
         var opt = document.createElement("option");
         opt.value = lang.code;
         opt.textContent = lang.name;
+        // AI text languages are read only; only AI voice languages can be heard.
+        opt.dataset.voice = lang.tts_enabled === false ? "0" : "1";
         translationLangSelect.appendChild(opt);
         if (lang.code === currentSelection) optionExists = true;
       });
@@ -981,13 +984,13 @@ languageSelect.addEventListener("change", function () {
         captionModeSelect.value = "original";
       }
     } else {
-      if (transGroup) transGroup.style.display = "none";
+      if (transGroup) transGroup.hidden = true;
       captionModeSelect.disabled = true;
       captionModeSelect.value = "original";
       translationLangSelect.innerHTML = "";
     }
   } else {
-    if (transGroup) transGroup.style.display = "none";
+    if (transGroup) transGroup.hidden = true;
     captionModeSelect.disabled = true;
     captionModeSelect.value = "original";
     translationLangSelect.innerHTML = "";
@@ -1000,11 +1003,11 @@ languageSelect.addEventListener("change", function () {
     sourceData &&
     sourceData.translation_enabled &&
     sourceData.translation_languages &&
-    sourceData.translation_languages.length > 0
+    sourceData.translation_languages.some((lang) => lang.tts_enabled !== false)
   ) {
-    ttsSyncGroup.style.display = "flex";
+    ttsSyncGroup.hidden = false;
   } else {
-    ttsSyncGroup.style.display = "none";
+    ttsSyncGroup.hidden = true;
     ttsSyncEnabled = false;
     if (ttsSyncToggle) ttsSyncToggle.checked = false;
   }
@@ -1051,7 +1054,13 @@ function applyTtsOverlay() {
   var languageCode = selectedOpt ? selectedOpt.dataset.languageCode : null;
   var roomId = parseInt(roomSelect.value, 10);
   var rData = roomsData.find((r) => r.id.toString() === roomId.toString());
-  var canSyncTts = languageCode === "floor" && rData && rData.floor_tts_enabled;
+  var targetOpt =
+    translationLangSelect.options[translationLangSelect.selectedIndex];
+  var canSyncTts =
+    languageCode === "floor" &&
+    rData &&
+    rData.floor_tts_enabled &&
+    !(targetOpt && targetOpt.dataset.voice === "0");
   var targetLangValue = translationLangSelect.value;
   var boothObjId = selectedOpt ? selectedOpt.dataset.boothObjId : null;
   var boothId = selectedOpt ? selectedOpt.dataset.boothId : null;
