@@ -32,6 +32,16 @@ def isolated_booth_token(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_membership_recheck(monkeypatch):
+    """These tests cover delivery by granted role. The database recheck (installed on the
+    shared manager by any test that starts the app lifespan) is covered in test_ws_auth_boundary."""
+    monkeypatch.setattr(manager, "membership_checker", None)
+    monkeypatch.setattr(manager, "token_checker", None)
+    manager._allowed_cache.clear()
+    manager._token_allowed_cache.clear()
+
+
+@pytest.fixture(autouse=True)
 def setup_db():
     """Initialize an in-memory SQLite database for test isolation."""
     import anyio
