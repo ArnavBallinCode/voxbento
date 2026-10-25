@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import timezone
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -101,7 +102,10 @@ async def ws_booth(websocket: WebSocket, booth_id: str) -> None:
 
     connect_time = utc_now()
     if user_id is not None and user is not None and user.sessions_valid_after is not None:
-        if connect_time <= user.sessions_valid_after:
+        valid_after = user.sessions_valid_after
+        if valid_after.tzinfo is None:
+            valid_after = valid_after.replace(tzinfo=timezone.utc)
+        if connect_time <= valid_after:
             await websocket.close(code=WS_CLOSE_REVOKED, reason=REASON_SESSION_EXPIRED)
             return
 

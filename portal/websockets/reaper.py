@@ -167,6 +167,8 @@ async def reap_stale_sessions() -> int:
                 if not is_active:
                     stale.append((ws, WS_CLOSE_REVOKED, REASON_ACCOUNT_DEACTIVATED))
                 elif sessions_valid_after is not None:
+                    if sessions_valid_after.tzinfo is None:
+                        sessions_valid_after = sessions_valid_after.replace(tzinfo=timezone.utc)
                     issued_at = getattr(session, "issued_at", None) or now
                     if issued_at <= sessions_valid_after:
                         stale.append((ws, WS_CLOSE_REVOKED, REASON_SESSION_EXPIRED))

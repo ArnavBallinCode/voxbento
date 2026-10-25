@@ -113,7 +113,8 @@ async def test_membership_downgraded_below_role_required_evicts_socket():
 # 3. Demotion committed, sweep skipped (simulate cancellation after commit):
 # the reaper or next broadcast still revokes the socket, and a retry of the same change still results in revoked sessions.
 @pytest.mark.anyio
-async def test_demotion_committed_sweep_skipped_reaper_and_retry_evict(monkeypatch):
+@pytest.mark.parametrize("naive_timestamp", [False, True])
+async def test_demotion_committed_sweep_skipped_reaper_and_retry_evict(monkeypatch, naive_timestamp):
     import portal.websockets.reaper as reaper_mod
     from portal.websockets.reaper import reap_stale_sessions
 
@@ -123,6 +124,8 @@ async def test_demotion_committed_sweep_skipped_reaper_and_retry_evict(monkeypat
     now = datetime.now(timezone.utc)
     old_time = now - timedelta(minutes=10)
     demoted_at = now - timedelta(minutes=2)
+    if naive_timestamp:
+        demoted_at = demoted_at.replace(tzinfo=None)  # SQLite returns naive UTC datetimes.
 
     # Session connected before demotion
     ws = MockWebSocket()
@@ -1007,3 +1010,42 @@ def test_migration_037_upgrade_downgrade_with_existing_rows(tmp_path):
         cols = [c["name"] for c in inspector.get_columns("invite_tokens")]
         assert "public_id" in cols
     engine.dispose()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("naive_timestamp", [False, True])
+@pytest.mark.parametrize("future_cutoff", [False, True])
+async def test_booth_connect_handles_database_session_cutoff(monkeypatch, naive_timestamp, future_cutoff):
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from fastapi import WebSocketDisconnect
+
+    import portal.websockets.handlers as handlers
+
+    cutoff = datetime.now(timezone.utc) + timedelta(minutes=5 if future_cutoff else -5)
+    if naive_timestamp:
+        cutoff = cutoff.replace(tzinfo=None)
+    user = SimpleNamespace(is_active=True, sessions_valid_after=cutoff)
+
+    @asynccontextmanager
+    async def session():
+        yield object()
+
+    monkeypatch.setattr(handlers, "get_session", session)
+    monkeypatch.setattr(handlers, "get_user_by_id", AsyncMock(return_value=user))
+    monkeypatch.setattr(handlers, "resolve_ws_auth", AsyncMock(return_value={"sub": "10", "user": True}))
+    monkeypatch.setattr(handlers, "resolve_booth_role", AsyncMock(return_value="interpreter"))
+    monkeypatch.setattr(handlers, "get_booth_language_name", AsyncMock(return_value="English"))
+    monkeypatch.setattr(handlers, "manager", ConnectionManager())
+    ws = MockWebSocket()
+    ws.accept = AsyncMock()
+    ws.receive_text = AsyncMock(side_effect=WebSocketDisconnect())
+    await handlers.ws_booth(ws, "test-1-en")
+    if future_cutoff:
+        assert ws.closed_with == (WS_CLOSE_REVOKED, REASON_SESSION_EXPIRED)
+        ws.receive_text.assert_not_awaited()
+    else:
+        assert ws.closed_with is None
+        ws.receive_text.assert_awaited_once()
