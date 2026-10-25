@@ -1,7 +1,7 @@
 """add revoked_at to invite_tokens
 
-Revision ID: 036
-Revises: 035
+Revision ID: 037
+Revises: 036
 Create Date: 2026-10-24 16:00:00.000000
 
 """
@@ -15,8 +15,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "036"
-down_revision: Union[str, Sequence[str], None] = "035"
+revision: str = "037"
+down_revision: Union[str, Sequence[str], None] = "036"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

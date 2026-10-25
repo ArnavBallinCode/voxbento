@@ -1,7 +1,7 @@
 """add public_id to invite_tokens
 
-Revision ID: 037
-Revises: 036
+Revision ID: 038
+Revises: 037
 Create Date: 2026-10-24 16:30:00.000000
 
 """
@@ -16,8 +16,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "037"
-down_revision: Union[str, Sequence[str], None] = "036"
+revision: str = "038"
+down_revision: Union[str, Sequence[str], None] = "037"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

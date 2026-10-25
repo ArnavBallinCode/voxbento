@@ -1,7 +1,7 @@
 """add sessions_valid_after to users
 
-Revision ID: 035
-Revises: 034
+Revision ID: 036
+Revises: 035
 Create Date: 2026-10-24 15:30:00.000000
 
 """
@@ -15,8 +15,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "035"
-down_revision: Union[str, Sequence[str], None] = "034"
+revision: str = "036"
+down_revision: Union[str, Sequence[str], None] = "035"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
