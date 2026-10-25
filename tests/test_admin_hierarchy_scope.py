@@ -1152,14 +1152,15 @@ class TestSiblingSubresourceSecurity:
 
     @pytest.mark.anyio
     async def test_setup_add_booth_create_failure_reports_error(self, booth_scope, monkeypatch):
-        """An unexpected creation failure must be reported instead of looking successful."""
+        """A database failure must be reported instead of looking successful."""
         from sqlalchemy import select
+        from sqlalchemy.exc import OperationalError
 
         from portal.database import get_session
         from portal.models import DBBooth
 
         async def fail_create(**_kwargs):
-            raise RuntimeError("simulated booth creation failure")
+            raise OperationalError("INSERT", {}, Exception("simulated booth creation failure"))
 
         monkeypatch.setattr("portal.routers.admin._create_booth_unless_duplicate", fail_create)
         scope = booth_scope

@@ -897,7 +897,7 @@ async def admin_setup_add_booth(request: Request, event_id: int):
             )
             if not created:
                 error = "duplicate_language"
-        except Exception as e:
+        except (ValueError, SQLAlchemyError) as e:
             logger.warning("Error creating booth in setup wizard: %s", e)
             error = "booth_create_failed"
 
@@ -2108,7 +2108,7 @@ async def admin_add_booth_member(request: Request, event_id: int, room_id: int, 
                         target_url = "/interpreter"
                         await _send_admin_invite(
                             session, user, role, f"booth ({booth.language_code}) for {event.display_name}", target_url
-                         )
+                        )
                 except ValueError:
                     return safe_redirect(
                         url=management_url(
