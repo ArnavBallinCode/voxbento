@@ -249,6 +249,7 @@ jobs:
       - name: Validate JS syntax
         run: |
           node --check portal/static/js/interpreter-booth.js
+          node --check portal/static/js/booth-reconnect.js
           node --check portal/static/js/whep-listener.js
           node --check portal/static/js/admin.js
           node --check .github/scripts/jules-review.mjs
@@ -257,6 +258,7 @@ jobs:
           node tests/test_audio_scheduler.js
           node tests/test_tts_parser.js
           node tests/test_jules_review.mjs
+          node tests/test_booth_reconnect.mjs
 
       - name: Run unit tests
         run: uv run pytest tests/ -v
