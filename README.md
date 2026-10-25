@@ -199,6 +199,21 @@ their operational access.
 
 ---
 
+## Listening to an event
+
+On `/listener/{event_slug}`, select a room and audio source. The WebRTC badge
+shows **Connecting...** while starting, **Reconnecting...** during a retry, and
+**Live (WebRTC)** once WHEP reports connected audio playback. A connected peer
+without playback shows **Connected — waiting for audio**.
+
+Captions follow new lines while you are within 40 pixels of the bottom. Scroll
+up to read earlier captions without being pulled down by incoming captions or
+translations, then return to the bottom to resume following. Changing the room
+or audio source clears the old captions, resumes following, and restores
+**Waiting for interpreter...** until new captions arrive.
+
+---
+
 ## 🧪 Testing & Code Quality
 
 Before submitting changes, make sure all tests and linter checks pass:
@@ -215,6 +230,10 @@ uv run ruff format --check .
 node --check portal/static/js/interpreter-booth.js
 node --check portal/static/js/whep-listener.js
 node --check portal/static/js/admin.js
+
+# Run listener page and WHEP state regression checks
+node tests/test_listener_event.js
+node tests/test_whep_listener.js
 ```
 
 ---

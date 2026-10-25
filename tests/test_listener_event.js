@@ -353,6 +353,14 @@ async function run() {
   whepOpts.onState({ peerConnection: 'connected', ice: 'connected', audioActive: true });
   assert(statusText() === 'Live (WebRTC)', 'shows Live once audio is playing');
 
+  whepOpts.onState({ peerConnection: 'connected', ice: 'connected', audioActive: false });
+  assert(statusText() === 'Connected — waiting for audio', 'a connected peer without playback is not Live');
+
+  for (const state of ['failed', 'disconnected']) {
+    whepOpts.onState({ peerConnection: state, ice: state, audioActive: false });
+    assert(statusText() === 'Reconnecting...', state + ' connections show Reconnecting...');
+  }
+
   choose(languageSelect, 'http://mtx/es/whep');
   assert(statusText() !== 'Live (WebRTC)', 'switching to a booth does not show Live before its state is known');
   await flush();
@@ -389,6 +397,32 @@ async function run() {
   assert(
     captionsBox.scrollTop === captionsBox.scrollHeight - captionsBox.clientHeight,
     'captions follow again once the listener scrolls back to the bottom',
+  );
+
+  captionsBox.scrollTop = captionsBox.scrollHeight - captionsBox.clientHeight - 40;
+  socket.onmessage({ data: JSON.stringify({ type: 'caption', status: 'final', seq: 43, text: 'Line 43' }) });
+  assert(
+    captionsBox.scrollTop === captionsBox.scrollHeight - captionsBox.clientHeight,
+    'captions still follow within 40px of the bottom',
+  );
+
+  captionsBox.scrollTop = captionsBox.scrollHeight - captionsBox.clientHeight - 41;
+  const readingPosition = captionsBox.scrollTop;
+  socket.onmessage({ data: JSON.stringify({ type: 'caption', status: 'final', seq: 44, text: 'Line 44' }) });
+  assert(captionsBox.scrollTop === readingPosition, 'captions stop following beyond the 40px threshold');
+
+  const translationSelect = document.getElementById('translation-lang-select');
+  translationSelect.innerHTML = '<option value="fr">French</option>';
+  const translation = { type: 'translated_caption', language_code: 'fr', seq: 44, text: 'Ligne 44' };
+  socket.onmessage({ data: JSON.stringify(translation) });
+  assert(historyBox.children[historyBox.children.length - 1].textContent.includes('Ligne 44'), 'translations render in the matching caption row');
+  assert(captionsBox.scrollTop === readingPosition, 'translations preserve the reading position while scrolled up');
+
+  captionsBox.scrollTop = captionsBox.scrollHeight;
+  socket.onmessage({ data: JSON.stringify({ ...translation, seq: 45, text: 'Ligne 45' }) });
+  assert(
+    captionsBox.scrollTop === captionsBox.scrollHeight - captionsBox.clientHeight,
+    'translations follow again at the bottom',
   );
 
   captionsBox.scrollTop = 0;

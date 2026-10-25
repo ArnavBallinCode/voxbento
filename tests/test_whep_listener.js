@@ -42,14 +42,18 @@ class FakePeerConnection {
   async setLocalDescription(desc) {
     this.localDescription = desc;
   }
+  async setRemoteDescription() {}
   close() {
     this.connectionState = 'closed';
   }
 }
 
+let failFetch = true;
 const context = vm.createContext({
   RTCPeerConnection: FakePeerConnection,
-  fetch: () => Promise.reject(new Error('WHEP endpoint unreachable')),
+  fetch: () => failFetch
+    ? Promise.reject(new Error('WHEP endpoint unreachable'))
+    : Promise.resolve({ ok: true, headers: { get: () => null }, text: async () => 'v=0' }),
   setTimeout,
   clearTimeout,
   console,
@@ -65,12 +69,35 @@ async function run() {
   console.log('\n── Retry flag ──');
 
   const states = [];
-  WhepListener.start({ whepUrl: 'http://mtx/floor/whep', audioEl: null, onState: (s) => states.push(s) });
+  let onRecovery = () => {};
+  const onState = (s) => {
+    states.push(s);
+    onRecovery(s);
+  };
+  WhepListener.start({ whepUrl: 'http://mtx/floor/whep', audioEl: null, onState });
   await flush();
   await flush();
 
   const last = states[states.length - 1];
   assert(last && last.retrying === true, 'a failed WHEP request reports retrying');
+
+  failFetch = false;
+  const recovered = new Promise((resolve) => {
+    const deadline = setTimeout(() => resolve(null), 1000);
+    onRecovery = (s) => {
+      if (s.retrying === false) {
+        clearTimeout(deadline);
+        resolve(s);
+      }
+    };
+  });
+  assert(await recovered, 'a successful retry clears retrying');
+
+  failFetch = true;
+  WhepListener.start({ whepUrl: 'http://mtx/floor/whep', audioEl: null, onState: (s) => states.push(s) });
+  await flush();
+  await flush();
+  assert(states[states.length - 1].retrying === true, 'a new failed session reports retrying before stop');
 
   WhepListener.stop();
   const stopped = states[states.length - 1];
