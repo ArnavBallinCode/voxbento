@@ -175,8 +175,8 @@ function connectWebSocket() {
 
     ws.addEventListener('open', () => {
       clearTimeout(openTimer)
+      if (state.ws !== ws || state.stopReconnecting) return
       state.wsConnected = true
-      reconnectBackoff.reset()
       setBadge(elements.connectionStatus, 'Connected', 'success')
       // Once boot() has asked to join, every new socket (re)joins with the same
       // participant ID so the server can give this interpreter back their place.
@@ -197,6 +197,9 @@ function connectWebSocket() {
       const finalMessage = finalCloseMessage(event.code)
       if (finalMessage) {
         state.stopReconnecting = true
+        state.micMuted = true
+        state.micStream?.getAudioTracks().forEach((track) => { track.enabled = false })
+        stopLiveIngest().catch((error) => console.warn('Could not finish stopping revoked booth audio:', error))
         setBadge(elements.connectionStatus, 'Disconnected', 'danger')
         showError(finalMessage)
         return
@@ -212,6 +215,7 @@ function connectWebSocket() {
     })
 
     ws.addEventListener('message', (event) => {
+      if (state.ws !== ws || state.stopReconnecting) return
       try {
         handleServerMessage(JSON.parse(event.data))
       } catch {
@@ -244,13 +248,14 @@ function reconcileIngestAfterRejoin() {
   if (state.activeInterpreterId === state.participantId && state.broadcastUnlocked) {
     wsSend({ type: 'booth:update-state', mic_active: !state.micMuted, ingest_connected: true })
   } else {
-    stopLiveIngest().catch(() => {})
+    stopLiveIngest().catch((error) => console.warn('Could not finish stopping previous booth audio:', error))
   }
 }
 
 function handleServerMessage(data) {
   const type = data.type
   if (type === 'booth:joined') {
+    reconnectBackoff.reset()
     const rejoined = state.monitoringStarted
     state.participantId = data.participant_id
     state.joined = true
