@@ -4,6 +4,9 @@ import asyncio
 import time
 from threading import Lock
 
+from unilimit import Limiter, Rule
+from unilimit.backends.memory import MemoryBackend
+
 # Simple in-memory rate limiter for auth endpoints.
 # Format: { "action:identifier": (window_seconds, [timestamp1, timestamp2, ...]) }
 # The window is stored per key so expired keys can be swept without knowing which
@@ -124,3 +127,15 @@ auth_rate_limiter = InMemoryRateLimiter(max_requests=10, window_seconds=60)
 
 # 100 requests per minute per client_id for token exchange
 token_rate_limiter = InMemoryRateLimiter(max_requests=100, window_seconds=60)
+
+# UniLimit rate limiter for login endpoint (10 attempts per hour per normalized email, falling back to IP)
+login_limiter = Limiter(MemoryBackend())
+login_rule = Rule("login", rate="10/hour", key="user_or_ip")
+
+
+def reset_login_limiter() -> None:
+    """Reset the login rate limiter state (used in tests)."""
+    with login_limiter.backend._lock:
+        login_limiter.backend._data.clear()
+        login_limiter.backend._leases.clear()
+

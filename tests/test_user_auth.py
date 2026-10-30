@@ -577,6 +577,36 @@ class TestUserLogin:
         assert response.status_code == 200
         assert response.json() == {"authenticated": False}
 
+    @pytest.mark.anyio
+    async def test_login_rate_limit_enforced_by_unilimit(self, setup_db):
+        """Ten failed attempts per email are allowed; the 11th triggers HTTP 429."""
+        email = "rate-limited@example.com"
+        async with _client() as c:
+            for _ in range(10):
+                resp = await c.post(
+                    "/login",
+                    data={"email": email, "password": "wrong-password"},
+                )
+                assert resp.status_code == 403
+
+            # 11th attempt must be rejected by unilimit rate limiter
+            limited_resp = await c.post(
+                "/login",
+                data={"email": email, "password": "wrong-password"},
+            )
+            assert limited_resp.status_code == 429
+            assert b"Too many attempts. Try again later." in limited_resp.content
+            assert "retry-after" in limited_resp.headers
+            assert "x-ratelimit-limit" in limited_resp.headers
+
+            # A different email address must not be affected
+            other_resp = await c.post(
+                "/login",
+                data={"email": "fresh-email@example.com", "password": "wrong-password"},
+            )
+            assert other_resp.status_code == 403
+
+
 
 class TestEmailVerification:
     @pytest.mark.anyio
