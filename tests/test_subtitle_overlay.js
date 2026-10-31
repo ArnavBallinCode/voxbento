@@ -147,15 +147,15 @@ console.log('\n── Subtitle overlay WebSocket token auth ──');
   );
 }
 
-// Test 2: token from query string fallback
+// Test 2: a token in the page URL is ignored; only the server-rendered token is used
 {
   const { createdWsUrl } = runOverlay(
     { boothId: 'pycon-1-en' },
     '?token=query.token.here'
   );
   assert(
-    createdWsUrl === 'ws://localhost:8000/ws/captions/pycon-1-en?token=query.token.here',
-    `overlay attaches query param token when dataset token is empty: got ${createdWsUrl}`
+    createdWsUrl === 'ws://localhost:8000/ws/captions/pycon-1-en',
+    `overlay ignores a page URL token: got ${createdWsUrl}`
   );
 }
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import types
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -138,13 +139,35 @@ async def test_budget_does_not_compare_blocked_guesses_and_bounds_storage(monkey
     def unexpected_comparison(*args):
         pytest.fail("Compared a guess after the attempt budget was exhausted")
 
-    monkeypatch.setattr(join_code_limit.secrets, "compare_digest", unexpected_comparison)
-    with pytest.raises(join_code_limit.JoinCodeThrottled):
-        join_code_limit.verify_join_code("client", "correct", "correct")
+    with monkeypatch.context() as m:
+        m.setattr(join_code_limit.secrets, "compare_digest", unexpected_comparison)
+        with pytest.raises(join_code_limit.JoinCodeThrottled):
+            join_code_limit.verify_join_code("client", "correct", "correct")
+    # A full table evicts the oldest window instead of locking out new clients.
     monkeypatch.setattr(join_code_limit, "MAX_CLIENTS", 1)
+    assert join_code_limit.verify_join_code("second-client", "correct", "correct")
+    assert not join_code_limit.verify_join_code("second-client", "bad", "correct")
+    assert list(join_code_limit._join_code_attempts) == ["second-client"]
+
+
+@pytest.mark.anyio
+async def test_budget_groups_ipv6_clients_by_64_prefix():
+    for i in range(10):
+        assert not join_code_limit.verify_join_code(f"2001:db8:1:2::{i + 1:x}", "bad", "correct")
     with pytest.raises(join_code_limit.JoinCodeThrottled):
-        join_code_limit.verify_join_code("second-client", "correct", "correct")
-    assert len(join_code_limit._join_code_attempts) == 1
+        join_code_limit.verify_join_code("2001:db8:1:2:ffff::1", "correct", "correct")
+    assert join_code_limit.verify_join_code("2001:db8:1:3::1", "correct", "correct")
+    assert not join_code_limit.verify_join_code("::ffff:192.0.2.1", "bad", "correct")
+    assert list(join_code_limit._join_code_attempts) == ["2001:db8:1:2::/64", "192.0.2.1"]
+
+
+@pytest.mark.anyio
+async def test_budget_purges_expired_windows(monkeypatch):
+    assert not join_code_limit.verify_join_code("192.0.2.1", "bad", "correct")
+    now = join_code_limit.time.monotonic()
+    monkeypatch.setattr(join_code_limit, "time", types.SimpleNamespace(monotonic=lambda: now + 61))
+    assert not join_code_limit.verify_join_code("192.0.2.2", "bad", "correct")
+    assert list(join_code_limit._join_code_attempts) == ["192.0.2.2"]
 
 
 @pytest.mark.anyio

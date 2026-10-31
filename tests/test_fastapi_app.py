@@ -136,6 +136,27 @@ def test_token_redactor_handles_legacy_api_query_credentials():
     assert "[REDACTED]" in output
 
 
+def test_token_redactor_hides_overlay_join_code():
+    import logging
+
+    from fastapi_app import _UvicornTokenRedactor
+
+    # OBS / vMix overlays carry the join code on every page load and session refresh.
+    record = logging.LogRecord(
+        name="uvicorn.access",
+        level=logging.INFO,
+        pathname="",
+        lineno=0,
+        msg='%s - "%s %s HTTP/%s" %d',
+        args=("127.0.0.1:1234", "GET", "/overlay/demo/1/en/session?code=ROOM42", "1.1", 200),
+        exc_info=None,
+    )
+    _UvicornTokenRedactor().filter(record)
+    output = record.getMessage()
+    assert "ROOM42" not in output
+    assert "code=[REDACTED]" in output
+
+
 def test_token_redactor_hides_internal_hook_secret():
     import logging
 

@@ -253,8 +253,9 @@ It shares the existing room/language broadcast keys and does not start workers.
 
 A valid event join code or active account authorizes the page. The same checks
 protect `/overlay/{event_slug}/{room_id}/{language_code}/session`, which supplies a
-fresh listener token on reconnect. Code guesses share a bounded per-IP budget
-across HTTP and WebSockets, checked before comparing further guesses. Inactive or
+fresh listener token on reconnect. Code guesses share a bounded budget per IPv4
+address or IPv6 /64 across HTTP and WebSockets, checked before comparing further
+guesses. Inactive or
 deleted accounts cannot mint tokens using stale login cookies. Pages and refresh
 responses are not cached; the page can only be framed by the portal itself.
 

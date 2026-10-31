@@ -1679,9 +1679,11 @@ class TestRoomCRUD:
                 with tc.websocket_connect(f"/ws/captions/{booth_id}?code=ROOM42") as ws:
                     ws.receive_text()
             assert exc_info.value.code == 1008
+            import types
+
             from portal import join_code_limit
             now = join_code_limit.time.monotonic()
-            monkeypatch.setattr(join_code_limit.time, "monotonic", lambda: now + 61)
+            monkeypatch.setattr(join_code_limit, "time", types.SimpleNamespace(monotonic=lambda: now + 61))
             with tc.websocket_connect(f"/ws/captions/{booth_id}?code=ROOM42") as ws:
                 ws.close()
             assert not _join_code_attempts

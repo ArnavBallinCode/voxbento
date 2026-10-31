@@ -60,6 +60,12 @@ body {
 
 /* Older lines fade back so the newest line reads first. */
 .overlay-line--older {
-  color: color-mix(in srgb, var(--vb-color-surface) 72%, transparent);
   font-size: 0.8em;
+}
+
+/* Chromium before 111 (OBS 30 and earlier) would drop the colour to inherited black. */
+@supports (color: color-mix(in srgb, white 72%, transparent)) {
+  .overlay-line--older {
+    color: color-mix(in srgb, var(--vb-color-surface) 72%, transparent);
+  }
 }

@@ -11,6 +11,7 @@ Covers:
 from __future__ import annotations
 
 import os
+import types
 
 os.environ["BOOTH_ACCESS_TOKEN"] = ""
 
@@ -108,7 +109,7 @@ class TestListenerRateLimit:
             assert resp.status_code == 429
             assert 1 <= int(resp.headers["Retry-After"]) <= 60
             now = join_code_limit.time.monotonic()
-            monkeypatch.setattr(join_code_limit.time, "monotonic", lambda: now + 61)
+            monkeypatch.setattr(join_code_limit, "time", types.SimpleNamespace(monotonic=lambda: now + 61))
             resp = await c.get(f"/listener/{event.slug}?code=ROOM42")
             assert resp.status_code == 200
             assert b"Invalid join code." not in resp.content

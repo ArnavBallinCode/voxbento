@@ -9,7 +9,7 @@ const CAPTION_TYPES = ["caption", "translated_caption", "translation"];
 const root = document.getElementById("overlay");
 const linesBox = document.getElementById("overlay-lines");
 const boothId = root ? root.dataset.boothId : "";
-const token = root ? (root.dataset.token || new URLSearchParams(window.location.search).get("token") || "") : "";
+const token = root ? (root.dataset.token || "") : "";
 
 const config = { position: "bottom", fontSize: 36, bg: 70, lines: 2 };
 let finals = [];
@@ -165,9 +165,8 @@ export function startConnection({ boothId, initialToken, location, onCaption, on
     if (stopped) return;
     onStatus("connecting");
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
-    const params = new URLSearchParams();
-    if (accessToken) params.set("token", accessToken);
-    const query = params.size ? `?${params}` : "";
+    // OBS 30 and earlier embed Chromium 103, which lacks URLSearchParams.size.
+    const query = accessToken ? `?token=${encodeURIComponent(accessToken)}` : "";
     const ws = new WebSocketClass(`${proto}//${location.host}/ws/captions/${encodeURIComponent(boothId)}${query}`);
     socket = ws;
     timeoutTimer = schedule(() => ws.close(), 10000);
