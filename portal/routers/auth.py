@@ -51,7 +51,7 @@ from portal.globals import _JS_CACHE_BUST, asset_version_context
 from portal.hosting_requests import format_event_dates, parse_hosting_request_form
 from portal.models import HOSTING_REQUEST_GRANTED, TOKEN_TYPE_HOSTING_INVITE, AuthToken, User, utc_now
 from portal.notifications import queue_notification
-from portal.rate_limit import check_rate_limit, login_limiter, login_rule
+from portal.rate_limit import check_rate_limit, login_email_rule, login_ip_rule, login_limiter
 from portal.registration_protection import limit_registration, verify_registration_challenge
 from portal.schemas.auth import TokenRequest, TokenResponse
 from portal.user_menu import resolve_user_menu, user_menu_context
@@ -362,8 +362,8 @@ async def get_login_identity(request: Request) -> str | None:
         if isinstance(email, str):
             email = email.strip().lower()
             return email or None
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Could not parse form email for rate limit identity: %s", exc)
     return None
 
 
@@ -372,7 +372,8 @@ async def get_login_identity(request: Request) -> str | None:
     dependencies=[
         Depends(
             RateLimit(
-                login_rule,
+                login_ip_rule,
+                login_email_rule,
                 identity=get_login_identity,
                 limiter=login_limiter,
             )

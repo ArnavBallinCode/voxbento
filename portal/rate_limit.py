@@ -128,9 +128,14 @@ auth_rate_limiter = InMemoryRateLimiter(max_requests=10, window_seconds=60)
 # 100 requests per minute per client_id for token exchange
 token_rate_limiter = InMemoryRateLimiter(max_requests=100, window_seconds=60)
 
-# UniLimit rate limiter for login endpoint (10 attempts per hour per normalized email, falling back to IP)
+# UniLimit rate limiter for login endpoint
+# - 10 attempts per hour per normalized email (credential stuffing defense per account)
+# - 60 attempts per minute per client IP (rapid flood / rotating email defense)
 login_limiter = Limiter(MemoryBackend())
-login_rule = Rule("login", rate="10/hour", key="user_or_ip")
+login_ip_rule = Rule("login_ip", rate="60/minute", key="ip")
+login_email_rule = Rule("login_email", rate="10/hour", key="user", on_missing="skip")
+login_rule = login_email_rule
+login_rules = (login_ip_rule, login_email_rule)
 
 
 def reset_login_limiter() -> None:

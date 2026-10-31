@@ -267,8 +267,8 @@ async def unilimit_rate_limit_exceeded_handler(request: Request, exc: RateLimitE
                 "email": form.get("email", "").strip().lower(),
                 "next_url": form.get("next_url", ""),
             }
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.debug("Could not parse login form on rate limit rejection: %s", exc)
         return templates.TemplateResponse(
             request=request,
             name="login.html",
