@@ -59,8 +59,8 @@ def verify_join_code(client_ip: str, submitted: str | None, expected: str | None
     count, start = _join_code_attempts.get(key, (0, now))
     if count >= JOIN_CODE_RATE_LIMIT:
         raise JoinCodeThrottled(max(1, math.ceil(JOIN_CODE_RATE_WINDOW_SECONDS - (now - start))))
+    # A correct code must not reset the budget, or a code for one event would refill guesses for another.
     if expected and secrets.compare_digest(submitted.encode(), expected.encode()):
-        _join_code_attempts.pop(key, None)
         return True
     if key not in _join_code_attempts and len(_join_code_attempts) >= MAX_CLIENTS:
         _join_code_attempts.popitem(last=False)

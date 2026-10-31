@@ -151,6 +151,16 @@ async def test_budget_does_not_compare_blocked_guesses_and_bounds_storage(monkey
 
 
 @pytest.mark.anyio
+async def test_correct_code_does_not_refill_budget_for_other_events():
+    for _ in range(9):
+        assert not join_code_limit.verify_join_code("192.0.2.1", "guess", "victim-code")
+    assert join_code_limit.verify_join_code("192.0.2.1", "own-code", "own-code")
+    assert not join_code_limit.verify_join_code("192.0.2.1", "guess", "victim-code")
+    with pytest.raises(join_code_limit.JoinCodeThrottled):
+        join_code_limit.verify_join_code("192.0.2.1", "guess", "victim-code")
+
+
+@pytest.mark.anyio
 async def test_budget_groups_ipv6_clients_by_64_prefix():
     for i in range(10):
         assert not join_code_limit.verify_join_code(f"2001:db8:1:2::{i + 1:x}", "bad", "correct")
