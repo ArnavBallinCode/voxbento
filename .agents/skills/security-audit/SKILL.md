@@ -56,7 +56,7 @@ description: Use this skill for security reviews of VoxBento code. Covers OWASP 
 - [ ] `SECRET_KEY: str = 'change-me'` — must be overridden.
 
 ### A07 — Identification and Authentication Failures
-- [ ] No rate limiting on `/login` or `/register` (see TD-08 in TECHNICAL_DEBT_REPORT.md).
+- [ ] No rate limiting on `/register` (see TD-08 in TECHNICAL_DEBT_REPORT.md).
 - [ ] `user.is_active` checked on login — deactivated users cannot log in.
 - [ ] JWT expiry is enforced (`jwt_expiry_seconds` default 86400 = 24h).
 - [ ] Cookie flags: `httponly=True`, `samesite='lax'` on all auth cookies.

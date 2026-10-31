@@ -263,12 +263,14 @@ async def unilimit_rate_limit_exceeded_handler(request: Request, exc: RateLimitE
         form_data: dict[str, str] = {}
         try:
             form = await request.form()
+            email = form.get("email", "")
+            next_url = form.get("next_url", "")
             form_data = {
-                "email": form.get("email", "").strip().lower(),
-                "next_url": form.get("next_url", ""),
+                "email": email.strip().lower() if isinstance(email, str) else "",
+                "next_url": next_url if isinstance(next_url, str) else "",
             }
-        except Exception as exc:
-            logging.debug("Could not parse login form on rate limit rejection: %s", exc)
+        except Exception as parse_exc:
+            logging.debug("Could not parse login form on rate limit rejection: %s", parse_exc)
         return templates.TemplateResponse(
             request=request,
             name="login.html",
@@ -285,8 +287,11 @@ async def unilimit_rate_limit_exceeded_handler(request: Request, exc: RateLimitE
         return templates.TemplateResponse(
             request, "429.html", {"request": request, "detail": detail_msg}, status_code=429, headers=headers
         )
-    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=headers)
-
+    return JSONResponse(
+        {"detail": getattr(exc, "detail", "Too Many Requests")},
+        status_code=getattr(exc, "status_code", status.HTTP_429_TOO_MANY_REQUESTS),
+        headers=headers,
+    )
 
 
 @app.exception_handler(Exception)
