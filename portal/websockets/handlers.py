@@ -5,9 +5,11 @@ import logging
 from datetime import timezone
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from jwt import InvalidTokenError
 
 from portal.auth import (
     WSAuthError,
+    _current_user,
     booth_session_key,
     decode_token,
     is_invite_token_revoked,
@@ -225,11 +227,15 @@ async def ws_captions(websocket: WebSocket, booth_id: str) -> None:
         reject_code: int | None = None
         try:
             payload = decode_token(token)
-            if not (payload.get("is_admin") or payload.get("admin")):
-                token_event = payload.get("event_slug", "")
-                if not token_event or booth_event != token_event:
+            if payload.get("user"):
+                if not await _current_user(payload):
+                    reject_code = 4001
+            elif is_listener_token(payload):
+                if not payload.get("event_slug") or booth_event != payload["event_slug"]:
                     reject_code = 4003
-        except Exception:
+            elif not payload.get("event_slug") or not await resolve_booth_role(payload, booth_id):
+                reject_code = 4003
+        except InvalidTokenError:
             reject_code = 4001
         if reject_code is not None:
             # Accept before closing: a close before accept() becomes an HTTP 403 and
@@ -240,46 +246,33 @@ async def ws_captions(websocket: WebSocket, booth_id: str) -> None:
             return
     else:
         if booth_event:
-            from portal.auth import _current_user, get_booth_sessions, resolve_booth_role
+            from portal.auth import get_booth_sessions
             from portal.database import get_event_by_slug, get_session
 
             async with get_session() as db_session:
                 ev = await get_event_by_slug(db_session, booth_event)
 
             if ev and ev.listener_join_code:
-                from portal.join_code_limit import register_failed_attempt, reset_attempts
+                from portal.join_code_limit import JoinCodeThrottled, verify_join_code
 
-                client_ip = websocket.client.host if websocket.client else "unknown"
-                join_code = ev.listener_join_code.strip()
-                submitted = [
-                    c.strip()
-                    for c in (
-                        websocket.cookies.get(f"listener_code_{booth_event}"),
-                        websocket.query_params.get("code"),
-                    )
-                    if c and c.strip()
-                ]
-                is_authorized = join_code in submitted
-                if is_authorized:
-                    reset_attempts(client_ip)
-                else:
-                    sessions = get_booth_sessions(websocket)
-                    user_sess = sessions.get("user_token")
-                    invite_sess = sessions.get("session_token")
-                    # Same rule as the listener page: any signed-in account gets in, but
-                    # the account is checked in the database rather than trusting claims.
-                    if user_sess and user_sess.get("user") and await _current_user(user_sess):
-                        is_authorized = True
-                    elif invite_sess and await resolve_booth_role(invite_sess, booth_id):
-                        is_authorized = True
-
+                sessions = get_booth_sessions(websocket)
+                user_sess = sessions.get("user_token")
+                invite_sess = sessions.get("session_token")
+                is_authorized = bool(user_sess and user_sess.get("user") and await _current_user(user_sess))
+                if not is_authorized and invite_sess:
+                    is_authorized = bool(await resolve_booth_role(invite_sess, booth_id))
+                reject_code = 4001
                 if not is_authorized:
-                    # Accept before closing so the client sees the close code, not an HTTP 403.
+                    submitted = websocket.query_params.get("code") or websocket.cookies.get(f"listener_code_{booth_event}")
+                    try:
+                        is_authorized = verify_join_code(
+                            websocket.client.host if websocket.client else "unknown", submitted, ev.listener_join_code,
+                        )
+                    except JoinCodeThrottled:
+                        reject_code = 1008
+                if not is_authorized:
                     await websocket.accept()
-                    if submitted and register_failed_attempt(client_ip):
-                        await websocket.close(code=1008)
-                    else:
-                        await websocket.close(code=4001)
+                    await websocket.close(code=reject_code)
                     return
                 is_anonymous = False
 

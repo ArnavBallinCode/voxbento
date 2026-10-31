@@ -42,7 +42,15 @@ body {
 }
 
 .overlay-line {
-  padding: 0.15em 0.5em;
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  unicode-bidi: plaintext;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--caption-line-limit, 1);
+  overflow: hidden;
+  padding: 0 0.5em;
   border-radius: var(--vb-radius-sm);
   background: rgba(0, 0, 0, var(--overlay-bg-alpha));
   color: var(--vb-color-surface);

@@ -19,6 +19,19 @@ if (card && frame) {
   const urlField = document.getElementById("overlay-url");
   const preview = document.getElementById("overlay-preview");
   let testIndex = 0;
+  const status = document.getElementById("overlay-status");
+  const statuses = {
+    connecting: "Connecting to captions…", connected: "Connected — waiting for captions from this source.",
+    receiving: "Receiving live captions.", reconnecting: "Connection interrupted — reconnecting automatically…",
+    denied: "Access unavailable. Check the event join code and caption channel, then select the channel again or reload this page.",
+    stopped: "Preview disconnected.",
+  };
+  window.addEventListener("message", (event) => {
+    if (event.origin !== window.location.origin || event.source !== frame.contentWindow) return;
+    if (event.data?.type === "overlay:status" && statuses[event.data.status]) {
+      status.textContent = statuses[event.data.status];
+    }
+  });
 
   const position = () => card.querySelector('input[name="overlay-position"]:checked').value;
 
@@ -43,7 +56,9 @@ if (card && frame) {
     document.getElementById("overlay-bg-value").textContent = bg.value;
     document.getElementById("overlay-lines-value").textContent = lines.value;
     urlField.value = window.location.origin + overlayPath();
+    document.getElementById("overlay-source").textContent = channel.selectedOptions[0]?.dataset.source || "";
     if (reload) {
+      status.textContent = statuses.connecting;
       frame.src = overlayPath();
     } else {
       frame.contentWindow?.postMessage(

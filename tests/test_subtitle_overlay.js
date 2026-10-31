@@ -71,6 +71,7 @@ function runOverlay(dataset = {}, search = '') {
         },
         className: '',
         textContent: '',
+        style: { setProperty() {} },
       };
       return el;
     },
@@ -83,12 +84,14 @@ function runOverlay(dataset = {}, search = '') {
       host: 'localhost:8000',
       search: search,
       origin: 'http://localhost:8000',
+      href: 'http://localhost:8000/overlay/pycon/1/en?code=secret',
     },
     addEventListener(evt, fn) {
       if (evt === 'message') messageListener = fn;
     },
   };
 
+  windowStub.parent = windowStub;
   let timerFn = null;
   let timerDelay = 0;
   const setTimeoutStub = (fn, ms) => {
@@ -101,6 +104,9 @@ function runOverlay(dataset = {}, search = '') {
   };
 
   const context = vm.createContext({
+    fetch: () => {},
+    AbortController,
+    URL,
     document: documentStub,
     window: windowStub,
     WebSocket: FakeWebSocket,

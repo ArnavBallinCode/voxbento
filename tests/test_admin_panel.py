@@ -1647,7 +1647,7 @@ class TestRoomCRUD:
             ws.close()
 
     @pytest.mark.anyio
-    async def test_ws_captions_rate_limits_failed_join_codes(self, seed_event):
+    async def test_ws_captions_rate_limits_failed_join_codes(self, seed_event, monkeypatch):
         from starlette.testclient import TestClient
         from starlette.websockets import WebSocketDisconnect
 
@@ -1674,7 +1674,14 @@ class TestRoomCRUD:
             assert codes[:-1] == [4001] * JOIN_CODE_RATE_LIMIT
             assert codes[-1] == 1008
 
-            # The right code still gets in and clears the counter.
+            # A matching guess must not bypass the exhausted attempt budget.
+            with pytest.raises(WebSocketDisconnect) as exc_info:
+                with tc.websocket_connect(f"/ws/captions/{booth_id}?code=ROOM42") as ws:
+                    ws.receive_text()
+            assert exc_info.value.code == 1008
+            from portal import join_code_limit
+            now = join_code_limit.time.monotonic()
+            monkeypatch.setattr(join_code_limit.time, "monotonic", lambda: now + 61)
             with tc.websocket_connect(f"/ws/captions/{booth_id}?code=ROOM42") as ws:
                 ws.close()
             assert not _join_code_attempts

@@ -134,6 +134,7 @@ from portal.notifications import (
     save_email_branding,
     template_content,
 )
+from portal.overlay_channels import overlay_channels
 from portal.program_ingest import room_lock
 from portal.rate_limit import check_rate_limit
 from portal.roles import EVENT_OWNER, assignment_error, role_label
@@ -1188,6 +1189,7 @@ async def admin_event_detail(request: Request, event_id: int):
         context={
             "event": event,
             "rooms": rooms,
+            "overlay_channels": overlay_channels(rooms, db_booths),
             "summaries": summaries,
             "booths": booth_statuses,
             "live_count": sum((1 for bs in booth_statuses if bs["is_live"])),
@@ -1456,8 +1458,9 @@ async def admin_room_detail(request: Request, event_id: int, room_id: int):
             "summary": summarize(room, snapshot),
             "booths_by_code": {bs["db"].language_code: bs for bs in booth_statuses},
             "overlay_urls": {
-                bs["db"].language_code: _overlay_url(event, room.id, bs["db"].language_code) for bs in booth_statuses
+                ch.code: _overlay_url(event, room.id, ch.code) for ch in overlay_channels([room], db_booths)
             },
+            "room_overlay_channels": overlay_channels([room], db_booths),
             "floor_overlay_url": _overlay_url(event, room.id, "floor") if room.has_floor_captions else None,
             "just_created": request.query_params.get("created") == "1",
             "just_updated": request.query_params.get("updated") == "1",
@@ -1993,7 +1996,7 @@ def _overlay_url(event: Event, room_id: int, language_code: str) -> str | None:
     if not event.listener_join_code:
         return None
     query = urllib.parse.urlencode({"code": event.listener_join_code})
-    return f"{settings.public_base_url}/overlay/{event.slug}/{room_id}/{language_code}?{query}"
+    return f"{settings.public_base_url.rstrip('/')}/overlay/{event.slug}/{room_id}/{language_code}?{query}"
 
 
 @router.get("/admin/events/{event_id}/rooms/{room_id}/booths/{booth_id}/", dependencies=[Depends(require_owner_or_coordinator)])

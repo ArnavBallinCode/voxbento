@@ -15,7 +15,7 @@ const config = { position: "bottom", fontSize: 36, bg: 70, lines: 2 };
 let finals = [];
 let partial = "";
 let idleTimer = null;
-let retryDelayMs = 1000;
+
 
 function clampInt(value, min, max, fallback) {
   const n = parseInt(value, 10);
@@ -37,6 +37,7 @@ function applyConfig() {
   POSITIONS.forEach((p) => root.classList.toggle("overlay--" + p, p === config.position));
   root.style.setProperty("--overlay-font-size", config.fontSize + "px");
   root.style.setProperty("--overlay-bg-alpha", String(config.bg / 100));
+  root.style.setProperty("--overlay-line-limit", String(config.lines));
   render();
 }
 
@@ -49,6 +50,8 @@ function render() {
       line.className = "overlay-line";
       if (i < visible.length - 1) line.classList.add("overlay-line--older");
       line.textContent = text;
+      line.dir = "auto";
+      line.style.setProperty("--caption-line-limit", String(i === visible.length - 1 ? config.lines - visible.length + 1 : 1));
       return line;
     }),
   );
@@ -91,33 +94,135 @@ export function handleCaption(data) {
   touch();
 }
 
-function connect() {
-  if (!boothId) return;
-  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const params = new URLSearchParams();
-  if (token) params.set("token", token);
-  const query = params.toString() ? `?${params.toString()}` : "";
-  const ws = new WebSocket(`${proto}//${window.location.host}/ws/captions/${encodeURIComponent(boothId)}${query}`);
-  ws.onopen = () => {
-    retryDelayMs = 1000;
-  };
-  ws.onmessage = (event) => {
+// Reauthorize through the original page URL on reconnect, rather than retaining
+// an expired JWT for the entire broadcast. Credentials never leave this origin.
+export function startConnection({ boothId, initialToken, location, onCaption, onStatus,
+  WebSocketClass = WebSocket, fetchSession = fetch, schedule = setTimeout, cancel = clearTimeout }) {
+  let socket = null;
+  let retryTimer = null;
+  let timeoutTimer = null;
+  let controller = null;
+  let stopped = false;
+  let retryDelay = 1000;
+  let authFailures = 0;
+
+  function retry(minimum = 0) {
+    if (stopped || retryTimer !== null) return;
+    onStatus("reconnecting");
+    retryTimer = schedule(() => {
+      retryTimer = null;
+      refresh();
+    }, Math.max(minimum, retryDelay));
+    retryDelay = Math.min(retryDelay * 2, 30000);
+  }
+
+  async function refresh() {
+    if (stopped) return;
+    controller = new AbortController();
+    const timeout = schedule(() => controller?.abort(), 10000);
     try {
-      handleCaption(JSON.parse(event.data));
+      const url = new URL(location.href);
+      url.pathname = url.pathname.replace(/\/$/, "") + "/session";
+      url.hash = "";
+      // Appearance parameters are not credentials.
+      const code = url.searchParams.get("code");
+      url.search = "";
+      if (code) url.searchParams.set("code", code);
+      const response = await fetchSession(url.href, {
+        cache: "no-store", credentials: "same-origin", signal: controller.signal,
+        headers: { Accept: "application/json" }, redirect: "error",
+      });
+      if (stopped) return;
+      if ([401, 403, 404].includes(response.status)) {
+        stop("denied");
+        return;
+      }
+      if (response.status === 429) {
+        const seconds = Number(response.headers.get("Retry-After"));
+        retry(Number.isFinite(seconds) ? Math.min(300, Math.max(1, seconds)) * 1000 : 60000);
+        return;
+      }
+      if (!response.ok) {
+        retry();
+        return;
+      }
+      const data = await response.json();
+      if (data.booth_id !== boothId || typeof data.token !== "string" || !data.token) {
+        stop("denied");
+        return;
+      }
+      if (!stopped) connect(data.token);
     } catch {
-      // Ignore frames that are not caption JSON.
+      // Network failures and timeouts are retried; never log credential URLs.
+      retry();
+    } finally {
+      cancel(timeout);
+      controller = null;
     }
-  };
-  ws.onclose = (event) => {
-    if (event.code === 4001 || event.code === 4003) return;
-    setTimeout(connect, retryDelayMs);
-    retryDelayMs = Math.min(retryDelayMs * 2, 15000);
-  };
+  }
+
+  function connect(accessToken) {
+    if (stopped) return;
+    onStatus("connecting");
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    const params = new URLSearchParams();
+    if (accessToken) params.set("token", accessToken);
+    const query = params.size ? `?${params}` : "";
+    const ws = new WebSocketClass(`${proto}//${location.host}/ws/captions/${encodeURIComponent(boothId)}${query}`);
+    socket = ws;
+    timeoutTimer = schedule(() => ws.close(), 10000);
+    ws.onopen = () => {
+      cancel(timeoutTimer);
+      onStatus("connected");
+    };
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (CAPTION_TYPES.includes(data?.type)) {
+          retryDelay = 1000;
+          authFailures = 0;
+          onCaption(data);
+          onStatus("receiving");
+        }
+      } catch {
+        // Non-JSON frames are not captions.
+      }
+    };
+    ws.onclose = (event) => {
+      cancel(timeoutTimer);
+      socket = null;
+      if (stopped) return;
+      if (event.code === 4003 || (event.code === 4001 && ++authFailures > 1)) {
+        stop("denied");
+        return;
+      }
+      retry(event.code === 1008 ? 60000 : 0);
+    };
+  }
+
+  function stop(status = "stopped") {
+    stopped = true;
+    cancel(retryTimer);
+    cancel(timeoutTimer);
+    controller?.abort();
+    socket?.close();
+    onStatus(status);
+  }
+
+  connect(initialToken);
+  return stop;
+}
+
+function reportStatus(status) {
+  if (root) root.dataset.status = status;
+  if (window.parent !== window) {
+    window.parent.postMessage({ type: "overlay:status", status }, window.location.origin);
+  }
 }
 
 if (typeof window !== "undefined") {
   window.addEventListener("message", (event) => {
-    if (event.origin !== window.location.origin || !event.data) return;
+    if (event.origin !== window.location.origin || event.source !== window.parent || window.parent === window || !event.data) return;
     if (event.data.type === "overlay:config") {
       Object.assign(config, readConfig(new URLSearchParams(event.data.query || ""), config));
       applyConfig();
@@ -129,6 +234,10 @@ if (typeof window !== "undefined") {
   if (root) {
     Object.assign(config, readConfig(new URLSearchParams(window.location.search), config));
     applyConfig();
-    connect();
+    if (boothId) {
+      const stop = startConnection({ boothId, initialToken: token, location: window.location,
+        onCaption: handleCaption, onStatus: reportStatus });
+      window.addEventListener("pagehide", () => { stop(); clearTimeout(idleTimer); });
+    }
   }
 }
